@@ -1,0 +1,159 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===== ユーザー関連 =====
+    match /users/{userId} {
+      // ユーザーは自分のドキュメントのみ読み書き可能
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // 新規ユーザー作成時の検証
+      allow create: if request.auth != null 
+                    && request.auth.uid == userId
+                    && isValidUserData(request.resource.data);
+    }
+    
+    // ===== リンク関連 =====
+    match /links/{linkId} {
+      // ユーザーは自分のリンクのみアクセス可能
+      allow read, write: if request.auth != null 
+                         && request.auth.uid == resource.data.userId;
+      
+      // 新規リンク作成時の検証
+      allow create: if request.auth != null 
+                    && request.auth.uid == request.resource.data.userId
+                    && isValidLinkData(request.resource.data);
+      
+      // リンク更新時の検証
+      allow update: if request.auth != null 
+                    && request.auth.uid == resource.data.userId
+                    && isValidLinkUpdate(request.resource.data, resource.data);
+    }
+    
+    // ===== タグ関連 =====
+    match /tags/{tagId} {
+      // ユーザーは自分のタグのみアクセス可能
+      allow read, write: if request.auth != null 
+                         && request.auth.uid == resource.data.userId;
+      
+      // 新規タグ作成時の検証
+      allow create: if request.auth != null 
+                    && request.auth.uid == request.resource.data.userId
+                    && isValidTagData(request.resource.data);
+    }
+    
+    // ===== フォルダ関連 =====
+    match /folders/{folderId} {
+      // ユーザーは自分のフォルダのみアクセス可能
+      allow read, write: if request.auth != null 
+                         && request.auth.uid == resource.data.userId;
+      
+      // 新規フォルダ作成時の検証
+      allow create: if request.auth != null 
+                    && request.auth.uid == request.resource.data.userId
+                    && isValidFolderData(request.resource.data);
+    }
+    
+    // ===== 検索履歴関連 =====
+    match /searchHistory/{historyId} {
+      // ユーザーは自分の検索履歴のみアクセス可能
+      allow read, write: if request.auth != null 
+                         && request.auth.uid == resource.data.userId;
+      
+      // 新規検索履歴作成時の検証
+      allow create: if request.auth != null 
+                    && request.auth.uid == request.resource.data.userId
+                    && isValidSearchHistoryData(request.resource.data);
+    }
+    
+    // ===== アプリ設定関連 =====
+    match /appSettings/{userId} {
+      // ユーザーは自分の設定のみアクセス可能
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // 新規設定作成時の検証
+      allow create: if request.auth != null 
+                    && request.auth.uid == userId
+                    && isValidAppSettingsData(request.resource.data);
+    }
+    
+    // ===== バリデーション関数 =====
+    
+    // ユーザーデータの検証
+    function isValidUserData(data) {
+      return data.keys().hasAll(['uid', 'email', 'isAnonymous']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.isAnonymous is bool;
+    }
+    
+    // リンクデータの検証
+    function isValidLinkData(data) {
+      let requiredFields = ['userId', 'url', 'title', 'status', 'isBookmarked', 'isArchived', 'priority'];
+      let validStatuses = ['pending', 'processing', 'completed', 'error'];
+      let validPriorities = ['low', 'medium', 'high'];
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.userId is string &&
+             data.url is string &&
+             data.title is string &&
+             data.status in validStatuses &&
+             data.isBookmarked is bool &&
+             data.isArchived is bool &&
+             data.priority in validPriorities &&
+             data.tagIds is list;
+    }
+    
+    // リンク更新データの検証
+    function isValidLinkUpdate(newData, oldData) {
+      // userIdは変更不可
+      return newData.userId == oldData.userId;
+    }
+    
+    // タグデータの検証
+    function isValidTagData(data) {
+      let requiredFields = ['userId', 'name', 'type'];
+      let validTypes = ['manual', 'ai', 'recommended'];
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.userId is string &&
+             data.name is string &&
+             data.type in validTypes &&
+             data.linkCount is number;
+    }
+    
+    // フォルダデータの検証
+    function isValidFolderData(data) {
+      let requiredFields = ['userId', 'name', 'order', 'isDefault'];
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.userId is string &&
+             data.name is string &&
+             data.order is number &&
+             data.isDefault is bool &&
+             data.linkCount is number;
+    }
+    
+    // 検索履歴データの検証
+    function isValidSearchHistoryData(data) {
+      let requiredFields = ['userId', 'query', 'resultCount'];
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.userId is string &&
+             data.query is string &&
+             data.resultCount is number;
+    }
+    
+    // アプリ設定データの検証
+    function isValidAppSettingsData(data) {
+      let requiredFields = ['userId', 'theme', 'language'];
+      let validThemes = ['dark', 'light'];
+      let validLanguages = ['ja', 'en'];
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.userId is string &&
+             data.theme in validThemes &&
+             data.language in validLanguages;
+    }
+  }
+} 
