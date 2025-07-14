@@ -1,127 +1,165 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, AuthState } from '../types';
-import { onAuthStateChange } from '../services/authService';
+import { onAuthStateChange, updateUserProfile as updateProfile } from '../services/authService';
+import { auth } from '../config/firebase';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updateProfile as updateFirebaseProfile,
+  updateEmail,
+} from 'firebase/auth';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   loginAnonymously: () => Promise<void>;
   logout: () => Promise<void>;
+  updateUserProfile: (profile: { 
+    displayName?: string; 
+    email?: string;
+    avatarId?: string;
+    avatarIcon?: string;
+  }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
 
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AuthState>({
     user: null,
     loading: true,
-    error: null
+    error: null,
   });
 
   useEffect(() => {
-    console.log('Setting up auth listener...');
-    
     const unsubscribe = onAuthStateChange((user) => {
-      console.log('Auth state changed:', user ? `User: ${user.email || 'Anonymous'}` : 'No user');
-      setState(prev => ({
-        ...prev,
-        user,
-        loading: false
-      }));
+      setState({
+        user: user ? {
+          ...user,
+          // Firestoreのusernameフィールドを優先的に使用
+          username: user.username || user.email || null,
+          avatarId: user.avatarId,
+          avatarIcon: user.avatarIcon,
+        } : null,
+        loading: false,
+        error: null,
+      });
     });
 
-    return () => {
-      console.log('Cleaning up auth listener');
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const { loginWithEmail } = await import('../services/authService');
-      await loginWithEmail(email, password);
-      // 認証状態の変更はonAuthStateChangeで処理される
-    } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error instanceof Error ? error.message : 'Login failed' 
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      setState(prev => ({
+        ...prev,
+        error: error.message || 'ログインに失敗しました',
+        loading: false,
       }));
       throw error;
     }
   };
 
   const register = async (email: string, password: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const { registerWithEmail } = await import('../services/authService');
-      await registerWithEmail(email, password);
-      // 認証状態の変更はonAuthStateChangeで処理される
-    } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error instanceof Error ? error.message : 'Registration failed' 
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      setState(prev => ({
+        ...prev,
+        error: error.message || 'アカウント作成に失敗しました',
+        loading: false,
       }));
       throw error;
     }
   };
 
   const loginAnonymously = async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const { loginAnonymously: loginAnon } = await import('../services/authService');
-      await loginAnon();
-      // 認証状態の変更はonAuthStateChangeで処理される
-    } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error instanceof Error ? error.message : 'Anonymous login failed' 
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      // 匿名ログインの実装
+    } catch (error: any) {
+      setState(prev => ({
+        ...prev,
+        error: error.message || '匿名ログインに失敗しました',
+        loading: false,
       }));
       throw error;
     }
   };
 
   const logout = async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const { logout: logoutUser } = await import('../services/authService');
-      await logoutUser();
-      // 認証状態の変更はonAuthStateChangeで処理される
-    } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error instanceof Error ? error.message : 'Logout failed' 
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      await signOut(auth);
+    } catch (error: any) {
+      setState(prev => ({
+        ...prev,
+        error: error.message || 'ログアウトに失敗しました',
+        loading: false,
       }));
       throw error;
     }
   };
 
-  const value: AuthContextType = {
-    ...state,
-    login,
-    register,
-    loginAnonymously,
-    logout
+  const updateUserProfile = async (profile: { 
+    displayName?: string; 
+    email?: string;
+    avatarId?: string;
+    avatarIcon?: string;
+  }) => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      
+      // プロフィール更新
+      await updateProfile(profile);
+
+      // ローカルのステートを更新
+      setState(prev => ({
+        ...prev,
+        user: prev.user ? {
+          ...prev.user,
+          username: profile.displayName || prev.user.username,
+          email: profile.email || prev.user.email,
+          avatarId: profile.avatarId || prev.user.avatarId,
+          avatarIcon: profile.avatarIcon || prev.user.avatarIcon,
+        } : null,
+        loading: false,
+      }));
+
+    } catch (error: any) {
+      setState(prev => ({
+        ...prev,
+        error: error.message || 'プロフィールの更新に失敗しました',
+        loading: false,
+      }));
+      throw error;
+    }
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        ...state,
+        login,
+        register,
+        loginAnonymously,
+        logout,
+        updateUserProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

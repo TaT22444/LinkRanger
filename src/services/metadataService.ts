@@ -1,20 +1,73 @@
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../config/firebase';
+
 export interface LinkMetadata {
   title?: string;
   description?: string;
   imageUrl?: string;
   siteName?: string;
+  domain?: string;
+  author?: string;
+  publishedDate?: string;
+  keywords?: string[];
+  language?: string;
+  type?: string;
+  favicon?: string;
 }
 
+// Cloud Functionsのメタデータ取得関数
+const fetchMetadataFunction = httpsCallable(functions, 'fetchMetadata');
+
 export const metadataService = {
-  async fetchMetadata(url: string): Promise<LinkMetadata> {
+  async fetchMetadata(url: string, userId?: string): Promise<LinkMetadata> {
     try {
       console.log('Fetching metadata for:', url);
       
-      // CORSの問題を回避するため、プロキシサービスを使用
-      // 本来はCloud Functionsで実装すべきですが、開発段階では簡易的な方法を使用
+      // Cloud Functionsを使用してセキュアにメタデータを取得
+      const result = await fetchMetadataFunction({ url, userId });
+      const metadata = result.data as LinkMetadata;
+      
+      console.log('Fetched metadata:', metadata);
+      return metadata;
+      
+    } catch (error) {
+      console.error('Error fetching metadata:', error);
+      
+      // エラーの詳細をログ出力
+      if (error instanceof Error) {
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+      }
+      
+      // フォールバック：URLからドメイン名を抽出してタイトルとする
+      try {
+        const urlObj = new URL(url);
+        const fallbackTitle = urlObj.hostname.replace('www.', '');
+        console.log('Using fallback title:', fallbackTitle);
+        return {
+          title: fallbackTitle,
+          description: '',
+          domain: urlObj.hostname,
+        };
+      } catch {
+        console.log('Using URL as fallback title:', url);
+        return {
+          title: url,
+          description: '',
+        };
+      }
+    }
+  },
+
+  // 旧バージョンとの互換性のため、プロキシサービスを使用したフォールバック関数
+  async fetchMetadataFallback(url: string): Promise<LinkMetadata> {
+    try {
+      console.log('Using fallback metadata fetching for:', url);
+      
+      // 外部プロキシサービスを使用（セキュリティ上の問題があるため、緊急時のみ）
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
       
-      // 8秒のタイムアウトを設定（AddLinkModalの15秒より短く）
+      // 8秒のタイムアウトを設定
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
       
@@ -72,29 +125,32 @@ export const metadataService = {
         metadata.siteName = ogSiteName[1].trim();
       }
       
-      console.log('Fetched metadata:', metadata);
+      // ドメイン情報を追加
+      try {
+        const urlObj = new URL(url);
+        metadata.domain = urlObj.hostname;
+      } catch {
+        // URL解析に失敗した場合はスキップ
+      }
+      
+      console.log('Fetched metadata (fallback):', metadata);
       return metadata;
       
     } catch (error) {
-      console.error('Error fetching metadata:', error);
+      console.error('Error fetching metadata (fallback):', error);
       
-      // エラーの詳細をログ出力
-      if (error instanceof Error) {
-        console.error('Error name:', error.name);
-        console.error('Error message:', error.message);
-      }
-      
-      // フォールバック：URLからドメイン名を抽出してタイトルとする
+      // 最終フォールバック：URLからドメイン名を抽出してタイトルとする
       try {
         const urlObj = new URL(url);
         const fallbackTitle = urlObj.hostname.replace('www.', '');
-        console.log('Using fallback title:', fallbackTitle);
+        console.log('Using final fallback title:', fallbackTitle);
         return {
           title: fallbackTitle,
           description: '',
+          domain: urlObj.hostname,
         };
       } catch {
-        console.log('Using URL as fallback title:', url);
+        console.log('Using URL as final fallback title:', url);
         return {
           title: url,
           description: '',

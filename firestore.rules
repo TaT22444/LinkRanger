@@ -42,6 +42,25 @@ service cloud.firestore {
                     && isValidTagData(request.resource.data);
     }
     
+    // ===== AI使用量関連（新規追加） =====
+    match /aiUsage/{usageId} {
+      // ユーザーは自分の使用量記録のみ読み取り可能
+      allow read: if request.auth != null 
+                  && request.auth.uid == resource.data.userId;
+      
+      // 書き込みはCloud Functionsからのみ許可
+      allow write: if false;
+    }
+    
+    match /aiUsageSummary/{summaryId} {
+      // ユーザーは自分のサマリーのみ読み取り可能
+      allow read: if request.auth != null 
+                  && request.auth.uid == extractUserIdFromSummaryId(summaryId);
+      
+      // 書き込みはCloud Functionsからのみ許可
+      allow write: if false;
+    }
+    
     // ===== フォルダ関連 =====
     match /folders/{folderId} {
       // ユーザーは自分のフォルダのみアクセス可能
@@ -101,13 +120,22 @@ service cloud.firestore {
              data.isBookmarked is bool &&
              data.isArchived is bool &&
              data.priority in validPriorities &&
-             data.tagIds is list;
+             data.tagIds is list &&
+             // URL形式の基本チェック
+             data.url.matches('https?://.*') &&
+             // タイトル長制限
+             data.title.size() <= 200 &&
+             // タグ数制限
+             data.tagIds.size() <= 20;
     }
     
     // リンク更新データの検証
     function isValidLinkUpdate(newData, oldData) {
       // userIdは変更不可
-      return newData.userId == oldData.userId;
+      return newData.userId == oldData.userId &&
+             // 基本的なデータ整合性チェック
+             (newData.title == null || newData.title.size() <= 200) &&
+             (newData.tagIds == null || newData.tagIds.size() <= 20);
     }
     
     // タグデータの検証
@@ -119,7 +147,12 @@ service cloud.firestore {
              data.userId is string &&
              data.name is string &&
              data.type in validTypes &&
-             data.linkCount is number;
+             data.linkCount is number &&
+             // タグ名の長さ制限
+             data.name.size() >= 1 &&
+             data.name.size() <= 50 &&
+             // linkCountは非負数
+             data.linkCount >= 0;
     }
     
     // フォルダデータの検証
@@ -131,7 +164,14 @@ service cloud.firestore {
              data.name is string &&
              data.order is number &&
              data.isDefault is bool &&
-             data.linkCount is number;
+             data.linkCount is number &&
+             // フォルダ名の長さ制限
+             data.name.size() >= 1 &&
+             data.name.size() <= 100 &&
+             // orderは非負数
+             data.order >= 0 &&
+             // linkCountは非負数
+             data.linkCount >= 0;
     }
     
     // 検索履歴データの検証
@@ -141,7 +181,12 @@ service cloud.firestore {
       return data.keys().hasAll(requiredFields) &&
              data.userId is string &&
              data.query is string &&
-             data.resultCount is number;
+             data.resultCount is number &&
+             // 検索クエリの長さ制限
+             data.query.size() >= 1 &&
+             data.query.size() <= 200 &&
+             // resultCountは非負数
+             data.resultCount >= 0;
     }
     
     // アプリ設定データの検証
@@ -154,6 +199,12 @@ service cloud.firestore {
              data.userId is string &&
              data.theme in validThemes &&
              data.language in validLanguages;
+    }
+    
+    // AI使用量サマリーIDからユーザーIDを抽出
+    function extractUserIdFromSummaryId(summaryId) {
+      // summaryIdの形式: {userId}_{YYYY-MM}
+      return summaryId.split('_')[0];
     }
   }
 } 

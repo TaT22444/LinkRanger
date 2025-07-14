@@ -152,9 +152,11 @@ export const LinkCard: React.FC<LinkCardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#1F1F1F',
+    borderWidth: 1,
+    borderColor: '#323232',
     borderRadius: 8,
-    marginBottom: 12,
+    marginBottom: 8,
     marginHorizontal: 16,
   },
   content: {

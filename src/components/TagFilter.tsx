@@ -89,11 +89,11 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: 'transparent',
     paddingVertical: 12,
+    paddingLeft: 20,
   },
   contentContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
   scrollView: {
     flex: 1,

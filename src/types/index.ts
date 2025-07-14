@@ -21,7 +21,9 @@ export interface UserSubscription {
 export interface User {
   uid: string;
   email: string | null;
-  username?: string;
+  username: string | null; // メールアドレスをデフォルトの表示名として使用
+  avatarId?: string;
+  avatarIcon?: string;
   isAnonymous: boolean;
   createdAt: Date;
   // ユーザー設定
@@ -78,6 +80,9 @@ export interface Link {
     category: string;
     keywords: string[];
     confidence: number; // 0-1の信頼度
+    fromCache?: boolean; // キャッシュから取得したかどうか
+    tokensUsed?: number; // 使用トークン数
+    cost?: number; // 処理コスト
   };
   
   // エラー情報

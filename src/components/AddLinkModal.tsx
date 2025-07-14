@@ -16,6 +16,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Link } from '../types';
 import { metadataService } from '../services/metadataService';
+import { aiService } from '../services/aiService';
 import { TagSelectorModal } from './TagSelectorModal';
 
 interface Tag {
@@ -53,6 +54,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchingMetadata, setFetchingMetadata] = useState(false);
+  const [generatingAITags, setGeneratingAITags] = useState(false);
 
   const resetForm = () => {
     setUrl(initialUrl);
@@ -61,6 +63,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     setSelectedTags([]);
     setShowTagSelector(false);
     setFetchingMetadata(false);
+    setGeneratingAITags(false);
     setLoading(false);
   };
 
@@ -97,7 +100,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
           });
           
           const metadata = await Promise.race([
-            metadataService.fetchMetadata(url.trim()),
+            metadataService.fetchMetadata(url.trim(), userId),
             timeoutPromise
           ]);
           
@@ -141,8 +144,140 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     setSelectedTags(newTags);
   };
 
+  const handleGenerateAITags = async () => {
+    if (!url.trim() || !userId) {
+      Alert.alert('エラー', 'URLが入力されていません');
+      return;
+    }
+
+    if (!isValidUrl(url.trim())) {
+      Alert.alert('エラー', '有効なURLを入力してください');
+      return;
+    }
+
+    setGeneratingAITags(true);
+    try {
+      // メタデータを取得（まだ取得していない場合）
+      let finalTitle = title.trim();
+      let finalDescription = description.trim();
+      
+      if (!finalTitle || !finalDescription) {
+        const metadata = await metadataService.fetchMetadata(url.trim(), userId);
+        finalTitle = finalTitle || metadata.title || url.trim();
+        finalDescription = finalDescription || metadata.description || '';
+        
+        // タイトルと説明を更新
+        if (!title.trim() && metadata.title) {
+          setTitle(metadata.title);
+        }
+        if (!description.trim() && metadata.description) {
+          setDescription(metadata.description);
+        }
+      }
+
+      // AIタグを生成
+      const aiResponse = await aiService.generateTags(
+        finalTitle,
+        finalDescription,
+        url.trim(),
+        userId,
+        'free' // TODO: 実際のユーザープランを渡す
+      );
+
+      // 生成されたタグを既存のタグと統合
+      const newTagIds: string[] = [];
+      
+      for (const tagName of aiResponse.tags) {
+        // 既存のタグから検索
+        const existingTag = availableTags.find(t => t.name === tagName);
+        
+        if (existingTag) {
+          // 既存のタグがある場合、そのIDを使用
+          if (!selectedTags.includes(existingTag.id)) {
+            newTagIds.push(existingTag.id);
+          }
+        } else {
+          // 新しいタグの場合、作成
+          if (onAddTag) {
+            try {
+              const newTagId = await onAddTag(tagName, 'ai');
+              if (newTagId && !selectedTags.includes(newTagId)) {
+                newTagIds.push(newTagId);
+              }
+            } catch (error) {
+              console.error('Failed to create AI tag:', tagName, error);
+            }
+          }
+        }
+      }
+
+      // 新しいタグを追加
+      if (newTagIds.length > 0) {
+        setSelectedTags(prevTags => [...prevTags, ...newTagIds]);
+        
+        Alert.alert(
+          'AI タグ生成完了',
+          `${newTagIds.length}個のタグが生成されました。\n\n` +
+          `生成されたタグ: ${aiResponse.tags.join(', ')}\n\n` +
+          (aiResponse.fromCache ? 'キャッシュから取得' : '新規生成'),
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('情報', '新しいタグは生成されませんでした。');
+      }
+
+    } catch (error) {
+      console.error('AI tag generation failed:', error);
+      Alert.alert(
+        'エラー',
+        'AIタグの生成に失敗しました。\n\n' +
+        'フォールバック機能により、基本的なタグを生成します。'
+      );
+      
+      // フォールバック処理
+      try {
+        const fallbackTags = aiService.generateFallbackTags(
+          url.trim(),
+          title.trim(),
+          description.trim()
+        );
+        
+        if (fallbackTags.length > 0) {
+          const newTagIds: string[] = [];
+          
+          for (const tagName of fallbackTags) {
+            const existingTag = availableTags.find(t => t.name === tagName);
+            
+            if (existingTag) {
+              if (!selectedTags.includes(existingTag.id)) {
+                newTagIds.push(existingTag.id);
+              }
+            } else if (onAddTag) {
+              try {
+                const newTagId = await onAddTag(tagName, 'ai');
+                if (newTagId && !selectedTags.includes(newTagId)) {
+                  newTagIds.push(newTagId);
+                }
+              } catch (error) {
+                console.error('Failed to create fallback tag:', tagName, error);
+              }
+            }
+          }
+          
+          if (newTagIds.length > 0) {
+            setSelectedTags(prevTags => [...prevTags, ...newTagIds]);
+          }
+        }
+      } catch (fallbackError) {
+        console.error('Fallback tag generation failed:', fallbackError);
+      }
+    } finally {
+      setGeneratingAITags(false);
+    }
+  };
+
   const handleClose = () => {
-    if (!loading) {
+    if (!loading && !generatingAITags) {
       resetForm();
       onClose();
     }
@@ -155,7 +290,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
   };
 
   // 保存ボタンの有効性
-  const canSave = url.trim() && isValidUrl(url.trim()) && !loading && !fetchingMetadata;
+  const canSave = url.trim() && isValidUrl(url.trim()) && !loading && !fetchingMetadata && !generatingAITags;
   const hasChanges = url.trim() || title.trim() || description.trim() || selectedTags.length > 0;
 
   return (
@@ -168,8 +303,8 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
       <SafeAreaView style={styles.container}>
         {/* ヘッダー */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerButton} onPress={handleClose} disabled={loading}>
-            <Text style={[styles.cancelText, loading && styles.disabledText]}>キャンセル</Text>
+          <TouchableOpacity style={styles.headerButton} onPress={handleClose} disabled={loading || generatingAITags}>
+            <Text style={[styles.cancelText, (loading || generatingAITags) && styles.disabledText]}>キャンセル</Text>
           </TouchableOpacity>
           
           <Text style={styles.headerTitle}>リンクを追加</Text>
@@ -199,6 +334,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
+                returnKeyType="done"
                 editable={!loading && !fetchingMetadata}
               />
               {fetchingMetadata && (
@@ -221,6 +357,10 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
               onChangeText={setTitle}
               placeholder="リンクのタイトル（省略可）"
               placeholderTextColor="#666"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="default"
+              returnKeyType="done"
               editable={!loading}
             />
             <Text style={styles.hint}>空白の場合、自動でタイトルを取得します</Text>
@@ -235,6 +375,10 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
               onChangeText={setDescription}
               placeholder="リンクの説明（省略可）"
               placeholderTextColor="#666"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="default"
+              returnKeyType="done"
               multiline
               numberOfLines={4}
               textAlignVertical="top"
@@ -244,11 +388,27 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
 
           {/* タグ選択 */}
           <View style={styles.section}>
-            <Text style={styles.label}>タグ</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.label}>タグ</Text>
+              <TouchableOpacity
+                style={[styles.aiButton, generatingAITags && styles.aiButtonDisabled]}
+                onPress={handleGenerateAITags}
+                disabled={!url.trim() || !isValidUrl(url.trim()) || generatingAITags || loading}
+              >
+                {generatingAITags ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Feather name="zap" size={16} color="#FFF" />
+                )}
+                <Text style={styles.aiButtonText}>
+                  {generatingAITags ? 'AI生成中...' : 'AIタグ生成'}
+                </Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               style={styles.tagSelector}
               onPress={() => setShowTagSelector(true)}
-              disabled={loading}
+              disabled={loading || generatingAITags}
             >
               <View style={styles.tagSelectorContent}>
                 {selectedTags.length > 0 ? (
@@ -368,11 +528,36 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   label: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFF',
-    marginBottom: 8,
+  },
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#8A2BE2',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#8A2BE2',
+  },
+  aiButtonDisabled: {
+    backgroundColor: '#444',
+    borderColor: '#444',
+  },
+  aiButtonText: {
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '600',
+    marginLeft: 6,
   },
   
   // 入力フィールド

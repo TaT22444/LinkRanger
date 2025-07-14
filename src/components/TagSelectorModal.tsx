@@ -131,6 +131,9 @@ export const TagSelectorModal: React.FC<TagSelectorModalProps> = ({
               placeholderTextColor="#666"
               value={searchQuery}
               onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="default"
               returnKeyType="search"
             />
             {searchQuery.length > 0 && (

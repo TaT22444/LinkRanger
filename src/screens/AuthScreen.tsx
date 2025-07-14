@@ -68,6 +68,8 @@ export const AuthScreen: React.FC = () => {
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
             />
 
             <TextInput
@@ -77,6 +79,9 @@ export const AuthScreen: React.FC = () => {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
             />
 
             <TouchableOpacity

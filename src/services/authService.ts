@@ -4,11 +4,20 @@ import {
   signInAnonymously, 
   signOut, 
   onAuthStateChanged,
-  User as FirebaseUser
+  updateProfile as updateFirebaseProfile,
+  User as FirebaseUser,
+  updateEmail
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { User } from '../types';
+
+interface UpdateUserProfileParams {
+  displayName?: string;
+  email?: string;
+  avatarId?: string;
+  avatarIcon?: string;
+}
 
 // ユーザー登録（メールアドレス）
 export const registerWithEmail = async (email: string, password: string): Promise<User> => {
@@ -20,6 +29,7 @@ export const registerWithEmail = async (email: string, password: string): Promis
     const userData: User = {
       uid: firebaseUser.uid,
       email: firebaseUser.email,
+      username: firebaseUser.email, // デフォルトの表示名をメールアドレスに設定
       isAnonymous: false,
       createdAt: new Date()
     };
@@ -47,6 +57,7 @@ export const loginWithEmail = async (email: string, password: string): Promise<U
       const userData: User = {
         uid: firebaseUser.uid,
         email: firebaseUser.email,
+        username: firebaseUser.email, // デフォルトの表示名をメールアドレスに設定
         isAnonymous: false,
         createdAt: new Date()
       };
@@ -69,6 +80,7 @@ export const loginAnonymously = async (): Promise<User> => {
     const userData: User = {
       uid: firebaseUser.uid,
       email: null,
+      username: null,
       isAnonymous: true,
       createdAt: new Date()
     };
@@ -93,13 +105,21 @@ export const logout = async (): Promise<void> => {
 
 // 認証状態の監視
 export const onAuthStateChange = (callback: (user: User | null) => void) => {
-  return onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+  return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       try {
         // Firestoreからユーザー情報を取得
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userDoc.exists()) {
-          callback(userDoc.data() as User);
+          const userData = userDoc.data() as User;
+          // Firestoreのデータを優先
+          callback({
+            ...userData,
+            username: userData.username || userData.email || null,
+            avatarId: userData.avatarId,
+            avatarIcon: userData.avatarIcon,
+            createdAt: userData.createdAt instanceof Date ? userData.createdAt : new Date(userData.createdAt)
+          });
         } else {
           callback(null);
         }
@@ -111,4 +131,38 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
       callback(null);
     }
   });
+};
+
+// プロフィール更新
+export const updateUserProfile = async (params: UpdateUserProfileParams): Promise<void> => {
+  try {
+    if (!auth.currentUser) throw new Error('ユーザーが見つかりません');
+
+    // Firebase Authのプロフィールを更新（displayNameのみ）
+    if (params.displayName) {
+      await updateFirebaseProfile(auth.currentUser, {
+        displayName: params.displayName
+      });
+    }
+
+    // メールアドレスの更新
+    if (params.email) {
+      await updateEmail(auth.currentUser, params.email);
+    }
+
+    // Firestoreのユーザー情報を更新
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    const updateData: { [key: string]: any } = {};
+
+    if (params.displayName) updateData.username = params.displayName;
+    if (params.email) updateData.email = params.email;
+    if (params.avatarId) updateData.avatarId = params.avatarId;
+    if (params.avatarIcon) updateData.avatarIcon = params.avatarIcon;
+
+    await updateDoc(userRef, updateData);
+
+  } catch (error) {
+    console.error('プロフィール更新エラー:', error);
+    throw error;
+  }
 }; 
