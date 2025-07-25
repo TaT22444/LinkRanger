@@ -10,7 +10,6 @@ import { LinkMetadata } from './metadataService';
 
 // Cloud Functions
 const generateAITagsFunction = httpsCallable(functions, 'generateAITags');
-const generateEnhancedAITagsFunction = httpsCallable(functions, 'generateEnhancedAITags');
 const clearTagCacheFunction = httpsCallable(functions, 'clearTagCache');
 
 interface AIResponse {
@@ -27,39 +26,6 @@ interface AIUsageCheck {
 }
 
 export const aiService = {
-  /**
-   * 強化されたAIタグ生成（フルコンテンツ解析）
-   */
-  async generateEnhancedTags(
-    metadata: LinkMetadata,
-    userId: string,
-    plan: UserPlan
-  ): Promise<AIResponse> {
-    try {
-      console.log('Generating enhanced AI tags for:', metadata.title);
-      
-      // Cloud Functionsで強化されたAI分析を実行
-      const result = await generateEnhancedAITagsFunction({
-        metadata,
-        userId,
-        plan,
-      });
-
-      const data = result.data as AIResponse;
-      
-      console.log('Enhanced AI tags generated:', {
-        totalTags: data.tags.length,
-        fromCache: data.fromCache,
-        tokensUsed: data.tokensUsed,
-      });
-      
-      return data;
-    } catch (error) {
-      console.error('Enhanced AI tag generation error:', error);
-      throw error; // エラーを呼び出し元に伝える
-    }
-  },
-
   /**
    * 従来のAIタグ生成（後方互換性）
    */

@@ -15,8 +15,8 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Link, UserPlan } from '../types';
-import { metadataService } from '../services/metadataService';
-import { aiService } from '../services/aiService';
+
+
 import { TagSelectorModal } from './TagSelectorModal';
 
 interface Tag {
@@ -54,7 +54,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchingMetadata, setFetchingMetadata] = useState(false);
-  const [generatingAITags, setGeneratingAITags] = useState(false);
+  
 
   const resetForm = () => {
     setUrl(initialUrl);
@@ -63,7 +63,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     setSelectedTags([]);
     setShowTagSelector(false);
     setFetchingMetadata(false);
-    setGeneratingAITags(false);
+    
     setLoading(false);
   };
 
@@ -127,10 +127,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         priority: 'medium',
         tagIds: selectedTags,
         // AI処理済みフラグを追加（AddLinkModalでAI生成した場合）
-        aiProcessed: selectedTags.some(tagId => {
-          const tag = availableTags.find(t => t.id === tagId);
-          return tag?.type === 'ai';
-        }),
+        
       };
 
       await onSubmit(linkData);
@@ -147,117 +144,10 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     setSelectedTags(newTags);
   };
 
-  const handleGenerateAITags = async () => {
-    if (!url.trim() || !userId) {
-      Alert.alert('エラー', 'URLが入力されていません');
-      return;
-    }
-
-    if (!isValidUrl(url.trim())) {
-      Alert.alert('エラー', '有効なURLを入力してください');
-      return;
-    }
-
-    setGeneratingAITags(true);
-    try {
-      console.log('🤖 [AI Tagging Modal] Manual generation process started.');
-      
-      let finalTitle = title.trim();
-      let finalDescription = description.trim();
-      
-      if (!finalTitle || !finalDescription) {
-        const metadata = await metadataService.fetchMetadata(url.trim(), userId);
-        finalTitle = finalTitle || metadata.title || url.trim();
-        finalDescription = finalDescription || metadata.description || '';
-        
-        if (!title.trim() && metadata.title) setTitle(metadata.title);
-        if (!description.trim() && metadata.description) setDescription(metadata.description);
-      }
-
-      console.log(`🤖 [AI Tagging Modal] Calling AI service with url: ${url.trim()}`);
-      const metadata = await metadataService.fetchMetadata(url.trim(), userId);
-      const aiResponse = await aiService.generateEnhancedTags(
-        metadata,
-        userId,
-        'free' as UserPlan
-      );
-
-      console.log('🤖 [AI Tagging Modal] AI response received:', { tags: aiResponse.tags, fromCache: aiResponse.fromCache });
-
-      const newTagIds: string[] = [];
-      const preservedUserTags = [...selectedTags];
-      
-      for (const tagName of aiResponse.tags) {
-        const normalizedTagName = tagName.trim();
-        const existingTag = availableTags.find(t => 
-          t.name.trim().toLowerCase() === normalizedTagName.toLowerCase()
-        );
-        
-        if (existingTag) {
-          if (!preservedUserTags.includes(existingTag.id)) {
-            newTagIds.push(existingTag.id);
-          }
-        } else if (onAddTag) {
-          try {
-            const newTagId = await onAddTag(normalizedTagName, 'ai');
-            if (newTagId && !preservedUserTags.includes(newTagId)) {
-              newTagIds.push(newTagId);
-            }
-          } catch (error) {
-            console.error('🤖🔥 [AI Tagging Modal] Failed to create new AI tag:', { tagName: normalizedTagName, error });
-          }
-        }
-      }
-      
-      if (newTagIds.length > 0) {
-        const finalTags = [...preservedUserTags, ...newTagIds];
-        setSelectedTags(finalTags);
-        
-        const userTagCount = preservedUserTags.length;
-        const aiTagCount = newTagIds.length;
-        
-        let successMessage = `${aiTagCount}個の新しいAIタグを追加しました！
-
-`;
-        if (userTagCount > 0) successMessage += `👤 ユーザー選択: ${userTagCount}個
-`;
-        successMessage += `🤖 Gemini AI生成: ${aiTagCount}個
-`;
-        successMessage += `📊 合計: ${finalTags.length}個のタグ
-
-`;
-        successMessage += `🏷️ 生成されたタグ: ${aiResponse.tags.join(', ')}
-
-`;
-        if (aiResponse.fromCache) successMessage += '💾 キャッシュから取得';
-        else successMessage += `🔥 新規AI分析 (トークン: ${aiResponse.tokensUsed})`;
-        
-        Alert.alert('🎉 Gemini AI生成完了', successMessage);
-      } else {
-        Alert.alert(
-          '💡 情報', 
-          `AIが${aiResponse.tags.length}個のタグを生成しましたが、すべて既に選択済みでした。
-
-` +
-          `生成されたタグ: ${aiResponse.tags.join(', ')}`
-        );
-      }
-      
-    } catch (error) {
-      console.error('🤖🔥 [AI Tagging Modal] AI tag generation failed:', { error });
-      Alert.alert(
-        '⚠️ AI生成エラー',
-        `Gemini AIタグの生成に失敗しました。
-
-エラー: ${error instanceof Error ? error.message : String(error)}`
-      );
-    } finally {
-      setGeneratingAITags(false);
-    }
-  };
+  
 
   const handleClose = () => {
-    if (!loading && !generatingAITags) {
+    if (!loading) {
       resetForm();
       onClose();
     }
@@ -268,7 +158,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     return tag ? tag.name : tagId;
   };
 
-  const canSave = url.trim() && isValidUrl(url.trim()) && !loading && !fetchingMetadata && !generatingAITags;
+  const canSave = url.trim() && isValidUrl(url.trim()) && !loading && !fetchingMetadata;
 
   return (
     <Modal
@@ -283,9 +173,9 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
           <TouchableOpacity 
             style={styles.headerButton} 
             onPress={handleClose} 
-            disabled={loading || generatingAITags}
+            disabled={loading}
           >
-            <Text style={[styles.cancelText, (loading || generatingAITags) && styles.disabledText]}>
+            <Text style={[styles.cancelText, loading && styles.disabledText]}>
               キャンセル
             </Text>
           </TouchableOpacity>
@@ -376,26 +266,13 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
           <View style={styles.inputGroup}>
             <View style={styles.tagHeaderWithAI}>
               <Text style={[styles.label, styles.labelWithMargin]}>タグ</Text>
-              <TouchableOpacity
-                style={[styles.aiTagButton, generatingAITags && styles.aiTagButtonDisabled]}
-                onPress={handleGenerateAITags}
-                disabled={!url.trim() || !isValidUrl(url.trim()) || generatingAITags || loading}
-              >
-                {generatingAITags ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Feather name="zap" size={14} color="#FFF" />
-                )}
-                <Text style={styles.aiTagButtonText}>
-                  {generatingAITags ? 'AI生成中...' : 'AI生成'}
-                </Text>
-              </TouchableOpacity>
+              
             </View>
             
             <TouchableOpacity
               style={styles.tagSelector}
               onPress={() => setShowTagSelector(true)}
-              disabled={loading || generatingAITags}
+              disabled={loading}
             >
               <View style={styles.tagSelectorContent}>
                 {selectedTags.length > 0 ? (
@@ -612,24 +489,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  aiTagButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#8A2BE2',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  aiTagButtonDisabled: {
-    backgroundColor: '#666',
-    opacity: 0.7,
-  },
-  aiTagButtonText: {
-    fontSize: 14,
-    color: '#FFF',
-    fontWeight: '600',
-    marginLeft: 6,
-  },
+  
   
   // 情報カード
   infoCard: {

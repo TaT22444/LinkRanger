@@ -96,7 +96,7 @@ export interface Link {
   };
   
   // AI処理状態
-  aiProcessed?: boolean; // AddLinkModalでAI処理済みかどうか
+  
   
   // エラー情報
   error?: {

@@ -35,6 +35,7 @@ import { SearchModal } from '../components/SearchModal';
 import { LinkDetailScreen } from './LinkDetailScreen';
 import { Link, UserPlan, LinkViewMode, Tag, Folder } from '../types';
 import { linkService } from '../services/firestoreService';
+
 import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
 import { detectPlatform, generatePlatformTagName } from '../utils/platformDetector';
@@ -158,13 +159,7 @@ export const HomeScreen: React.FC = () => {
       Alert.alert('✅ 保存完了', 'リンクを保存しました。AIが追加のタグを生成します...');
       
       if (newLinkId) {
-        const skipAutoAI = linkData.aiProcessed || false;
         
-        if (skipAutoAI) {
-          console.log('🤖 [AI Tagging Home] Skipping auto AI processing for linkId:', newLinkId);
-          await updateLink(newLinkId, { status: 'completed' });
-          return;
-        }
         
         setTimeout(async () => {
           try {

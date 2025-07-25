@@ -146,13 +146,7 @@ export const generateAITags = onCall({ timeoutSeconds: 60, memory: "512MiB" }, a
   return await generateTagsLogic(userId, userPlan, url, title, description);
 });
 
-export const generateEnhancedAITags = onCall({ timeoutSeconds: 60, memory: "1GiB" }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
-  const { metadata, userId, userPlan = "free" } = request.data;
-  if (!metadata || !userId) throw new HttpsError("invalid-argument", "メタデータとユーザーIDが必要です");
 
-  return await generateTagsLogic(userId, userPlan, metadata.url, metadata.title, metadata.description);
-});
 
 
 // ===================================================================
@@ -172,7 +166,7 @@ async function fetchPageContent(url: string) {
 
   $("script, style, nav, header, footer, aside").remove();
   const mainContent = $("main, article, .content, .post").first();
-  const fullContent = (mainContent.length ? mainContent.text() : $("body").text()).trim().slice(0, 2000);
+  const fullContent = (mainContent.length ? mainContent.text() : $("body").text()).trim().slice(0, 8000);
 
   return { fullContent, pageTitle, pageDescription, keywords };
 }
