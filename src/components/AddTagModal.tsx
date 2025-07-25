@@ -76,13 +76,13 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
   const [newTagName, setNewTagName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isAIAnalyzing, setIsAIAnalyzing] = useState(false);
-  const [localSelectedTags, setLocalSelectedTags] = useState<string[]>([]);
   const [undoState, setUndoState] = useState<UndoState>({ visible: false, tagName: '' });
   const [deletedTags, setDeletedTags] = useState<Set<string>>(new Set());
   const [recommendedTags, setRecommendedTags] = useState<string[]>([]);
   const [isVisible, setIsVisible] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [selectedRecommendedTags, setSelectedRecommendedTags] = useState<string[]>([]);
+  const [pendingTags, setPendingTags] = useState<string[]>([]); // 作成予定のタグ
+  const [createdTags, setCreatedTags] = useState<string[]>([]); // 作成済みタグの管理
   
   // アニメーション用の値
   const translateY = useRef(new Animated.Value(screenHeight)).current;
@@ -120,8 +120,9 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       console.log('availableTags length:', availableTags?.length || 0);
       console.log('selectedTags:', selectedTags);
       
-      setLocalSelectedTags(selectedTags || []);
-      setSelectedRecommendedTags([]);
+      // setLocalSelectedTags(selectedTags || []); // この行は削除
+      setCreatedTags([]);
+      setPendingTags([]);
       setNewTagName('');
       setDeletedTags(new Set());
       setUndoState({ visible: false, tagName: '' });
@@ -207,20 +208,12 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
   const onHandlerStateChange = (event: any) => {
     const { state, translationY, velocityY } = event.nativeEvent;
     
-    if (state === State.BEGAN) {
-      // スクロールビューのスクロールを無効化
-      if (scrollViewRef.current) {
-        scrollViewRef.current.setNativeProps({ scrollEnabled: false });
-      }
-    } else if (state === State.END) {
+    if (state === State.END) {
+      gestureTranslateY.flattenOffset(); // アニメーションのオフセットをリセット
+
       const shouldExpand = translationY < -MODAL_HEIGHTS.THRESHOLD || velocityY < -1000;
       const shouldCollapse = translationY > MODAL_HEIGHTS.THRESHOLD || velocityY > 1000;
       const shouldClose = translationY > MODAL_HEIGHTS.COLLAPSED * 0.5 && velocityY > 500;
-
-      // スクロールビューのスクロールを再有効化
-      if (scrollViewRef.current) {
-        scrollViewRef.current.setNativeProps({ scrollEnabled: true });
-      }
 
       if (shouldClose) {
         // モーダルを閉じる
@@ -252,32 +245,19 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
           useNativeDriver: true,
         }).start();
       }
+    } else if (state === State.BEGAN) {
+      // ジェスチャー開始時の処理
+      gestureTranslateY.setOffset(0);
+      gestureTranslateY.setValue(0);
     }
   };
 
-  const handleTagToggle = (tagName: string) => {
-    const newSelection = localSelectedTags.includes(tagName)
-      ? localSelectedTags.filter(tag => tag !== tagName)
-      : [...localSelectedTags, tagName];
-    setLocalSelectedTags(newSelection);
-  };
-
-  const handleExistingTagToggle = (tagId: string) => {
-    const newSelection = localSelectedTags.includes(tagId)
-      ? localSelectedTags.filter(id => id !== tagId)
-      : [...localSelectedTags, tagId];
-    setLocalSelectedTags(newSelection);
-  };
-
-  const handleRecommendedTagToggle = (tagName: string) => {
-    const newSelection = selectedRecommendedTags.includes(tagName)
-      ? selectedRecommendedTags.filter(tag => tag !== tagName)
-      : [...selectedRecommendedTags, tagName];
-    setSelectedRecommendedTags(newSelection);
-    
-    // タグが選択されたら滑らかに展開
-    if (newSelection.length > 0 && !isExpanded) {
-      setIsExpanded(true);
+  const handleRecommendedTagCreate = async (tagName: string) => {
+    // 既に作成予定リストにある場合は削除、ない場合は追加
+    if (pendingTags.includes(tagName)) {
+      setPendingTags(prev => prev.filter(tag => tag !== tagName));
+    } else {
+      setPendingTags(prev => [...prev, tagName]);
     }
   };
 
@@ -286,52 +266,49 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       return;
     }
 
-    if (availableTags && availableTags.some(tag => tag.name.toLowerCase() === newTagName.toLowerCase())) {
+    const trimmedName = newTagName.trim();
+
+    // 既存のタグと重複チェック
+    if (availableTags && availableTags.some(tag => tag.name.toLowerCase() === trimmedName.toLowerCase())) {
       Alert.alert('エラー', 'このタグは既に存在します');
+      return;
+    }
+
+    // 作成予定リストと重複チェック
+    if (pendingTags.some(tag => tag.toLowerCase() === trimmedName.toLowerCase())) {
+      Alert.alert('エラー', 'このタグは既に作成予定リストにあります');
+      return;
+    }
+
+    // 作成予定リストに追加
+    setPendingTags(prev => [...prev, trimmedName]);
+    setNewTagName('');
+  };
+
+  const handleCreateAllTags = async () => {
+    if (pendingTags.length === 0) {
       return;
     }
 
     setIsCreating(true);
     try {
-      const tagId = await onCreateTag(newTagName.trim(), 'manual');
-      console.log('AddTagModal: created tag with ID:', tagId);
-      setNewTagName('');
-      // 新しく作成したタグを選択状態にする
-      const newTags = [...localSelectedTags, tagId];
-      setLocalSelectedTags(newTags);
-      // 選択したタグを保存して閉じる
-      onTagsChange(newTags);
+      const newTagIds: string[] = [];
+      
+      // 作成予定のタグを順次作成
+      for (const tagName of pendingTags) {
+        const tagId = await onCreateTag(tagName, 'manual');
+        console.log('AddTagModal: created tag with ID:', tagId);
+        newTagIds.push(tagId);
+      }
+      
+      // 作成したタグを適用して閉じる
+      onTagsChange(newTagIds);
       onClose();
     } catch (error) {
-      console.error('AddTagModal: tag creation error:', error);
+      console.error('AddTagModal: bulk tag creation error:', error);
       Alert.alert('エラー', 'タグの作成に失敗しました');
     } finally {
       setIsCreating(false);
-    }
-  };
-
-  const handleAddSelectedTags = async () => {
-    if (selectedRecommendedTags.length === 0) {
-      return;
-    }
-
-    try {
-      // 選択されたおすすめタグを作成し、IDを取得
-      const tagIds: string[] = [];
-      for (const tagName of selectedRecommendedTags) {
-        const tagId = await onCreateTag(tagName, 'recommended');
-        console.log('AddTagModal: created recommended tag with ID:', tagId);
-        tagIds.push(tagId);
-      }
-      
-      // 選択されたおすすめタグを追加
-      const newTags = [...localSelectedTags, ...tagIds];
-      setLocalSelectedTags(newTags);
-      onTagsChange(newTags);
-      onClose();
-    } catch (error) {
-      console.error('AddTagModal: recommended tag creation error:', error);
-      Alert.alert('エラー', 'タグの作成に失敗しました');
     }
   };
 
@@ -348,24 +325,15 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
     }
   };
 
-  const handleTagSelect = (tagName: string) => {
-    const newSelection = localSelectedTags.includes(tagName)
-      ? localSelectedTags.filter(tag => tag !== tagName)
-      : [...localSelectedTags, tagName];
-    setLocalSelectedTags(newSelection);
-    // 選択したタグを保存して閉じる
-    onTagsChange(newSelection);
-    onClose();
-  };
-
   const handleClose = () => {
     // Undoタイマーをクリア
     if (undoState.timeoutId) {
       clearTimeout(undoState.timeoutId);
     }
     
-    setLocalSelectedTags(selectedTags || []);
-    setSelectedRecommendedTags([]);
+    // setLocalSelectedTags(selectedTags || []); // この行は削除
+    setCreatedTags([]);
+    setPendingTags([]);
     setNewTagName('');
     setDeletedTags(new Set());
     setUndoState({ visible: false, tagName: '' });
@@ -373,8 +341,14 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
   };
 
   const handleBackdropPress = () => {
-    onTagsChange(localSelectedTags);
+    onTagsChange(createdTags);
     handleClose();
+  };
+
+  const handleInputFocus = () => {
+    if (!isExpanded) {
+      setIsExpanded(true);
+    }
   };
 
   // デバッグ用（visibleの時のみ、かつ初回レンダリング時のみ）
@@ -394,7 +368,7 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         {/* 背景：フェードイン */}
         <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
@@ -413,214 +387,164 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
               transform: [
                 { translateY: translateY },
                 { translateY: modalTranslateY },
-                { translateY: gestureTranslateY }
               ]
             }
           ]}
         >
-          {/* ドラッグハンドル - ジェスチャー専用エリア */}
+          {/* ★★★ ジェスチャーハンドラをモーダル全体に適用 ★★★ */}
           <PanGestureHandler
             ref={panGestureRef}
             onGestureEvent={onGestureEvent}
             onHandlerStateChange={onHandlerStateChange}
-            activeOffsetY={[-10, 10]}
-            failOffsetX={[-50, 50]}
-            shouldCancelWhenOutside={false}
-            simultaneousHandlers={[createSectionGestureRef, dividerGestureRef]}
+            activeOffsetY={[-20, 20]} // 判定を少し緩やかに
+            failOffsetX={[-100, 100]}
           >
-            <Animated.View style={styles.dragHandle}>
-              <View style={styles.dragIndicator} />
-            </Animated.View>
-          </PanGestureHandler>
+            <Animated.View style={[{flex: 1}, { transform: [{ translateY: gestureTranslateY }] }]}>
+              {/* ドラッグハンドル */}
+              <View style={styles.dragHandle}>
+                <View style={styles.dragIndicator} />
+              </View>
 
-                    {/* タグ作成セクション */}
-          <PanGestureHandler
-            ref={createSectionGestureRef}
-            onGestureEvent={onGestureEvent}
-            onHandlerStateChange={onHandlerStateChange}
-            activeOffsetY={[-10, 10]}
-            failOffsetX={[-50, 50]}
-            shouldCancelWhenOutside={false}
-            simultaneousHandlers={[panGestureRef, dividerGestureRef]}
-          >
-            <Animated.View style={styles.createSection}>
-              <TextInput
-                style={styles.createInput}
-                placeholder="新しいタグを作成..."
-                placeholderTextColor="#666"
-                value={newTagName}
-                onChangeText={setNewTagName}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="default"
-                returnKeyType="done"
-                onSubmitEditing={handleCreateTag}
-              />
-              <TouchableOpacity
-                style={styles.createTextButton}
-                onPress={handleCreateTag}
-                disabled={!newTagName.trim() || isCreating}
-              >
-                {isCreating ? (
-                  <ActivityIndicator size="small" color="#8A2BE2" />
-                ) : (
-                  <Text style={[
-                    styles.createTextButtonText,
-                    (!newTagName.trim() || isCreating) && styles.createTextButtonTextDisabled
-                  ]}>
-                    作成
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
-          </PanGestureHandler>
-
-            {/* 区切り線 */}
-            <PanGestureHandler
-              ref={dividerGestureRef}
-              onGestureEvent={onGestureEvent}
-              onHandlerStateChange={onHandlerStateChange}
-              activeOffsetY={[-10, 10]}
-              failOffsetX={[-50, 50]}
-              shouldCancelWhenOutside={false}
-              simultaneousHandlers={[panGestureRef, createSectionGestureRef]}
-            >
-              <Animated.View style={styles.dividerContainer}>
-                <View style={styles.divider} />
-              </Animated.View>
-            </PanGestureHandler>
-
-            {/* おすすめタグセクション */}
-            <View style={styles.recommendedSection}>
-              {/* タグリスト */}
-              <ScrollView 
-                ref={scrollViewRef}
-                style={styles.scrollContainer}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={true}
-                keyboardShouldPersistTaps="handled"
-                bounces={true}
-                scrollEventThrottle={16}
-                nestedScrollEnabled={true}
-                directionalLockEnabled={true}
-              >
-                {/* おすすめタグのヘッダー */}
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>おすすめのタグ ({recommendedTags.length})</Text>
-                  {onAITagSuggestion && (
+              {/* --- コンテンツここから --- */}
+              
+              {/* タグ作成セクション */}
+              <View style={styles.createSection}>
+                <View style={styles.createInputContainer}>
+                  <Feather name="hash" size={16} color="#8A2BE2" style={styles.hashIcon} />
+                  <TextInput
+                    style={styles.createInput}
+                    placeholder="新しいタグ名を入力..."
+                    placeholderTextColor="#666"
+                    value={newTagName}
+                    onChangeText={setNewTagName}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="default"
+                    returnKeyType="done"
+                    onSubmitEditing={handleCreateTag}
+                    onFocus={handleInputFocus} // ★ フォーカス時のハンドラを追加
+                  />
+                  {newTagName.trim() ? (
                     <TouchableOpacity
-                      style={styles.aiButton}
-                      onPress={handleAITagSuggestion}
-                      disabled={isAIAnalyzing}
+                      style={styles.addToPendingButton}
+                      onPress={handleCreateTag}
+                      disabled={isCreating}
                     >
-                      {isAIAnalyzing ? (
-                        <ActivityIndicator size="small" color="#8A2BE2" />
-                      ) : (
-                        <>
-                          <Feather name="zap" size={12} color="#8A2BE2" />
-                          <Text style={styles.aiButtonText}>AI提案</Text>
-                        </>
-                      )}
+                      <Text style={styles.addToPendingButtonText}>追加</Text>
                     </TouchableOpacity>
+                  ) : (
+                    <View style={styles.addButtonPlaceholder} />
                   )}
                 </View>
-                {/* おすすめタグ */}
-                {recommendedTags.length > 0 ? (
-                  <View style={styles.tagsGrid}>
-                    {recommendedTags.map((tagName, index) => {
-                      const isSelected = selectedRecommendedTags.includes(tagName);
-                      return (
-                        <TouchableOpacity
-                          key={`recommended-${tagName}-${index}`}
-                          style={[
-                            styles.tagChip,
-                            isSelected && styles.tagChipSelected,
-                          ]}
-                          onPress={() => handleRecommendedTagToggle(tagName)}
-                        >
-                          <Text
-                            style={[
-                              styles.tagChipText,
-                              isSelected && styles.tagChipTextSelected,
-                            ]}
-                          >
-                            #{tagName}
-                          </Text>
-                          {isSelected && (
-                            <Feather name="check" size={12} color="#00FFFF" style={styles.checkIcon} />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <View style={styles.emptyState}>
-                    <Feather name="star" size={24} color="#666" />
-                    <Text style={styles.emptyText}>すべてのタグを使用済み</Text>
-                    <Text style={styles.emptySubText}>上のフィールドから新しいタグを作成してください</Text>
-                  </View>
-                )}
+              </View>
 
-                {/* 現在のタグセクション */}
-                {availableTags.length > 0 && (
-                  <>
-                    <View style={styles.currentTagsSectionHeader}>
-                      <Text style={styles.currentTagsSectionTitle}>
-                        現在のタグ ({availableTags.length})
+              {/* 作成予定タグリスト */}
+              {pendingTags.length > 0 && (
+                <View style={styles.pendingTagsSection}>
+                  <View style={styles.pendingSectionHeader}>
+                    <Text style={styles.pendingSectionTitle}>
+                      作成予定のタグ ({pendingTags.length})
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.clearPendingButton}
+                      onPress={() => setPendingTags([])}
+                    >
+                      <Text style={styles.clearPendingButtonText}>クリア</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.pendingTagsGrid}>
+                    {pendingTags.map((tagName, index) => (
+                      <View key={`pending-${tagName}-${index}`} style={styles.pendingTagChip}>
+                        <Text style={styles.pendingTagText}>#{tagName}</Text>
+                        <TouchableOpacity
+                          onPress={() => setPendingTags(prev => prev.filter(tag => tag !== tagName))}
+                          style={styles.removePendingButton}
+                        >
+                          <Feather name="x" size={12} color="#FF6B6B" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.createAllButton}
+                    onPress={handleCreateAllTags}
+                    disabled={isCreating}
+                  >
+                    {isCreating ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Text style={styles.createAllButtonText}>
+                        タグを作成 ({pendingTags.length})
                       </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* 区切り線 */}
+              <View style={styles.dividerContainer}>
+                <View style={styles.divider} />
+              </View>
+
+              {/* おすすめタグセクション (ScrollViewをViewに変更) */}
+              <View style={styles.recommendedSection}>
+                  {/* おすすめタグのヘッダー */}
+                  <View style={styles.sectionHeader}>
+                    <View style={styles.sectionTitleContainer}>
+                      <Text style={styles.sectionTitle}>おすすめタグ</Text>
+                      <View style={styles.tagCount}>
+                        <Text style={styles.tagCountText}>{recommendedTags.length}</Text>
+                      </View>
                     </View>
+                  </View>
+                  {/* おすすめタグ */}
+                  {recommendedTags.length > 0 ? (
                     <View style={styles.tagsGrid}>
-                      {availableTags
-                        .filter(tag => !deletedTags.has(tag.name))
-                        .map((tag) => {
-                          const isSelected = localSelectedTags.includes(tag.id);
-                          return (
-                            <TouchableOpacity
-                              key={`existing-${tag.id}`}
+                      {recommendedTags.map((tagName, index) => {
+                        const isInPending = pendingTags.includes(tagName);
+                        return (
+                          <TouchableOpacity
+                            key={`recommended-${tagName}-${index}`}
+                            style={[
+                              styles.recommendedTagButton,
+                              isInPending && styles.recommendedTagButtonSelected,
+                            ]}
+                            onPress={() => handleRecommendedTagCreate(tagName)}
+                            disabled={isCreating}
+                          >
+                            <Feather 
+                              name={isInPending ? "check" : "plus"} 
+                              size={14} 
+                              color={isInPending ? "#8A2BE2" : "#666"} 
+                              style={styles.recommendedTagIcon}
+                            />
+                            <Text
                               style={[
-                                styles.existingTagChip,
-                                isSelected && styles.existingTagChipSelected,
+                                styles.recommendedTagText,
+                                isInPending && styles.recommendedTagTextSelected,
                               ]}
-                                                             onPress={() => handleExistingTagToggle(tag.id)}
                             >
-                              <Text
-                                style={[
-                                  styles.existingTagChipText,
-                                  isSelected && styles.existingTagChipTextSelected,
-                                ]}
-                              >
-                                #{tag.name}
-                              </Text>
-                              {isSelected && (
-                                <Feather name="check" size={12} color="#8A2BE2" style={styles.checkIcon} />
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
+                              #{tagName}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  </>
-                )}
-              </ScrollView>
-            </View>
-          </Animated.View>
-        
-        {/* 選択されたタグがある場合の追加ボタン（固定位置） */}
-        {selectedRecommendedTags.length > 0 && (
-          <View style={styles.fixedAddButtonContainer}>
-            <TouchableOpacity
-              style={styles.fixedAddButton}
-              onPress={handleAddSelectedTags}
-            >
-              <Text style={styles.fixedAddButtonText}>
-                選択したタグを作成 ({selectedRecommendedTags.length})
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-};
+                  ) : (
+                    <View style={styles.emptyState}>
+                      <Feather name="star" size={24} color="#666" />
+                      <Text style={styles.emptyText}>おすすめタグを生成中...</Text>
+                      <Text style={styles.emptySubText}>上のフィールドから新しいタグを作成してください</Text>
+                    </View>
+                  )}
+              </View>
+            </Animated.View>
+          </PanGestureHandler>
+        </Animated.View>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  };
 
 const styles = StyleSheet.create({
   keyboardAvoidingView: {
@@ -661,36 +585,112 @@ const styles = StyleSheet.create({
   createSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     paddingHorizontal: 20,
-    marginBottom: 8,
+    marginBottom: 16, // 余白を広げる
+  },
+  createInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12, // 角を少し丸くする
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingHorizontal: 12,
+    minHeight: 48, // ★ 固定の高さを設定
+  },
+  hashIcon: {
+    marginRight: 8,
   },
   createInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 16, // フォントサイズを少し大きく
     color: '#FFF',
+    backgroundColor: 'transparent',
+    paddingVertical: 0,
+  },
+  addToPendingButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#8A2BE2',
+    borderRadius: 8,
+    marginLeft: 8, // 入力欄との間に余白を追加
+  },
+  addToPendingButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  addButtonPlaceholder: {
+    width: 58, // ボタンのおおよその幅に合わせる (padding + text)
+    marginLeft: 8,
+  },
+  pendingTagsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  pendingSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pendingSectionTitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#888',
+  },
+  clearPendingButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
+    borderRadius: 8,
+  },
+  clearPendingButtonText: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '500',
+  },
+  pendingTagsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  pendingTagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#2A2A2A',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#404040',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderColor: '#333',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  createTextButton: {
+  pendingTagText: {
+    fontSize: 13,
+    color: '#CCC',
+    fontWeight: '400',
+  },
+  removePendingButton: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  createAllButton: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    justifyContent: 'center',
+    paddingVertical: 12,
     alignItems: 'center',
+    backgroundColor: '#8A2BE2',
+    borderRadius: 10,
   },
-  createTextButtonText: {
-    fontSize: 16,
-    color: '#8A2BE2',
+  createAllButtonText: {
+    color: '#FFF',
+    fontSize: 15,
     fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  createTextButtonTextDisabled: {
-    color: '#666',
-    textDecorationLine: 'none',
   },
   dividerContainer: {
     paddingVertical: 10, // タッチエリアを広くする
@@ -705,20 +705,37 @@ const styles = StyleSheet.create({
   },
   recommendedSection: {
     flex: 1,
-    paddingHorizontal: 0, // ScrollView内でパディングを管理するため0に変更
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 20, // ScrollView内なので左右のパディングを追加
-    marginTop: 0, // 上部のマージンをリセット
+    marginBottom: 10,
+    paddingHorizontal: 20,
+    marginTop: 0,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#AAA',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#888',
+  },
+  tagCount: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  tagCountText: {
+    fontSize: 11,
+    color: '#888',
+    fontWeight: '500',
   },
   aiButton: {
     flexDirection: 'row',
@@ -728,9 +745,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   aiButtonText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#8A2BE2',
-    fontWeight: '600',
+    fontWeight: '500',
   },
   scrollContainer: {
     flex: 1,
@@ -743,12 +760,29 @@ const styles = StyleSheet.create({
   tagsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    paddingBottom: 20,
-    paddingHorizontal: 20, // ScrollView内なので適切なパディング
-    marginHorizontal: 4, // 左右に少し余白
+    gap: 6,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    marginHorizontal: 0,
   },
-  tagChip: {
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#888',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  emptySubText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  recommendedTagButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
@@ -757,103 +791,23 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#333',
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  tagChipSelected: {
-    backgroundColor: '#00FFFF20',
-    borderColor: '#00FFFF',
-  },
-  tagChipText: {
-    fontSize: 14,
-    color: '#FFF',
-  },
-  tagChipTextSelected: {
-    color: '#00FFFF',
-    fontWeight: '600',
-  },
-  checkIcon: {
-    marginLeft: 6,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 20,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptySubText: {
-    fontSize: 14,
-    color: '#555',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  fixedAddButtonContainer: {
-    position: 'absolute',
-    bottom: 50,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 1000,
-    elevation: 10,
-    pointerEvents: 'box-none',
-  },
-  fixedAddButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    height: 44,
-    borderRadius: 16,
-    backgroundColor: '#1A1A1A',
-    borderWidth: 1,
-    borderColor: '#666',
-    justifyContent: 'center',
-    alignItems: 'center',
-    pointerEvents: 'auto',
-  },
-  fixedAddButtonText: {
-    fontSize: 14,
-    color: '#FFF',
-    fontWeight: '500',
-  },
-
-  // 現在のタグセクション
-  currentTagsSectionHeader: {
-    marginTop: 24,
-    marginBottom: 16,
-    paddingHorizontal: 20, // ScrollView内なので左右のパディングを追加
-  },
-  currentTagsSectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#AAA',
-  },
-  
-  // 既存タグ用のスタイル（おすすめタグと区別）
-  existingTagChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#333333', // 既存タグは少し明るい背景
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'transparent', // 通常時はボーダーなし
-    marginBottom: 8,
-  },
-  existingTagChipSelected: {
-    backgroundColor: '#8A2BE220', // パープル系の背景
+  recommendedTagButtonSelected: {
+    backgroundColor: '#8A2BE220',
     borderColor: '#8A2BE2',
   },
-  existingTagChipText: {
-    fontSize: 14,
-    color: '#FFF', // 白いテキスト
+  recommendedTagIcon: {
+    marginRight: 6,
   },
-  existingTagChipTextSelected: {
-    color: '#8A2BE2', // パープル系のテキスト
-    fontWeight: '600',
+  recommendedTagText: {
+    fontSize: 13,
+    color: '#CCC',
+    fontWeight: '400',
+  },
+  recommendedTagTextSelected: {
+    color: '#8A2BE2',
+    fontWeight: '500',
   },
 
 }); 

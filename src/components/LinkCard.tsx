@@ -13,11 +13,11 @@ import { Link, Tag } from '../types';
 
 interface LinkCardProps {
   link: Link;
-  onPress?: () => void;
-  onDelete?: () => void;
-  onToggleBookmark?: () => void;
-  onTogglePin?: () => void;
-  tags?: Tag[]; // タグ情報を追加
+  tags: Tag[];
+  onPress: () => void;
+  onToggleBookmark: () => void;
+  onDelete: () => void;
+  onMarkAsRead?: () => void;
 }
 
 export const LinkCard: React.FC<LinkCardProps> = ({
@@ -25,14 +25,18 @@ export const LinkCard: React.FC<LinkCardProps> = ({
   onPress,
   onDelete,
   onToggleBookmark,
-  onTogglePin,
   tags = [],
+  onMarkAsRead,
 }) => {
   const handleOpenExternalLink = async (e: any) => {
     e.stopPropagation(); // カードのタップイベントを阻止
     try {
       const supported = await Linking.canOpenURL(link.url);
       if (supported) {
+        // 外部リンクを開く前に既読マーク
+        if (onMarkAsRead && !link.isRead) {
+          onMarkAsRead();
+        }
         await Linking.openURL(link.url);
       } else {
         Alert.alert('エラー', 'このリンクを開くことができません');
@@ -58,6 +62,31 @@ export const LinkCard: React.FC<LinkCardProps> = ({
       return url;
     }
   };
+
+  const getTimeUntilExpiry = () => {
+    if (link.isRead) return null; // 既読の場合は表示しない
+    
+    const now = new Date();
+    const expiresAt = new Date(link.expiresAt);
+    const timeDiff = expiresAt.getTime() - now.getTime();
+    
+    if (timeDiff <= 0) return '期限切れ';
+    
+    const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (days > 0) {
+      return `あと${days}日`;
+    } else if (hours > 0) {
+      return `あと${hours}時間`;
+    } else {
+      const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+      return `あと${minutes}分`;
+    }
+  };
+
+  const expiryText = getTimeUntilExpiry();
+  const isNearExpiry = expiryText && (expiryText.includes('時間') || expiryText.includes('分'));
 
   return (
     <TouchableOpacity
@@ -88,7 +117,7 @@ export const LinkCard: React.FC<LinkCardProps> = ({
           </Text>
 
           {/* タグ表示（最大2個） */}
-          {link.tagIds && link.tagIds.length > 0 && (
+          {link.tagIds && Array.isArray(link.tagIds) && link.tagIds.length > 0 && (
             <View style={styles.tagsContainer}>
               {link.tagIds.slice(0, 2).map((tagId, index) => {
                 // タグIDからタグ名を取得
@@ -115,23 +144,7 @@ export const LinkCard: React.FC<LinkCardProps> = ({
           {/* アクションボタン列 */}
           <View style={styles.actionsRow}>
             {/* ピン留めボタン */}
-            {onTogglePin && (
-              <TouchableOpacity
-                style={[styles.actionButton, link.isPinned && styles.pinnedButton]}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onTogglePin();
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Feather 
-                  name="bookmark" 
-                  size={14} 
-                  color={link.isPinned ? '#FFD700' : '#666'} 
-                />
-              </TouchableOpacity>
-            )}
-            
+            {/* ピン留めボタン */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={handleOpenExternalLink}
@@ -144,6 +157,17 @@ export const LinkCard: React.FC<LinkCardProps> = ({
           <Text style={styles.date}>
             {formatDate(link.createdAt)}
           </Text>
+          
+          {/* 期限切れまでの時間表示 */}
+          {expiryText && (
+            <Text style={[
+              styles.expiryText,
+              isNearExpiry && styles.expiryTextUrgent,
+              link.isRead && styles.expiryTextRead
+            ]}>
+              {expiryText}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -156,8 +180,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#323232',
     borderRadius: 8,
-    marginBottom: 8,
-    marginHorizontal: 16,
   },
   content: {
     flexDirection: 'row',
@@ -193,23 +215,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tag: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#666',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginRight: 4,
+    marginRight: 8,
   },
   tagText: {
     fontSize: 10,
-    color: '#AAA',
+    color: '#666',
     fontWeight: '500',
   },
   moreTagsText: {
     fontSize: 10,
-    color: '#AAA',
-    marginLeft: 2,
+    color: '#666',
+    marginLeft: 4,
+    fontWeight: '500',
   },
   rightSection: {
     alignItems: 'center',
@@ -226,14 +243,25 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   actionButton: {
-    backgroundColor: '#3A3A3A',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 8,
   },
-  pinnedButton: {
-    backgroundColor: '#4A4A00',
+  expiryText: {
+    fontSize: 9,
+    color: '#666',
+    marginTop: 4,
+  },
+  expiryTextUrgent: {
+    color: '#FF0000',
+    fontWeight: 'bold',
+  },
+  expiryTextRead: {
+    textDecorationLine: 'line-through',
+    color: '#666',
   },
 }); 

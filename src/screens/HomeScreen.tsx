@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,25 +12,32 @@ import {
   ScrollView,
   Linking,
   Animated,
+  TextInput,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
+import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { useLinks, useTags } from '../hooks/useFirestore';
 import { LinkCard } from '../components/LinkCard';
-import { PinnedLinkCard } from '../components/PinnedLinkCard';
 import { AddLinkModal } from '../components/AddLinkModal';
 import { FloatingActionButton } from '../components/FloatingActionButton';
 import { TagFilter } from '../components/TagFilter';
+import { ViewModeSelector } from '../components/ViewModeSelector';
+import { FolderCard } from '../components/FolderCard';
+import { TagGroupCard } from '../components/TagGroupCard';
 
 import { AddTagModal } from '../components/AddTagModal';
+import { SearchModal } from '../components/SearchModal';
 import { LinkDetailScreen } from './LinkDetailScreen';
-import { Link, UserPlan } from '../types';
+import { Link, UserPlan, LinkViewMode, Tag, Folder } from '../types';
 import { linkService } from '../services/firestoreService';
 import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
-import { AIUsageDashboard } from '../components/AIUsageDashboard';
+import { detectPlatform, generatePlatformTagName } from '../utils/platformDetector';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -38,52 +45,44 @@ export const HomeScreen: React.FC = () => {
   const { links, loading, error, createLink, updateLink, deleteLink } = useLinks(user?.uid || null);
   const { tags: userTags, createOrGetTag, deleteTag: deleteTagById, generateRecommendedTags } = useTags(user?.uid || null);
   
-  // デバッグログ
-  console.log('HomeScreen - userId:', user?.uid);
-  console.log('HomeScreen - userTags:', userTags);
-  console.log('HomeScreen - userTags.length:', userTags.length);
-  console.log('HomeScreen - links sample:', links.slice(0, 2).map(link => ({ 
-    id: link.id, 
-    title: link.title, 
-    tagIds: link.tagIds
-  })));
-  const [pinnedLinks, setPinnedLinks] = useState<Link[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAddTagModal, setShowAddTagModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showAIUsageDashboard, setShowAIUsageDashboard] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const [selectedLink, setSelectedLink] = useState<Link | null>(null);
   
-  // スクロール制御用の状態
-  const [isPinnedVisible, setIsPinnedVisible] = useState(true);
-  const scrollY = useRef(0);
-  const pinnedAnimatedValue = useRef(new Animated.Value(1)).current;
+  // インライン検索用の状態
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
+
+  // 表示モード関連の状態
+  const [viewMode, setViewMode] = useState<LinkViewMode>('list');
+  const [expandedTagIds, setExpandedTagIds] = useState<Set<string>>(new Set());
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
+
+  // スワイプジェスチャー用の状態
+  const swipeGestureRef = useRef<PanGestureHandler>(null);
+  const [isSwipeEnabled, setIsSwipeEnabled] = useState(true);
+  const swipeTranslateX = useRef(new Animated.Value(0)).current;
+  const lastScrollTime = useRef(0);
+  const [isSwipeActive, setIsSwipeActive] = useState(false);
+  const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
+
+  // Animated Header
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerTranslateY = useRef(new Animated.Value(0)).current;
+  const lastScrollY = useRef(0);
+  const isAnimating = useRef(false); // アニメーション実行中フラグ
+  const [staticHeaderHeight, setStaticHeaderHeight] = useState(0);
+  const [dynamicHeaderHeight, setDynamicHeaderHeight] = useState(0);
+
+  const listPaddingTop = isSearchMode ? dynamicHeaderHeight : 24;
 
   // ダミーのユーザープラン（テスト用）
   const userPlan: UserPlan = user?.email === 'test@02.com' ? 'pro' : 'free';
-
-  // ピン留めリンクを取得
-  useEffect(() => {
-    const fetchPinnedLinks = async () => {
-      if (user?.uid) {
-        try {
-          const pinned = await linkService.getPinnedLinks(user.uid);
-          setPinnedLinks(pinned);
-        } catch (error: any) {
-          console.error('Failed to fetch pinned links:', error);
-          // インデックスエラーの場合はローカル状態を保持（空にしない）
-          if (error?.code === 'failed-precondition') {
-            console.log('Index not ready, keeping current pinned links state');
-            // ローカル状態をそのまま維持
-          }
-        }
-      }
-    };
-
-    fetchPinnedLinks();
-  }, [user?.uid]); // linksの依存を除去してピン留め操作時の競合を回避
 
   const handleLogout = async () => {
     try {
@@ -100,72 +99,89 @@ export const HomeScreen: React.FC = () => {
   const handleAddLink = async (linkData: Partial<Link>) => {
     if (!user?.uid) return;
     
-    // プロプランユーザーは自動AI要約が有効
-    const shouldAutoAnalyze = userPlan !== 'free';
+    if (linkData.url) {
+      try {
+        const existingLink = await linkService.findExistingLinkByUrl(user.uid, linkData.url);
+        if (existingLink) {
+          if (existingLink.isExpired) {
+            await linkService.reviveExpiredLink(existingLink.id);
+            Alert.alert('復活しました', '以前保存したリンクが見つかりました。新しい期限で復活させました。');
+            return;
+          } else {
+            Alert.alert('すでに保存済み', 'このリンクはすでに保存されています。');
+            return;
+          }
+        }
+      } catch (error) {
+        // エラーが発生しても新規作成は続行
+      }
+    }
     
-    // タグ名をタグIDに変換
-    let tagIds: string[] = [];
-    if (linkData.tagIds && linkData.tagIds.length > 0) {
-      console.log('Converting tag names to IDs:', linkData.tagIds);
-      for (const tagName of linkData.tagIds) {
-        // userTagsからタグ名に対応するIDを検索
-        const tag = userTags.find(t => t.name === tagName);
-        if (tag) {
-          tagIds.push(tag.id);
-          console.log(`Found tag ID for "${tagName}": ${tag.id}`);
+    const userSelectedTagIds: string[] = linkData.tagIds ? [...linkData.tagIds] : [];
+
+    let platformTagId: string | null = null;
+    if (linkData.url) {
+      const platformInfo = detectPlatform(linkData.url);
+      if (platformInfo) {
+        const platformTagName = generatePlatformTagName(platformInfo);
+        const existingPlatformTag = userTags.find(t => t.name.toLowerCase() === platformTagName.toLowerCase());
+        if (existingPlatformTag) {
+          platformTagId = existingPlatformTag.id;
         } else {
-          console.warn(`Tag not found for name: ${tagName}`);
+          try {
+            platformTagId = await handleAddTag(platformTagName, 'recommended');
+          } catch (error) {
+            // エラーハンドリング
+          }
         }
       }
+    }
+    
+    const initialTagIds: string[] = [...userSelectedTagIds];
+    if (platformTagId && !initialTagIds.includes(platformTagId)) {
+      initialTagIds.push(platformTagId);
     }
     
     const fullLinkData = {
       ...linkData,
       userId: user.uid,
-      status: 'processing', // AI処理中に設定
-      tagIds, // 変換されたタグIDを使用
+      status: 'processing',
+      tagIds: initialTagIds,
+      isBookmarked: false,
+      isArchived: false,
+      priority: 'medium',
     } as Omit<Link, 'id' | 'createdAt' | 'updatedAt'>;
-    
-    console.log('Creating link with tagIds:', tagIds);
     
     try {
       const newLinkId = await createLink(fullLinkData);
       
-      // 成功アラートを表示
-      Alert.alert('成功', 'リンクを保存しました。AIタグ生成を開始します...');
+      Alert.alert('✅ 保存完了', 'リンクを保存しました。AIが追加のタグを生成します...');
       
-      // リンク保存後、自動的にAIタグ生成を実行
       if (newLinkId) {
+        const skipAutoAI = linkData.aiProcessed || false;
+        
+        if (skipAutoAI) {
+          console.log('🤖 [AI Tagging Home] Skipping auto AI processing for linkId:', newLinkId);
+          await updateLink(newLinkId, { status: 'completed' });
+          return;
+        }
+        
         setTimeout(async () => {
           try {
-            // メタデータを取得
+            console.log(`🤖 [AI Tagging Home] Starting automatic AI processing for linkId: ${newLinkId}`);
+            
             let finalTitle = linkData.title || '';
             let finalDescription = linkData.description || '';
             
-            // メタデータが不足している場合は取得
-            if (!finalTitle || !finalDescription) {
-              try {
-                const metadata = await metadataService.fetchMetadata(linkData.url || '', user.uid);
-                finalTitle = finalTitle || metadata.title || linkData.url || '';
-                finalDescription = finalDescription || metadata.description || '';
-                
-                console.log('Fetched metadata:', { 
-                  title: finalTitle, 
-                  description: finalDescription?.slice(0, 100) + '...' 
-                });
-              } catch (metadataError) {
-                console.error('Failed to fetch metadata:', metadataError);
-                // メタデータ取得に失敗した場合はURLをタイトルとして使用
-                finalTitle = finalTitle || linkData.url || 'Untitled';
-              }
+            try {
+              const metadata = await metadataService.fetchMetadata(linkData.url || '', user.uid);
+              finalTitle = finalTitle || metadata.title || linkData.url || '';
+              finalDescription = finalDescription || metadata.description || '';
+            } catch (metadataError) {
+              finalTitle = finalTitle || linkData.url || '';
             }
 
-            // AIに渡すテキストを構築
-            const aiInputText = `${finalTitle}\n\n${finalDescription}`.trim();
-            
-            console.log('AI input text:', aiInputText.slice(0, 200) + '...');
-
-            // AIタグを生成
+            console.log(`🤖 [AI Tagging Home] Calling AI service for linkId: ${newLinkId}`);
             const aiResponse = await aiService.generateTags(
               finalTitle,
               finalDescription,
@@ -173,43 +189,33 @@ export const HomeScreen: React.FC = () => {
               user.uid,
               userPlan
             );
+            console.log(`🤖 [AI Tagging Home] AI response for linkId: ${newLinkId}`, { tags: aiResponse.tags, fromCache: aiResponse.fromCache });
 
-            console.log('AI tags generated:', aiResponse.tags);
-
-            // 生成されたタグを既存のタグと統合
-            const newTagIds: string[] = [...tagIds]; // 既存のタグIDをコピー
+            const finalTagIds: string[] = [...initialTagIds];
             
             for (const tagName of aiResponse.tags) {
-              // 既存のタグから検索（大文字小文字を無視、前後の空白を除去）
               const normalizedTagName = tagName.trim();
-              const existingTag = userTags.find(t => 
-                t.name.trim().toLowerCase() === normalizedTagName.toLowerCase()
-              );
+              const existingTag = userTags.find(t => t.name.trim().toLowerCase() === normalizedTagName.toLowerCase());
               
               if (existingTag) {
-                // 既存のタグがある場合、そのIDを使用（重複回避）
-                if (!newTagIds.includes(existingTag.id)) {
-                  newTagIds.push(existingTag.id);
-                  console.log(`Using existing tag: "${existingTag.name}" (ID: ${existingTag.id})`);
+                if (!finalTagIds.includes(existingTag.id)) {
+                  finalTagIds.push(existingTag.id);
                 }
               } else {
-                // 新しいタグの場合、作成
                 try {
                   const newTagId = await handleAddTag(normalizedTagName, 'ai');
-                  if (newTagId && !newTagIds.includes(newTagId)) {
-                    newTagIds.push(newTagId);
-                    console.log(`Created new tag: "${normalizedTagName}" (ID: ${newTagId})`);
+                  if (newTagId && !finalTagIds.includes(newTagId)) {
+                    finalTagIds.push(newTagId);
                   }
                 } catch (error) {
-                  console.error('Failed to create AI tag:', normalizedTagName, error);
+                  console.error(`🤖🔥 [AI Tagging Home] Failed to create new AI tag for linkId: ${newLinkId}`, { tagName: normalizedTagName, error });
                 }
               }
             }
 
-            // リンクを更新（AIタグ追加 + ステータス更新）
             const updateData: Partial<Link> = {
               status: 'completed',
-              tagIds: newTagIds,
+              tagIds: finalTagIds,
               aiAnalysis: {
                 sentiment: 'neutral',
                 category: 'General',
@@ -221,27 +227,46 @@ export const HomeScreen: React.FC = () => {
               },
             };
 
-            // summaryは条件付きで追加
-            if (shouldAutoAnalyze && finalDescription) {
-              updateData.summary = `AIが自動生成した要約：\n\n${finalDescription.slice(0, 200)}${finalDescription.length > 200 ? '...' : ''}`;
-            }
-
             await updateLink(newLinkId, updateData);
+            console.log(`🤖 [AI Tagging Home] Successfully updated link with AI tags. linkId: ${newLinkId}`, { finalTagIds });
 
-            // 成功通知
-            Alert.alert(
-              'AI処理完了',
-              `${aiResponse.tags.length}個のタグが自動生成されました。\n\n` +
-              `生成されたタグ: ${aiResponse.tags.join(', ')}\n\n` +
-              (aiResponse.fromCache ? 'キャッシュから取得' : '新規生成') +
-              (aiResponse.tokensUsed > 0 ? `\nトークン使用数: ${aiResponse.tokensUsed}` : ''),
-              [{ text: 'OK' }]
-            );
+            const userTagCount = userSelectedTagIds.length;
+            const platformTagCount = platformTagId ? 1 : 0;
+            const aiTagCount = finalTagIds.length - userTagCount - platformTagCount;
+            
+            let message = `🤖 AI分析が完了しました！
+
+`;
+            if (userTagCount > 0) {
+              message += `👤 ユーザー選択: ${userTagCount}個
+`;
+            }
+            if (platformTagCount > 0) {
+              message += `🌐 プラットフォーム: ${platformTagCount}個
+`;
+            }
+            if (aiTagCount > 0) {
+              message += `🤖 AI生成: ${aiTagCount}個
+`;
+            }
+            message += `
+📊 合計: ${finalTagIds.length}個のタグ
+
+`;
+            message += `🏷️ 生成されたタグ: ${aiResponse.tags.join(', ')}
+
+`;
+            
+            if (aiResponse.fromCache) {
+              message += '💾 キャッシュから取得';
+            } else {
+              message += `🔥 新規AI分析 (トークン: ${aiResponse.tokensUsed})`;
+            }
+            
+            Alert.alert('🎉 自動AI分析完了', message);
 
           } catch (error) {
-            console.error('Auto AI tag generation error:', error);
-            
-            // エラー時はステータスを更新
+            console.error(`🤖🔥 [AI Tagging Home] Auto AI processing failed for linkId: ${newLinkId}`, { error });
             await updateLink(newLinkId, {
               status: 'error',
               error: {
@@ -250,15 +275,11 @@ export const HomeScreen: React.FC = () => {
                 timestamp: new Date()
               }
             });
-
-            Alert.alert(
-              'AI処理エラー',
-              'AIタグの自動生成に失敗しましたが、リンクは正常に保存されました。',
-              [{ text: 'OK' }]
-            );
+            Alert.alert('⚠️ AI処理エラー', 'AIタグの自動生成に失敗しましたが、リンクとユーザー選択タグは正常に保存されました。');
           }
-        }, 1000); // 1秒後に実行
+        }, 1000);
       }
+      
     } catch (error) {
       Alert.alert('エラー', 'リンクの保存に失敗しました');
     }
@@ -295,51 +316,6 @@ export const HomeScreen: React.FC = () => {
     );
   };
 
-  const handleTogglePin = async (link: Link) => {
-    try {
-      const newPinnedState = !link.isPinned;
-      
-      // 楽観的にローカル状態を先に更新
-      if (newPinnedState) {
-        // ピン留め追加
-        setPinnedLinks(prev => {
-          const updated = [
-            { ...link, isPinned: true, pinnedAt: new Date() },
-            ...prev.filter(p => p.id !== link.id)
-          ];
-          return updated.slice(0, 10); // 最大10個
-        });
-      } else {
-        // ピン留め解除
-        setPinnedLinks(prev => prev.filter(p => p.id !== link.id));
-      }
-      
-      // Firestoreを更新
-      await linkService.togglePin(link.id, newPinnedState);
-      
-      console.log(`Pin toggled for ${link.title}: ${newPinnedState}`);
-    } catch (error) {
-      console.error('Pin toggle error:', error);
-      
-      // エラー時は元の状態に戻す
-      if (!link.isPinned) {
-        // ピン留め追加に失敗した場合は削除
-        setPinnedLinks(prev => prev.filter(p => p.id !== link.id));
-      } else {
-        // ピン留め解除に失敗した場合は再追加
-        setPinnedLinks(prev => {
-          const updated = [
-            { ...link, isPinned: true, pinnedAt: link.pinnedAt || new Date() },
-            ...prev.filter(p => p.id !== link.id)
-          ];
-          return updated.slice(0, 10);
-        });
-      }
-      
-      Alert.alert('エラー', 'ピン留めの更新に失敗しました');
-    }
-  };
-
   const handleOpenExternalLink = async (url: string) => {
     try {
       const supported = await Linking.canOpenURL(url);
@@ -356,50 +332,44 @@ export const HomeScreen: React.FC = () => {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      // リフレッシュ処理は useLinks フックが自動で行う
       await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (error) {
-      console.error('Refresh error:', error);
+      //
     } finally {
       setRefreshing(false);
     }
   };
 
-  // スクロール方向を検知してピン留めセクションの表示制御
-  const handleScroll = (event: any) => {
-    const currentScrollY = event.nativeEvent.contentOffset.y;
-    const scrollDiff = currentScrollY - scrollY.current;
+  const filteredLinks = useMemo(() => {
+    if (!links || !Array.isArray(links)) return [];
     
-    // スクロール量が少ない場合は無視（小さな揺れを防ぐ）
-    if (Math.abs(scrollDiff) < 8) return;
-    
-    // ピン留めリンクがない場合は処理しない
-    if (pinnedLinks.length === 0) return;
-    
-    // 上スクロール、上部近く、またはピン留めリンクがない場合は表示
-    const shouldShow = scrollDiff < 0 || currentScrollY <= 50;
-    
-    if (shouldShow !== isPinnedVisible) {
-      setIsPinnedVisible(shouldShow);
-      
-      Animated.timing(pinnedAnimatedValue, {
-        toValue: shouldShow ? 1 : 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-    }
-    
-    scrollY.current = currentScrollY;
-  };
+    let filtered = links;
 
-  // タグでフィルタリングされたリンク
-  const filteredLinks = selectedTagIds.length > 0 
-    ? links.filter(link => 
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(link => {
+        if (link.title.toLowerCase().includes(query)) return true;
+        if (link.description?.toLowerCase().includes(query)) return true;
+        if (link.url.toLowerCase().includes(query)) return true;
+        
+        const linkTags = (link.tagIds || []).map(tagId => 
+          userTags.find(tag => tag.id === tagId)?.name?.toLowerCase()
+        ).filter(Boolean);
+        
+        return linkTags.some(tagName => tagName?.includes(query));
+      });
+    }
+
+    if (selectedTagIds.length > 0) {
+      filtered = filtered.filter(link => 
         selectedTagIds.some(selectedTagId => 
           link.tagIds?.includes(selectedTagId)
         )
-      )
-    : links;
+      );
+    }
+
+    return filtered;
+  }, [links, searchQuery, selectedTagIds, userTags]);
 
   const handleTagToggle = (tagId: string) => {
     setSelectedTagIds(prev => 
@@ -413,6 +383,82 @@ export const HomeScreen: React.FC = () => {
     setSelectedTagIds([]);
   };
 
+  const handleClearSearch = () => {
+    setSearchQuery('');
+  };
+
+  const handleClearAll = () => {
+    setSearchQuery('');
+    setSelectedTagIds([]);
+  };
+
+  const handleScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    { 
+      useNativeDriver: false,
+      listener: (event: any) => {
+        if (!isSearchMode) return;
+        
+        const currentScrollY = event.nativeEvent.contentOffset.y;
+        const diff = currentScrollY - lastScrollY.current;
+
+        lastScrollTime.current = Date.now();
+        setIsSwipeEnabled(false);
+        
+        setTimeout(() => {
+          if (Date.now() - lastScrollTime.current >= 150) {
+            setIsSwipeEnabled(true);
+          }
+        }, 150);
+
+        if (isAnimating.current) return;
+
+        if (currentScrollY <= 0) {
+          isAnimating.current = true;
+          Animated.timing(headerTranslateY, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            isAnimating.current = false;
+          });
+        } else if (diff > 5 && currentScrollY > 50) {
+          isAnimating.current = true;
+          Animated.timing(headerTranslateY, {
+            toValue: -dynamicHeaderHeight,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            isAnimating.current = false;
+          });
+        } else if (diff < -5) {
+          isAnimating.current = true;
+          Animated.timing(headerTranslateY, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            isAnimating.current = false;
+          });
+        }
+
+        lastScrollY.current = currentScrollY;
+      }
+    }
+  );
+
+  const handleStaticHeaderLayout = (event: any) => {
+    setStaticHeaderHeight(event.nativeEvent.layout.height);
+  };
+
+  const handleDynamicHeaderLayout = (event: any) => {
+    setDynamicHeaderHeight(event.nativeEvent.layout.height);
+  };
+
+  const handleSearchTextChange = (text: string) => {
+    setSearchQuery(text);
+  };
+
   const getUserInitial = () => {
     return user?.email?.charAt(0).toUpperCase() || 'U';
   };
@@ -422,10 +468,8 @@ export const HomeScreen: React.FC = () => {
     
     try {
       const tagId = await createOrGetTag(tagName, type);
-      console.log('HomeScreen: created tag with ID:', tagId);
       return tagId;
     } catch (error) {
-      console.error('HomeScreen: tag creation error:', error);
       Alert.alert('エラー', 'タグの作成に失敗しました');
       throw error;
     }
@@ -451,23 +495,274 @@ export const HomeScreen: React.FC = () => {
   };
 
   const renderLinkItem = ({ item }: { item: Link }) => (
-    <LinkCard
-      link={item}
-      tags={userTags} // タグ情報を渡す
-      onPress={() => {
-        console.log('Link detail view for:', item.title);
-        setSelectedLink(item);
-        setShowDetailModal(true);
-      }}
-      onToggleBookmark={() => handleToggleBookmark(item)}
-      onTogglePin={() => handleTogglePin(item)}
-      onDelete={() => handleDeleteLink(item)}
-    />
+    <View style={styles.linkItem}>
+      <LinkCard
+        key={item.id}
+        link={item}
+        tags={userTags}
+        onPress={() => {
+          setSelectedLink(item);
+          setShowDetailModal(true);
+        }}
+        onToggleBookmark={() => {
+          //
+        }}
+        onDelete={() => handleDeleteLink(item)}
+        onMarkAsRead={async () => {
+          try {
+            await linkService.markAsRead(item.id);
+          } catch (error) {
+            //
+          }
+        }}
+      />
+    </View>
   );
+
+  const toggleTagExpansion = (tagId: string) => {
+    setExpandedTagIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(tagId)) {
+        newSet.delete(tagId);
+      } else {
+        newSet.add(tagId);
+      }
+      return newSet;
+    });
+  };
+
+  const modes: LinkViewMode[] = ['list', 'folder', 'tag'];
+  
+  const getNextMode = () => {
+    const currentIndex = modes.indexOf(viewMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    return modes[nextIndex];
+  };
+  
+  const getPrevMode = () => {
+    const currentIndex = modes.indexOf(viewMode);
+    const prevIndex = (currentIndex - 1 + modes.length) % modes.length;
+    return modes[prevIndex];
+  };
+  
+  const switchToNextMode = () => {
+    setViewMode(getNextMode());
+  };
+  
+  const switchToPrevMode = () => {
+    setViewMode(getPrevMode());
+  };
+
+  const handleSwipeGesture = (event: any) => {
+    const { translationX, velocityX, state } = event.nativeEvent;
+    
+    if (state === State.ACTIVE) {
+      if (!isSwipeActive) setIsSwipeActive(true);
+      const dampedTranslation = translationX * 0.5;
+      swipeTranslateX.setValue(dampedTranslation);
+    }
+    
+    if (state === State.END) {
+      const swipeThreshold = 80;
+      const velocityThreshold = 400;
+      const shouldSwitch = Math.abs(translationX) > swipeThreshold || Math.abs(velocityX) > velocityThreshold;
+      
+      if (shouldSwitch) {
+        if (translationX > 0 || velocityX > 0) switchToPrevMode();
+        else switchToNextMode();
+        
+        swipeTranslateX.setValue(translationX > 0 ? -300 : 300);
+        
+        Animated.timing(swipeTranslateX, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }).start(() => setIsSwipeActive(false));
+      } else {
+        Animated.spring(swipeTranslateX, {
+          toValue: 0,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }).start(() => setIsSwipeActive(false));
+      }
+    }
+    
+    if (state === State.CANCELLED || state === State.FAILED) {
+      Animated.spring(swipeTranslateX, {
+        toValue: 0,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }).start(() => setIsSwipeActive(false));
+    }
+  };
+
+  const renderMainContent = () => {
+    if (viewMode === 'tag') {
+      return (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100 }}
+          showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={8}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8A2BE2" />}
+        >
+          <View style={styles.tagGroupsContainer}>
+            {groupedData.tagGroups?.map((group) => {
+              if (!group) return null;
+              const { tag, links } = group;
+              return (
+                <TagGroupCard
+                  key={tag.id}
+                  tag={tag}
+                  links={links}
+                  isExpanded={expandedTagIds.has(tag.id)}
+                  onToggleExpanded={() => toggleTagExpansion(tag.id)}
+                  onPress={(link) => {
+                    setSelectedLink(link);
+                    setShowDetailModal(true);
+                  }}
+                  onMarkAsRead={async (linkId: string) => {
+                    try {
+                      await linkService.markAsRead(linkId);
+                    } catch (error) {
+                      //
+                    }
+                  }}
+                />
+              );
+            })}
+          </View>
+
+          {groupedData.untaggedLinks && groupedData.untaggedLinks.length > 0 && (
+            <View style={styles.untaggedSection}>
+              <Text style={styles.sectionTitle}>タグなしのリンク</Text>
+              {groupedData.untaggedLinks.map(link => (
+                <View key={link.id} style={styles.linkItem}>
+                  <LinkCard
+                    link={link}
+                    tags={userTags}
+                    onPress={() => {
+                      setSelectedLink(link);
+                      setShowDetailModal(true);
+                    }}
+                    onToggleBookmark={() => {
+                      //
+                    }}
+                    onDelete={() => handleDeleteLink(link)}
+                    onMarkAsRead={async () => {
+                      try {
+                        await linkService.markAsRead(link.id);
+                      } catch (error) {
+                        //
+                      }
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      );
+    }
+
+    if (viewMode === 'folder') {
+      return (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100 }}
+          showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={8}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8A2BE2" />}
+        >
+          <View style={styles.comingSoonContainer}>
+            <Feather name="folder" size={48} color="#666" />
+            <Text style={styles.comingSoonTitle}>フォルダ機能</Text>
+            <Text style={styles.comingSoonText}>
+              フォルダ機能は近日公開予定です。{'\n'}
+              しばらくお待ちください。
+            </Text>
+          </View>
+
+          {groupedData.unfolderLinks && groupedData.unfolderLinks.length > 0 && (
+            <View style={styles.untaggedSection}>
+              <Text style={styles.sectionTitle}>フォルダなしのリンク</Text>
+              {groupedData.unfolderLinks.map(link => (
+                <View key={link.id} style={styles.linkItem}>
+                  <LinkCard
+                    link={link}
+                    tags={userTags}
+                    onPress={() => {
+                      setSelectedLink(link);
+                      setShowDetailModal(true);
+                    }}
+                    onToggleBookmark={() => {
+                      //
+                    }}
+                    onDelete={() => handleDeleteLink(link)}
+                    onMarkAsRead={async () => {
+                      try {
+                        await linkService.markAsRead(link.id);
+                      } catch (error) {
+                        //
+                      }
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      );
+    }
+
+    return (
+      <FlatList
+        style={styles.scrollView}
+        contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100 }}
+        data={groupedData.listLinks}
+        keyExtractor={(item) => item.id}
+        renderItem={renderLinkItem}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={8}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8A2BE2" />}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyStateContainer}>
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>読み込み中...</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
+                  <Text style={styles.retryButtonText}>再試行</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              renderEmptyState()
+            )}
+          </View>
+        )}
+        ListFooterComponent={() => <View style={styles.bottomSpacer} />}
+      />
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      {selectedTagIds.length > 0 ? (
+      {searchQuery.trim() ? (
+        <>
+          <Text style={styles.emptyStateTitle}>🔍 検索結果がありません</Text>
+          <Text style={styles.emptyStateText}>
+            {`「${searchQuery}」に一致するリンクが見つかりません。\n別のキーワードで検索してみてください。`}
+          </Text>
+        </>
+      ) : selectedTagIds.length > 0 ? (
         <>
           <Text style={styles.emptyStateTitle}>🏷️ 該当するリンクがありません</Text>
           <Text style={styles.emptyStateText}>
@@ -479,193 +774,254 @@ export const HomeScreen: React.FC = () => {
         <>
           <Text style={styles.emptyStateTitle}>📎 リンクがありません</Text>
           <Text style={styles.emptyStateText}>
-            右下の + ボタンを押して{'\n'}
-            最初のリンクを保存しましょう！
+            {`右下の + ボタンを押して最初のリンクを保存しましょう！`}
           </Text>
         </>
       )}
     </View>
   );
 
-  // タグ名の配列を生成（UI表示用）
-  const allTagNames = userTags.map(tag => tag.name);
-  console.log('HomeScreen - allTagNames:', allTagNames);
+  const groupedData = useMemo(() => {
+    if (viewMode === 'folder') {
+      const folderGroups: { folder: Folder; links: Link[] }[] = [];
+      const unfolderLinks = filteredLinks.filter(link => !link.folderId);
+      return { folderGroups, unfolderLinks };
+    }
+    
+    if (viewMode === 'tag') {
+      const tagGroups = new Map<string, Link[]>();
+      const untaggedLinks: Link[] = [];
+      
+      filteredLinks.forEach(link => {
+        if (!link.tagIds || link.tagIds.length === 0) {
+          untaggedLinks.push(link);
+        } else {
+          link.tagIds.forEach(tagId => {
+            if (!tagGroups.has(tagId)) {
+              tagGroups.set(tagId, []);
+            }
+            tagGroups.get(tagId)!.push(link);
+          });
+        }
+      });
+      
+      const tagGroupsArray = Array.from(tagGroups.entries())
+        .map(([tagId, links]) => {
+          const tag = userTags.find(t => t.id === tagId);
+          return tag ? { tag, links } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => b!.links.length - a!.links.length);
+      
+      return { tagGroups: tagGroupsArray, untaggedLinks };
+    }
+    
+    return { listLinks: filteredLinks };
+  }, [filteredLinks, viewMode, userTags]);
+
+  useEffect(() => {
+    if (!isSearchMode) {
+      headerTranslateY.setValue(0);
+      isAnimating.current = false;
+    }
+  }, [isSearchMode]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* 固定ヘッダー */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.iconButton}
-          onPress={() => setShowAIUsageDashboard(true)}
-        >
-          <Feather name="zap" size={20} color="#8A2BE2" />
-        </TouchableOpacity>
-        <Text style={styles.title}>LinkRanger</Text>
-        <TouchableOpacity style={styles.accountButton} onPress={handleAccountPress}>
-          <Text style={styles.accountText}>{getUserInitial()}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* 固定タグフィルター */}
-      <View style={styles.tagFilterContainer}>
-        <TagFilter
-          tags={userTags.map(tag => tag.name)}
-          selectedTags={selectedTagIds.map(tagId => {
-            const tag = userTags.find(t => t.id === tagId);
-            return tag ? tag.name : '';
-          }).filter(Boolean)}
-          onTagToggle={(tagName: string) => {
-            console.log('TagFilter onTagToggle called with:', tagName);
-            const tag = userTags.find(t => t.name === tagName);
-            if (tag) {
-              handleTagToggle(tag.id);
-            }
-          }}
-          onClearAll={handleClearTags}
-          onAddTag={() => setShowAddTagModal(true)}
-        />
-      </View>
-
-      {/* アニメーション付きピン留めリンク */}
-      {pinnedLinks.length > 0 && (
-        <Animated.View 
-          style={[
-            styles.pinnedSection,
-            {
-              opacity: pinnedAnimatedValue,
-              transform: [
-                { 
-                  translateY: pinnedAnimatedValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-60, 0],
-                  })
-                }
-              ],
-            }
-          ]}
-        >
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pinnedList}
-          >
-            {pinnedLinks.map((link) => (
-              <PinnedLinkCard
-                key={link.id}
-                link={link}
-                onPress={() => {
-                  setSelectedLink(link);
-                  setShowDetailModal(true);
-                }}
-                onUnpin={() => handleTogglePin(link)}
-                onOpenExternal={() => handleOpenExternalLink(link.url)}
-              />
-            ))}
-          </ScrollView>
-        </Animated.View>
-      )}
-
-      {/* スクロール可能なメインコンテンツ（リンク一覧のみ） */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor="#8A2BE2"
-          />
-        }
-      >
-        {/* リンク一覧 */}
-        <View style={styles.linksSection}>
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>読み込み中...</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
-                <Text style={styles.retryButtonText}>再試行</Text>
-              </TouchableOpacity>
-            </View>
-          ) : filteredLinks.length === 0 ? (
-            renderEmptyState()
-          ) : (
-            <View style={styles.linksList}>
-              {filteredLinks.map((item) => (
-                <View key={item.id} style={styles.linkItem}>
-                  {renderLinkItem({ item })}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <TouchableWithoutFeedback>
+        <View style={styles.container}>
+          {/* 固定ヘッダー */}
+          <View style={styles.header} onLayout={handleStaticHeaderLayout}>
+            {isSearchMode ? (
+              <>
+                <TouchableOpacity 
+                  style={styles.searchCloseButton}
+                  onPress={() => {
+                    setSearchQuery('');
+                    setSelectedTagIds([]);
+                    setIsSearchMode(false);
+                  }}
+                >
+                  <Feather name="x" size={20} color="#666" />
+                </TouchableOpacity>
+                <View style={styles.searchInputContainer}>
+                  <TextInput
+                    style={styles.headerSearchInput}
+                    placeholder="リンクを検索..."
+                    placeholderTextColor="#666"
+                    value={searchQuery}
+                    onChangeText={handleSearchTextChange}
+                    returnKeyType="search"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoFocus
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setSearchQuery('')}
+                      style={styles.searchClearButton}
+                    >
+                      <Feather name="x-circle" size={16} color="#666" />
+                    </TouchableOpacity>
+                  )}
                 </View>
-              ))}
-            </View>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity 
+                  style={styles.searchHeaderButton}
+                  onPress={() => setIsSearchMode(true)}
+                >
+                  <Feather name="search" size={20} color="#8B5CF6" />
+                </TouchableOpacity>
+                <Text style={styles.title}>LinkRanger</Text>
+                <TouchableOpacity style={styles.accountButton} onPress={handleAccountPress}>
+                  <Text style={styles.accountText}>{getUserInitial()}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+
+          {/* 動的ヘッダー */}
+          <Animated.View 
+            style={[
+              styles.animatedHeaderContainer,
+              { 
+                top: staticHeaderHeight,
+                transform: [{ translateY: headerTranslateY }] 
+              }
+            ]}
+            onLayout={handleDynamicHeaderLayout}
+          >
+            {isSearchMode && (
+              <View style={styles.searchSectionContainer}>
+                <View style={styles.tagFilterSection}>
+                  <TagFilter
+                    tags={userTags.map(tag => tag.name)}
+                    selectedTags={selectedTagIds.map(tagId => {
+                      const tag = userTags.find(t => t.id === tagId);
+                      return tag ? tag.name : '';
+                    }).filter(Boolean)}
+                    onTagToggle={(tagName: string) => {
+                      const tag = userTags.find(t => t.name === tagName);
+                      if (tag) handleTagToggle(tag.id);
+                    }}
+                    onClearAll={handleClearTags}
+                    onAddTag={() => setShowAddTagModal(true)}
+                  />
+                </View>
+
+                {(searchQuery.trim() || selectedTagIds.length > 0) && (
+                  <View style={styles.searchStatusSection}>
+                    <Text style={styles.searchStatusText}>
+                      {searchQuery.trim() && selectedTagIds.length > 0 
+                        ? `「${searchQuery}」で検索中 + ${selectedTagIds.length}個のタグでフィルタ中`
+                        : searchQuery.trim() 
+                        ? `「${searchQuery}」で検索中`
+                        : `${selectedTagIds.length}個のタグでフィルタ中`
+                      }
+                    </Text>
+                    <TouchableOpacity onPress={handleClearAll} style={styles.searchStatusClear}>
+                      <Text style={styles.searchStatusClearText}>すべてクリア</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+          </Animated.View>
+
+          {!isSearchMode && (
+            <ViewModeSelector
+              currentMode={viewMode}
+              onModeChange={setViewMode}
+            />
           )}
-        </View>
 
-        {/* 下部スペース（FAB用） */}
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+          <PanGestureHandler
+            ref={swipeGestureRef}
+            onGestureEvent={handleSwipeGesture}
+            onHandlerStateChange={handleSwipeGesture}
+            activeOffsetX={[-20, 20]}
+            failOffsetY={[-80, 80]}
+            shouldCancelWhenOutside={false}
+            enabled={isSwipeEnabled && !isSearchMode}
+          >
+            <Animated.View 
+              style={{ 
+                flex: 1,
+                transform: [{ translateX: swipeTranslateX }]
+              }}
+            >
+              {renderMainContent()}
+            </Animated.View>
+          </PanGestureHandler>
 
-      {/* フローティングアクションボタン */}
-      <FloatingActionButton onPress={() => setShowAddModal(true)} />
+          <FloatingActionButton onPress={() => setShowAddModal(true)} />
 
-      {/* モーダル */}
-      <AddLinkModal
-        visible={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onSubmit={handleAddLink}
-        userId={user?.uid}
-        availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
-        onAddTag={handleAddTag}
-        onDeleteTag={handleDeleteTagByName}
-      />
-
-      <AddTagModal
-        visible={showAddTagModal}
-        onClose={() => setShowAddTagModal(false)}
-        availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
-        selectedTags={[]}
-        onTagsChange={() => {}}
-        onCreateTag={handleAddTag}
-        onDeleteTag={handleDeleteTagByName}
-      />
-
-      {/* AI使用量ダッシュボード */}
-      <AIUsageDashboard
-        visible={showAIUsageDashboard}
-        onClose={() => setShowAIUsageDashboard(false)}
-        userId={user?.uid || ''}
-        userPlan={userPlan}
-      />
-
-      {/* リンク詳細モーダル */}
-      {selectedLink && (
-        <Modal
-          visible={showDetailModal}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => setShowDetailModal(false)}
-        >
-          <LinkDetailScreen
-            link={selectedLink}
-            onClose={() => setShowDetailModal(false)}
-            onUpdateLink={async (linkId: string, updatedData: Partial<Link>) => {
-              await updateLink(linkId, updatedData);
-              setShowDetailModal(false);
-            }}
-            userPlan={userPlan}
+          <AddLinkModal
+            visible={showAddModal}
+            onClose={() => setShowAddModal(false)}
+            onSubmit={handleAddLink}
+            userId={user?.uid}
             availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
+            onAddTag={handleAddTag}
+            onDeleteTag={handleDeleteTagByName}
+          />
+
+          <AddTagModal
+            visible={showAddTagModal}
+            onClose={() => setShowAddTagModal(false)}
+            availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
+            selectedTags={[]}
+            onTagsChange={() => {}}
             onCreateTag={handleAddTag}
             onDeleteTag={handleDeleteTagByName}
           />
-        </Modal>
-      )}
-    </SafeAreaView>
+          
+          <SearchModal
+            visible={showSearchModal}
+            onClose={() => setShowSearchModal(false)}
+            links={links || []}
+            tags={userTags}
+            onLinkPress={(link) => {
+              setSelectedLink(link);
+              setShowDetailModal(true);
+            }}
+          />
+
+          {selectedLink && (
+            <Modal
+              visible={showDetailModal}
+              animationType="slide"
+              presentationStyle="pageSheet"
+              onRequestClose={() => setShowDetailModal(false)}
+            >
+              <LinkDetailScreen
+                link={selectedLink}
+                onClose={() => setShowDetailModal(false)}
+                onUpdateLink={async (linkId: string, updatedData: Partial<Link>) => {
+                  await updateLink(linkId, updatedData);
+                  setShowDetailModal(false);
+                }}
+                userPlan={userPlan}
+                availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
+                onCreateTag={handleAddTag}
+                onDeleteTag={handleDeleteTagByName}
+                onDelete={async () => {
+                  try {
+                    await deleteLink(selectedLink.id, user?.uid || '');
+                    setShowDetailModal(false);
+                    setSelectedLink(null);
+                  } catch (error) {
+                    Alert.alert('エラー', 'リンクの削除に失敗しました');
+                  }
+                }}
+              />
+            </Modal>
+          )}
+        </View>
+      </TouchableWithoutFeedback>
+    </GestureHandlerRootView>
   );
 };
 
@@ -676,26 +1032,57 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    paddingTop: 16,
   },
   scrollContent: {
-    paddingBottom: 100, // FABのスペースを確保
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    // borderBottomWidth: 1,
-    // borderBottomColor: '#333',
+    paddingTop: 72,
+    paddingBottom: 16,
+    backgroundColor: '#121212',
+    zIndex: 20,
   },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#CCC',
   },
-  tagFilterContainer: {
-    height: 52,
+
+  searchStatusSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+    marginHorizontal: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.2)',
+  },
+  searchStatusText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#B794F6',
+    fontWeight: '500',
+  },
+  searchStatusClear: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(139, 92, 246, 0.2)',
+    borderRadius: 8,
+  },
+  searchStatusClearText: {
+    color: '#E9D5FF',
+    fontWeight: '700',
+    fontSize: 12,
   },
   iconButton: {
     width: 40,
@@ -705,6 +1092,45 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#2A2A2A',
   },
+  searchHeaderButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#2A2A2A',
+  },
+  searchCloseButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#2A2A2A',
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 44,
+    marginLeft: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  headerSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#fff',
+    paddingVertical: 0,
+  },
+  searchClearButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+
   accountButton: {
     width: 40,
     height: 40,
@@ -719,22 +1145,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#CCC',
-  },
-  pinnedSection: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-    backgroundColor: '#121212',
-    minHeight: 80, // 最小高さを設定
-  },
-  pinnedList: {
-    paddingLeft: 0,
-    paddingRight: 8,
-    alignItems: 'center', // 縦方向の中央揃え
-  },
-  linksSection: {
-    paddingVertical: 20,
   },
   loadingContainer: {
     flex: 1,
@@ -765,10 +1175,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#121212',
   },
-  linksList: {
-    // リンクリストのスタイル
-  },
   linkItem: {
+    marginHorizontal: 16,
+    marginBottom: 8,
   },
   emptyState: {
     alignItems: 'center',
@@ -786,8 +1195,59 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
+  emptyStateContainer: {
+    flex: 1,
+    minHeight: 300,
+  },
   bottomSpacer: {
-    height: 100, // FABのスペースを確保
+    height: 100,
+  },
+  tagFilterSection: {
+    //
+  },
+  searchSectionContainer: {
+    backgroundColor: '#121212',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  animatedHeaderContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    backgroundColor: '#121212',
+  },
+  tagGroupsContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  untaggedSection: {
+    paddingBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+    marginBottom: 12,
+    marginTop: 20,
+    paddingLeft: 16,
+  },
+  comingSoonContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  comingSoonTitle: {
+    fontSize: 24,
+    color: '#FFF',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: '#AAA',
+    textAlign: 'center',
+    lineHeight: 24,
   },
 
-}); 
+});

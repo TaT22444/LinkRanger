@@ -1,18 +1,72 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { Feather, AntDesign } from '@expo/vector-icons';
+import { UserPlan } from '../types';
 
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user, logout } = useAuth();
   const userEmail = user?.email || 'No Email';
-  const userPlan = user?.subscription?.plan || 'free'; // サブスクリプション情報から取得
+  const userPlan: UserPlan = (user?.subscription?.plan as UserPlan) || 'free';
 
   // Freeプランかどうか
   const isFree = userPlan === 'free';
+
+  // AI使用状況の状態
+  const [aiUsage, setAiUsage] = useState({
+    used: 0,
+    limit: 0,
+    remaining: 0,
+  });
+
+  // AIタグ付与設定の状態
+  const [aiTagSettings, setAiTagSettings] = useState({
+    autoTagging: false,
+    manualTagging: true,
+  });
+
+  // AI使用状況を取得
+  useEffect(() => {
+    const fetchAIUsage = async () => {
+      if (!user?.uid) return;
+      
+      try {
+        // プランに応じた制限値を設定
+        const limit = userPlan === 'pro' ? 1000 : 20;
+        
+        // 実際の使用量は後で実装（今はダミーデータ）
+        const used = userPlan === 'pro' ? 245 : 8;
+        const remaining = Math.max(0, limit - used);
+        
+        setAiUsage({ used, limit, remaining });
+
+        // AIタグ付与設定を取得（ダミー）
+        setAiTagSettings({
+          autoTagging: userPlan === 'pro', // Proプランのみ自動タグ付与がデフォルトでオン
+          manualTagging: true,
+        });
+      } catch (error) {
+        console.error('Failed to fetch AI usage:', error);
+      }
+    };
+
+    fetchAIUsage();
+  }, [user?.uid, userPlan]);
+
+  // AIタグ付与設定を切り替える
+  const toggleAutoTagging = async (enabled: boolean) => {
+    try {
+      setAiTagSettings(prev => ({ ...prev, autoTagging: enabled }));
+      // TODO: 実際の設定保存処理
+      console.log('AI auto tagging setting changed:', enabled);
+    } catch (error) {
+      console.error('Failed to update AI tagging setting:', error);
+      Alert.alert('エラー', '設定の更新に失敗しました');
+    }
+  };
 
   // 各アクションのハンドラ（仮実装）
   const handleUpgrade = () => {
@@ -92,13 +146,36 @@ export const AccountScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* アップグレードボタン */}
-      {isFree && (
-        <TouchableOpacity style={styles.upgradeItem} onPress={handleUpgrade}>
-          <Feather name="star" size={18} color="#FFF" style={styles.itemIcon} />
-          <Text style={styles.upgradeItemText}>Proプランにアップグレード</Text>
-        </TouchableOpacity>
-      )}
+      {/* AIタグ自動付与 */}
+      <View style={styles.section}>
+        {/* <Text style={styles.sectionTitle}>AIタグ自動付与</Text> */}
+        
+        <View style={styles.aiUsageItem}>
+          <View style={styles.aiUsageHeader}>
+            <Text style={styles.aiUsageTitle}>AIタグ付与機能使用状況</Text>
+            <Text style={styles.aiUsageCount}>{aiUsage.used} / {aiUsage.limit}</Text>
+          </View>
+          
+          <View style={styles.aiProgressBar}>
+            <View 
+              style={[
+                styles.aiProgressFill, 
+                { 
+                  width: `${Math.min(100, (aiUsage.used / aiUsage.limit) * 100)}%`,
+                  backgroundColor: aiUsage.remaining <= 0 ? '#FF5252' : '#8A2BE2'
+                }
+              ]} 
+            />
+          </View>
+          {/* アップグレードボタン */}
+          {isFree && (
+            <TouchableOpacity style={styles.upgradeItem} onPress={handleUpgrade}>
+              <Feather name="star" size={18} color="#FFF" style={styles.itemIcon} />
+              <Text style={styles.upgradeItemText}>Proプランにアップグレード</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
 
       {/* アカウント */}
       <View style={styles.section}>
@@ -249,14 +326,32 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
   },
+  aiUsageItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  aiUsageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  aiUsageTitle: {
+    color: '#FFF',
+    fontSize: 14,
+  },
+  aiUsageCount: {
+    color: '#8A2BE2',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   upgradeItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 20,
     backgroundColor: '#8A2BE2',
     borderRadius: 12,
-    marginHorizontal: 16,
     marginTop: 16,
     shadowColor: '#000',
     shadowOpacity: 0.04,
@@ -265,10 +360,271 @@ const styles = StyleSheet.create({
   },
   upgradeItemText: {
     color: '#FFF',
-    fontSize: 14,
-    fontWeight: 500,
+    fontSize: 12,
+    fontWeight: 600,
   },
   avatarIcon: {
     fontSize: 32,
   },
+  // AI使用状況の洗練されたスタイル
+  aiSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 8,
+  },
+  aiPlanBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2A2A2A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  aiPlanText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#8A2BE2',
+  },
+  aiUsageDisplay: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  aiUsageRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  aiUsageLabel: {
+    fontSize: 14,
+    color: '#CCC',
+  },
+  aiUsageValue: {
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '600',
+  },
+
+  aiProgressContainer: {
+    marginBottom: 16,
+  },
+  aiProgressBar: {
+    height: 4,
+    backgroundColor: '#333',
+    borderRadius: 2,
+    marginTop: 4,
+  },
+  aiProgressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  aiRemainingLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 6,
+    textAlign: 'right',
+  },
+  aiSettingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  aiSettingTitle: {
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '500',
+  },
+  aiToggleButton: {
+    backgroundColor: '#444',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minWidth: 48,
+  },
+  aiToggleButtonActive: {
+    backgroundColor: '#8A2BE2',
+  },
+  aiToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFF',
+    textAlign: 'center',
+  },
+  aiToggleTextActive: {
+    color: '#FFF',
+  },
+  aiWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    gap: 8,
+    marginTop: 8,
+  },
+  aiWarningText: {
+    fontSize: 12,
+    color: '#FF9800',
+    flex: 1,
+  },
+  aiErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 82, 82, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    gap: 8,
+    marginTop: 8,
+  },
+  aiErrorText: {
+    fontSize: 12,
+    color: '#FF5252',
+    flex: 1,
+  },
+  aiFeatureDescription: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  aiFeatureText: {
+    fontSize: 13,
+    color: '#AAA',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  aiUsageStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  aiUsageStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  aiUsageNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  aiUsageLabel: {
+    fontSize: 14,
+    color: '#CCC',
+  },
+  aiUsageDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#444',
+    marginHorizontal: 8,
+  },
+
+  aiWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3A2E00',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  aiWarningText: {
+    fontSize: 12,
+    color: '#FF9800',
+    flex: 1,
+  },
+  aiErrorWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3A1A1A',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  aiErrorText: {
+    fontSize: 11,
+    color: '#FF5252',
+    marginTop: 4,
+  },
+  aiSettingsSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  aiSettingsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFF',
+    marginBottom: 12,
+  },
+  aiSettingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  aiSettingInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  aiSettingLabel: {
+    fontSize: 14,
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  aiSettingDescription: {
+    fontSize: 12,
+    color: '#AAA',
+    lineHeight: 16,
+  },
+  aiSettingStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aiSettingStatusText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  toggleSwitch: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#444',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchActive: {
+    backgroundColor: '#8A2BE2',
+  },
+  toggleSwitchDisabled: {
+    backgroundColor: '#333',
+    opacity: 0.5,
+  },
+  toggleSwitchThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleSwitchThumbActive: {
+    transform: [{ translateX: 20 }],
+  },
+
 }); 

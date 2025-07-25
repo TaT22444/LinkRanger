@@ -32,6 +32,8 @@ import {
   LinkWithTags
 } from '../types';
 
+import { getDefaultPlatformTags } from '../utils/platformDetector';
+
 // コレクション名
 const COLLECTIONS = {
   USERS: 'users',
@@ -42,27 +44,97 @@ const COLLECTIONS = {
   APP_SETTINGS: 'appSettings',
 } as const;
 
+// Firestoreデータを安全なLinkオブジェクトに変換
+const convertToLink = (doc: any): Link => {
+  const data = doc.data();
+  return {
+    ...data,
+    id: doc.id,
+    tagIds: data.tagIds || [], // tagIdsが未定義の場合は空配列に
+    createdAt: data.createdAt?.toDate() || new Date(),
+    updatedAt: data.updatedAt?.toDate() || new Date(),
+    lastAccessedAt: data.lastAccessedAt?.toDate(),
+    expiresAt: data.expiresAt?.toDate() || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // デフォルト7日後
+    isRead: data.isRead || false,
+    isExpired: data.isExpired || false,
+    notificationsSent: data.notificationsSent || {
+      threeDays: false,
+      oneDay: false,
+      oneHour: false,
+    },
+  } as Link;
+};
+
 // ===== ユーザー関連 =====
 export const userService = {
-  async createUser(userData: Omit<User, 'createdAt'>): Promise<void> {
-    const userRef = doc(db, COLLECTIONS.USERS, userData.uid);
-    await setDoc(userRef, {
+  async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    const docRef = doc(db, COLLECTIONS.USERS, userData.uid);
+    
+    await setDoc(docRef, {
       ...userData,
       createdAt: serverTimestamp(),
-      preferences: {
-        theme: 'dark',
-        defaultSort: 'createdAt',
-        autoTagging: true,
-        autoSummary: true,
-        ...userData.preferences,
-      },
+      updatedAt: serverTimestamp(),
       stats: {
         totalLinks: 0,
         totalTags: 0,
         totalFolders: 0,
-        ...userData.stats,
+        linksReadToday: 0,
+        lastActiveAt: serverTimestamp(),
       },
     });
+
+    console.log('User profile created successfully:', userData.uid);
+    return userData.uid;
+  },
+
+  async createDefaultPlatformTags(userId: string): Promise<void> {
+    console.log('Creating default platform tags for user:', userId);
+    
+    try {
+      const defaultPlatformTagNames = getDefaultPlatformTags();
+      const batch = writeBatch(db);
+      let createdCount = 0;
+      
+      for (const tagName of defaultPlatformTagNames) {
+        // 既存タグのチェック（念のため）
+        const existingTag = await tagService.getTagByName(userId, tagName);
+        if (existingTag) {
+          console.log(`Tag "${tagName}" already exists, skipping`);
+          continue;
+        }
+
+        // 新しいタグを作成
+        const tagRef = doc(collection(db, COLLECTIONS.TAGS));
+        batch.set(tagRef, {
+          userId,
+          name: tagName,
+          type: 'recommended', // プラットフォームタグは推奨タグとして分類
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          linkCount: 0,
+          lastUsedAt: serverTimestamp(),
+          firstUsedAt: serverTimestamp(),
+        });
+        
+        createdCount++;
+        console.log(`Queued default platform tag: "${tagName}"`);
+      }
+      
+      if (createdCount > 0) {
+        await batch.commit();
+        console.log(`Created ${createdCount} default platform tags for user ${userId}`);
+        
+        // ユーザー統計を更新
+        await this.updateUserStats(userId, { totalTags: createdCount });
+      } else {
+        console.log('No new platform tags to create');
+      }
+      
+    } catch (error) {
+      console.error('Error creating default platform tags:', error);
+      // エラーが発生してもユーザー作成は継続
+      throw error; // エラーを上位に伝播（バックグラウンド実行なので影響なし）
+    }
   },
 
   async getUser(uid: string): Promise<User | null> {
@@ -94,35 +166,22 @@ export const userService = {
 // ===== リンク関連 =====
 export const linkService = {
   async createLink(linkData: Omit<Link, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    const linksRef = collection(db, COLLECTIONS.LINKS);
-    const docRef = await addDoc(linksRef, {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7日後
+    
+    const docRef = await addDoc(collection(db, COLLECTIONS.LINKS), {
       ...linkData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      expiresAt: Timestamp.fromDate(expiresAt),
+      isRead: false,
+      isExpired: false,
+      notificationsSent: {
+        threeDays: false,
+        oneDay: false,
+        oneHour: false,
+      },
     });
-    
-    // タグの使用統計を更新
-    if (linkData.tagIds && linkData.tagIds.length > 0) {
-      console.log('Updating tag usage for tagIds:', linkData.tagIds);
-      try {
-        const batch = writeBatch(db);
-        linkData.tagIds.forEach(tagId => {
-          console.log('Updating tag usage for tagId:', tagId);
-          const tagRef = doc(db, COLLECTIONS.TAGS, tagId);
-          batch.update(tagRef, {
-            linkCount: increment(1),
-            lastUsedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        });
-        await batch.commit();
-        console.log('Tag usage update completed successfully');
-      } catch (error) {
-        console.error('Error updating tag usage:', error);
-        // タグ統計の更新に失敗してもリンク作成は成功とする
-        // エラーをログに記録するが、例外は投げない
-      }
-    }
     
     // ユーザー統計を更新
     await userService.updateUserStats(linkData.userId, { totalLinks: 1 });
@@ -130,50 +189,105 @@ export const linkService = {
     return docRef.id;
   },
 
+  // 同じURLの既存リンクを検索（期限切れも含む）
+  async findExistingLinkByUrl(userId: string, url: string): Promise<Link | null> {
+    try {
+      const q = query(
+        collection(db, COLLECTIONS.LINKS),
+        where('userId', '==', userId),
+        where('url', '==', url),
+        limit(1)
+      );
+      
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        return convertToLink(snapshot.docs[0]);
+      }
+      return null;
+    } catch (error) {
+      console.error('Error finding existing link by URL:', error);
+      // インデックスエラーの場合はnullを返して処理を継続
+      return null;
+    }
+  },
+
+  // 期限切れリンクを復活させる
+  async reviveExpiredLink(linkId: string): Promise<void> {
+    const now = new Date();
+    const newExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    
+    await updateDoc(doc(db, COLLECTIONS.LINKS, linkId), {
+      isExpired: false,
+      expiresAt: Timestamp.fromDate(newExpiresAt),
+      updatedAt: serverTimestamp(),
+      notificationsSent: {
+        threeDays: false,
+        oneDay: false,
+        oneHour: false,
+      },
+    });
+  },
+
+  // リンクを既読にする
+  async markAsRead(linkId: string): Promise<void> {
+    await updateDoc(doc(db, COLLECTIONS.LINKS, linkId), {
+      isRead: true,
+      lastAccessedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  // 期限切れ対象のリンクを取得（Cloud Functions用）
+  async getLinksForExpiration(): Promise<Link[]> {
+    const now = new Date();
+    const q = query(
+      collection(db, COLLECTIONS.LINKS),
+      where('isRead', '==', false),
+      where('isExpired', '==', false),
+      where('expiresAt', '<=', Timestamp.fromDate(now))
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(convertToLink);
+  },
+
+  // 通知対象のリンクを取得（Cloud Functions用）
+  async getLinksForNotification(hoursBeforeExpiry: number): Promise<Link[]> {
+    const now = new Date();
+    const targetTime = new Date(now.getTime() + hoursBeforeExpiry * 60 * 60 * 1000);
+    
+    let notificationField: string;
+    switch (hoursBeforeExpiry) {
+      case 72: // 3日前
+        notificationField = 'notificationsSent.threeDays';
+        break;
+      case 24: // 1日前
+        notificationField = 'notificationsSent.oneDay';
+        break;
+      case 1: // 1時間前
+        notificationField = 'notificationsSent.oneHour';
+        break;
+      default:
+        return [];
+    }
+    
+    const q = query(
+      collection(db, COLLECTIONS.LINKS),
+      where('isRead', '==', false),
+      where('isExpired', '==', false),
+      where(notificationField, '==', false),
+      where('expiresAt', '<=', Timestamp.fromDate(targetTime))
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(convertToLink);
+  },
+
   async updateLink(linkId: string, updates: Partial<Link>): Promise<void> {
     const linkRef = doc(db, COLLECTIONS.LINKS, linkId);
     await updateDoc(linkRef, {
       ...updates,
       updatedAt: serverTimestamp(),
-    });
-  },
-
-  async togglePin(linkId: string, isPinned: boolean): Promise<void> {
-    const linkRef = doc(db, COLLECTIONS.LINKS, linkId);
-    const updateData: any = {
-      isPinned,
-      updatedAt: serverTimestamp(),
-    };
-    
-    if (isPinned) {
-      updateData.pinnedAt = serverTimestamp();
-    } else {
-      updateData.pinnedAt = null;
-    }
-    
-    await updateDoc(linkRef, updateData);
-  },
-
-  async getPinnedLinks(userId: string): Promise<Link[]> {
-    const q = query(
-      collection(db, COLLECTIONS.LINKS),
-      where('userId', '==', userId),
-      where('isPinned', '==', true),
-      orderBy('pinnedAt', 'desc'),
-      limit(10) // ピン留めは最大10個まで
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        ...data,
-        id: doc.id,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date(),
-        lastAccessedAt: data.lastAccessedAt?.toDate(),
-        pinnedAt: data.pinnedAt?.toDate(),
-      } as Link;
     });
   },
 
@@ -190,14 +304,7 @@ export const linkService = {
     const linkSnap = await getDoc(linkRef);
     
     if (linkSnap.exists()) {
-      const data = linkSnap.data();
-      return {
-        ...data,
-        id: linkSnap.id,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date(),
-        lastAccessedAt: data.lastAccessedAt?.toDate(),
-      } as Link;
+      return convertToLink(linkSnap);
     }
     return null;
   },
@@ -211,7 +318,8 @@ export const linkService = {
   ): Promise<PaginatedResponse<Link>> {
     let q = query(
       collection(db, COLLECTIONS.LINKS),
-      where('userId', '==', userId)
+      where('userId', '==', userId),
+      where('isExpired', '==', false) // 期限切れリンクを除外
     );
 
     // フィルター適用
@@ -245,16 +353,7 @@ export const linkService = {
     q = query(q, limit(pageSize + 1)); // +1で次ページの有無を確認
 
     const snapshot = await getDocs(q);
-    const links = snapshot.docs.slice(0, pageSize).map(doc => {
-      const data = doc.data();
-      return {
-        ...data,
-        id: doc.id,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date(),
-        lastAccessedAt: data.lastAccessedAt?.toDate(),
-      } as Link;
-    });
+    const links = snapshot.docs.slice(0, pageSize).map(convertToLink);
 
     return {
       data: links,
@@ -296,16 +395,7 @@ export const linkService = {
     q = query(q, orderBy(sortField, sortDirection));
 
     return onSnapshot(q, (snapshot) => {
-      const links = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          id: doc.id,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-          lastAccessedAt: data.lastAccessedAt?.toDate(),
-        } as Link;
-      });
+      const links = snapshot.docs.map(convertToLink);
       callback(links);
     });
   },
@@ -445,17 +535,7 @@ export const tagService = {
     );
     
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        ...data,
-        id: doc.id,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date(),
-        lastAccessedAt: data.lastAccessedAt?.toDate(),
-        pinnedAt: data.pinnedAt?.toDate(),
-      } as Link;
-    });
+    return snapshot.docs.map(convertToLink);
   },
 
   // おすすめタグを生成（ユーザー固有）

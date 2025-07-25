@@ -8,6 +8,7 @@ import {
   signOut,
   updateProfile as updateFirebaseProfile,
   updateEmail,
+  signInAnonymously,
 } from 'firebase/auth';
 
 interface AuthContextType extends AuthState {
@@ -62,11 +63,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChangeでloadingがfalseになるため、ここでは設定しない
     } catch (error: any) {
-      setState(prev => ({
-        ...prev,
+      setState(prev => ({ 
+        ...prev, 
         error: error.message || 'ログインに失敗しました',
-        loading: false,
+        loading: false, 
       }));
       throw error;
     }
@@ -76,11 +78,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       await createUserWithEmailAndPassword(auth, email, password);
+      // onAuthStateChangeでloadingがfalseになるため、ここでは設定しない
     } catch (error: any) {
-      setState(prev => ({
-        ...prev,
+      setState(prev => ({ 
+        ...prev, 
         error: error.message || 'アカウント作成に失敗しました',
-        loading: false,
+        loading: false, 
       }));
       throw error;
     }
@@ -89,12 +92,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loginAnonymously = async () => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
-      // 匿名ログインの実装
+      await signInAnonymously(auth);
+      // onAuthStateChangeでloadingがfalseになるため、ここでは設定しない
     } catch (error: any) {
-      setState(prev => ({
-        ...prev,
+      setState(prev => ({ 
+        ...prev, 
         error: error.message || '匿名ログインに失敗しました',
-        loading: false,
+        loading: false, 
       }));
       throw error;
     }
@@ -102,7 +106,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     try {
-      setState(prev => ({ ...prev, loading: true, error: null }));
+    setState(prev => ({ ...prev, loading: true, error: null }));
       await signOut(auth);
     } catch (error: any) {
       setState(prev => ({
@@ -140,10 +144,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }));
 
     } catch (error: any) {
-      setState(prev => ({
-        ...prev,
+      setState(prev => ({ 
+        ...prev, 
         error: error.message || 'プロフィールの更新に失敗しました',
-        loading: false,
+        loading: false, 
       }));
       throw error;
     }
@@ -152,10 +156,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   return (
     <AuthContext.Provider
       value={{
-        ...state,
-        login,
-        register,
-        loginAnonymously,
+    ...state,
+    login,
+    register,
+    loginAnonymously,
         logout,
         updateUserProfile,
       }}

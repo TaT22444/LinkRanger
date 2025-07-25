@@ -1,6 +1,16 @@
 // ユーザープラン型
 export type UserPlan = 'free' | 'pro' | 'premium';
 
+// リンク表示モード型
+export type LinkViewMode = 'list' | 'folder' | 'tag';
+
+// リンク表示設定型
+export interface LinkViewSettings {
+  mode: LinkViewMode;
+  sortBy: 'createdAt' | 'title' | 'folder' | 'tag';
+  sortDirection: 'asc' | 'desc';
+}
+
 // ユーザープラン情報型
 export interface UserSubscription {
   plan: UserPlan;
@@ -85,6 +95,9 @@ export interface Link {
     cost?: number; // 処理コスト
   };
   
+  // AI処理状態
+  aiProcessed?: boolean; // AddLinkModalでAI処理済みかどうか
+  
   // エラー情報
   error?: {
     message: string;
@@ -98,9 +111,15 @@ export interface Link {
   priority: 'low' | 'medium' | 'high';
   notes?: string; // ユーザーメモ
   
-  // ピン留め機能
-  isPinned: boolean;
-  pinnedAt?: Date;
+  // 期限切れ機能
+  isRead: boolean; // 既読状態
+  expiresAt: Date; // 期限切れ日時（作成から7日後）
+  isExpired: boolean; // 期限切れ状態（表示制御用）
+  notificationsSent: {
+    threeDays: boolean; // 3日後通知送信済み
+    oneDay: boolean; // 1日前通知送信済み
+    oneHour: boolean; // 1時間前通知送信済み
+  };
 }
 
 // タグ型（新設計）

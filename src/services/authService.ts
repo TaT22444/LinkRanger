@@ -11,6 +11,8 @@ import {
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { User } from '../types';
+import { userService } from './firestoreService';
+import { UserPlan } from '../types';
 
 interface UpdateUserProfileParams {
   displayName?: string;
@@ -25,17 +27,16 @@ export const registerWithEmail = async (email: string, password: string): Promis
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const firebaseUser = userCredential.user;
     
-    // Firestoreにユーザー情報を保存
-    const userData: User = {
-      uid: firebaseUser.uid,
-      email: firebaseUser.email,
-      username: firebaseUser.email, // デフォルトの表示名をメールアドレスに設定
-      isAnonymous: false,
-      createdAt: new Date()
-    };
+    // デフォルトプラットフォームタグ付きでユーザープロフィールを作成
+    await createUserProfile(firebaseUser);
     
-    await setDoc(doc(db, 'users', firebaseUser.uid), userData);
-    return userData;
+    // 作成されたユーザー情報を取得して返す
+    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+    if (userDoc.exists()) {
+      return userDoc.data() as User;
+    } else {
+      throw new Error('Failed to retrieve created user profile');
+    }
   } catch (error) {
     console.error('Registration error:', error);
     throw error;
@@ -53,16 +54,10 @@ export const loginWithEmail = async (email: string, password: string): Promise<U
     if (userDoc.exists()) {
       return userDoc.data() as User;
     } else {
-      // ドキュメントが存在しない場合は作成
-      const userData: User = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        username: firebaseUser.email, // デフォルトの表示名をメールアドレスに設定
-        isAnonymous: false,
-        createdAt: new Date()
-      };
-      await setDoc(doc(db, 'users', firebaseUser.uid), userData);
-      return userData;
+      // ドキュメントが存在しない場合は作成（既存ユーザーでプロフィールが無い場合）
+      await createUserProfile(firebaseUser);
+      const newUserDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      return newUserDoc.data() as User;
     }
   } catch (error) {
     console.error('Login error:', error);
@@ -76,17 +71,16 @@ export const loginAnonymously = async (): Promise<User> => {
     const userCredential = await signInAnonymously(auth);
     const firebaseUser = userCredential.user;
     
-    // Firestoreに匿名ユーザー情報を保存
-    const userData: User = {
-      uid: firebaseUser.uid,
-      email: null,
-      username: null,
-      isAnonymous: true,
-      createdAt: new Date()
-    };
+    // デフォルトプラットフォームタグ付きでユーザープロフィールを作成
+    await createUserProfile(firebaseUser);
     
-    await setDoc(doc(db, 'users', firebaseUser.uid), userData);
-    return userData;
+    // 作成されたユーザー情報を取得して返す
+    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+    if (userDoc.exists()) {
+      return userDoc.data() as User;
+    } else {
+      throw new Error('Failed to retrieve created anonymous user profile');
+    }
   } catch (error) {
     console.error('Anonymous login error:', error);
     throw error;
@@ -106,28 +100,66 @@ export const logout = async (): Promise<void> => {
 // 認証状態の監視
 export const onAuthStateChange = (callback: (user: User | null) => void) => {
   return onAuthStateChanged(auth, async (firebaseUser) => {
+    console.log('onAuthStateChanged triggered, firebaseUser:', firebaseUser ? firebaseUser.uid : 'null');
+    
     if (firebaseUser) {
       try {
+        console.log('Fetching user data from Firestore for uid:', firebaseUser.uid);
+        
         // Firestoreからユーザー情報を取得
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        
         if (userDoc.exists()) {
+          console.log('User document found in Firestore');
           const userData = userDoc.data() as User;
+          
           // Firestoreのデータを優先
-          callback({
+          const user = {
             ...userData,
             username: userData.username || userData.email || null,
             avatarId: userData.avatarId,
             avatarIcon: userData.avatarIcon,
             createdAt: userData.createdAt instanceof Date ? userData.createdAt : new Date(userData.createdAt)
-          });
+          };
+          
+          console.log('Calling callback with user data:', user.uid);
+          callback(user);
         } else {
-          callback(null);
+          console.log('User document not found in Firestore, creating profile...');
+          
+          // ドキュメントが存在しない場合は作成
+          try {
+            await createUserProfile(firebaseUser);
+            console.log('User profile created, fetching again...');
+            
+            // 作成後に再度取得
+            const newUserDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            if (newUserDoc.exists()) {
+              const userData = newUserDoc.data() as User;
+              const user = {
+                ...userData,
+                username: userData.username || userData.email || null,
+                avatarId: userData.avatarId,
+                avatarIcon: userData.avatarIcon,
+                createdAt: userData.createdAt instanceof Date ? userData.createdAt : new Date(userData.createdAt)
+              };
+              console.log('Calling callback with newly created user data:', user.uid);
+              callback(user);
+            } else {
+              console.error('Failed to retrieve newly created user profile');
+              callback(null);
+            }
+          } catch (profileError) {
+            console.error('Error creating user profile:', profileError);
+            callback(null);
+          }
         }
       } catch (error) {
-        console.error('Error fetching user data:', error);
+        console.error('Error in onAuthStateChange:', error);
         callback(null);
       }
     } else {
+      console.log('No firebase user, calling callback with null');
       callback(null);
     }
   });
@@ -166,3 +198,39 @@ export const updateUserProfile = async (params: UpdateUserProfileParams): Promis
     throw error;
   }
 }; 
+
+  const createUserProfile = async (user: FirebaseUser): Promise<void> => {
+    try {
+      const userData = {
+        uid: user.uid,
+        email: user.email || '',
+        username: user.displayName || user.email || '',
+        isAnonymous: user.isAnonymous,
+        preferences: {
+          theme: 'dark' as const,
+          defaultSort: 'createdAt' as const,
+          autoTagging: true,
+          autoSummary: true,
+        },
+      };
+
+      // まずユーザープロフィールを作成
+      await userService.createUser(userData);
+      console.log('User profile created successfully');
+      
+      // デフォルトプラットフォームタグの作成は非同期で実行（認証フローをブロックしない）
+      setTimeout(async () => {
+        try {
+          await userService.createDefaultPlatformTags(user.uid);
+          console.log('Default platform tags created in background');
+        } catch (error) {
+          console.error('Failed to create default platform tags in background:', error);
+          // エラーが発生してもユーザー体験には影響しない
+        }
+      }, 100); // 100ms後に実行
+      
+    } catch (error) {
+      console.error('Failed to create user profile:', error);
+      throw error;
+    }
+  }; 

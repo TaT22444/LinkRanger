@@ -218,7 +218,6 @@ export const TagSelectorModal: React.FC<TagSelectorModalProps> = ({
           onTagsChange={handleAddTagModalChange}
           onCreateTag={onCreateTag}
           onDeleteTag={onDeleteTag}
-          onAITagSuggestion={onAITagSuggestion}
           linkTitle={linkTitle}
           linkUrl={linkUrl}
         />

@@ -1,10 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
@@ -23,6 +22,8 @@ export const TagFilter: React.FC<TagFilterProps> = ({
   onClearAll,
   onAddTag,
 }) => {
+  const [showAllTags, setShowAllTags] = useState(false);
+  
   // デバッグログ
   console.log('TagFilter - tags:', tags);
   console.log('TagFilter - tags.length:', tags.length);
@@ -30,57 +31,90 @@ export const TagFilter: React.FC<TagFilterProps> = ({
   
   // タグが0個で、選択されたタグもない場合は+ボタンのみ表示
   const showOnlyAddButton = tags.length === 0 && selectedTags.length === 0;
+  
+  // 表示するタグの制限
+  const MAX_VISIBLE_TAGS = 8; // 12から8に減らす
+  const displayTags = showAllTags ? tags : tags.slice(0, MAX_VISIBLE_TAGS);
+  const hasMoreTags = tags.length > MAX_VISIBLE_TAGS;
 
   return (
     <View style={styles.container}>
-      <View style={styles.contentContainer}>
-        {/* 固定の編集ボタン / クリアボタン */}
-        <TouchableOpacity
-          style={[
-            styles.addButton,
-            selectedTags.length > 0 && styles.clearButton
-          ]}
-          onPress={selectedTags.length > 0 ? onClearAll : onAddTag}
-        >
-          {selectedTags.length > 0 ? (
-            <Text style={styles.clearButtonText}>×</Text>
-          ) : tags.length === 0 ? (
-            <Text style={styles.addButtonText}>+</Text>
+      {/* 上部コントロールバー */}
+      <View style={styles.controlBar}>
+        {/* 左側：タグ数表示 */}
+        <Text style={styles.tagCountText}>
+          {tags.length > 0 ? (
+            selectedTags.length > 0 
+              ? `${selectedTags.length}/${tags.length} 選択中`
+              : `${tags.length}個のタグ`
           ) : (
-            <Feather name="edit-2" size={14} color="#FFF" />
+            'タグなし'
           )}
-        </TouchableOpacity>
+        </Text>
 
-        {/* スクロール可能なタグリスト */}
-        {!showOnlyAddButton && (
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-            style={styles.scrollView}
+        {/* 右側：操作ボタン群 */}
+        <View style={styles.actionButtons}>
+          {/* 新規タグ作成ボタン（常に+アイコン） */}
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={onAddTag}
           >
-            {tags.map((tag) => (
-              <TouchableOpacity
-                key={tag}
-                style={[
-                  styles.tagButton,
-                  selectedTags.includes(tag) && styles.tagButtonSelected,
-                ]}
-                onPress={() => onTagToggle(tag)}
-              >
-                <Text
-                  style={[
-                    styles.tagText,
-                    selectedTags.includes(tag) && styles.tagTextSelected,
-                  ]}
-                >
-                  #{tag}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
+            <Feather name="plus" size={12} color="#FFF" />
+          </TouchableOpacity>
+
+          {/* クリアボタン（選択されたタグがある場合のみ表示） */}
+          {selectedTags.length > 0 && (
+            <TouchableOpacity
+              style={styles.clearButton}
+              onPress={onClearAll}
+            >
+              <Feather name="x" size={12} color="#FFF" />
+            </TouchableOpacity>
+          )}
+
+          {/* もっと見る/折りたたむボタン */}
+          {hasMoreTags && (
+            <TouchableOpacity
+              style={styles.expandButton}
+              onPress={() => setShowAllTags(!showAllTags)}
+            >
+              <Text style={styles.expandButtonText}>
+                {showAllTags ? '折りたたむ' : `+${tags.length - MAX_VISIBLE_TAGS}個`}
+              </Text>
+              <Feather 
+                name={showAllTags ? 'chevron-up' : 'chevron-down'} 
+                size={12} 
+                color="#8A2BE2" 
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
+
+      {/* 折り返し表示のタグリスト */}
+      {!showOnlyAddButton && (
+        <View style={styles.tagsContainer}>
+          {displayTags.map((tag) => (
+            <TouchableOpacity
+              key={tag}
+              style={[
+                styles.tagButton,
+                selectedTags.includes(tag) && styles.tagButtonSelected,
+              ]}
+              onPress={() => onTagToggle(tag)}
+            >
+              <Text
+                style={[
+                  styles.tagText,
+                  selectedTags.includes(tag) && styles.tagTextSelected,
+                ]}
+              >
+                #{tag}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </View>
   );
 };
@@ -88,61 +122,79 @@ export const TagFilter: React.FC<TagFilterProps> = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: 'transparent',
-    paddingVertical: 12,
-    paddingLeft: 20,
+    paddingTop: 8, // 12から8に減らす
+    paddingBottom: 6, // 8から6に減らす
+    paddingHorizontal: 20,
   },
-  contentContainer: {
+  controlBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10, // 12から10に減らす
   },
-  scrollView: {
-    flex: 1,
+  tagCountText: {
+    fontSize: 13, // 14から13に減らす
+    color: '#888', // グレーに変更
+    fontWeight: '500', // 600から500に軽く
+    flex: 0,
   },
-  scrollContent: {
+  actionButtons: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: 8,
+    gap: 6, // 8から6に減らす
   },
-  addButton: {
+  editButton: {
     backgroundColor: '#8A2BE2',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 26, // 28から26に減らす
+    height: 26, // 28から26に減らす
+    borderRadius: 13, // 14から13に調整
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
-  },
-  addButtonText: {
-    fontSize: 16,
-    color: '#FFF',
-    fontWeight: '500',
   },
   clearButton: {
     backgroundColor: '#FF6B6B',
   },
-  clearButtonText: {
-    fontSize: 18,
+  expandButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    paddingHorizontal: 10, // 12から10に減らす
+    paddingVertical: 5, // 6から5に減らす
+    borderRadius: 14, // 16から14に減らす
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  expandButtonText: {
+    fontSize: 11, // 12から11に減らす
+    color: '#8A2BE2',
     fontWeight: '600',
+    marginRight: 3, // 4から3に減らす
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 6, // 8から6に減らす
   },
   tagButton: {
     backgroundColor: '#2A2A2A',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
+    paddingHorizontal: 10, // 12から10に減らす
+    paddingVertical: 5, // 6から5に減らす
+    borderRadius: 14, // 16から14に減らす
     borderWidth: 1,
     borderColor: '#444',
+    marginBottom: 4, // 6から4に減らす
   },
   tagButtonSelected: {
     backgroundColor: '#8A2BE2',
     borderColor: '#8A2BE2',
   },
   tagText: {
-    fontSize: 12,
+    fontSize: 11, // 12から11に減らす
     color: '#CCC',
     fontWeight: '500',
   },
   tagTextSelected: {
     color: '#FFF',
   },
-
 }); 
