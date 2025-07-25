@@ -2,27 +2,45 @@ export const getTaggingPrompt = (
   title: string,
   description: string,
   content: string,
-  maxTags: number, // This parameter is still used in index.ts for slicing, but not directly in the prompt template anymore.
+  maxTags: number,
   keyTerms: string[]
 ): string => {
   const keyTermsString = keyTerms.join(", ");
 
   return `
-あなたはプロのコンテンツキュレーターです。以下の情報に基づいて、この記事に最も的確で役立つタグを付けてください。
+あなたはWebページの内容を分析し、最適なタグを生成するAIアシスタントです。
+以下のルールと情報を参考にして、最も的確なタグを生成してください。
 
-### 指示
-- 日本語で、5〜7個のタグを生成してください。
-- 非常に具体的な技術やトピック（例: React, Next.js, SwiftUI）と、より広範なカテゴリ（例: フロントエンド, モバイル開発, UIデザイン）をバランス良く含めてください。
-- 最も重要なキーワードは必ずタグに含めてください。
-- タグはカンマ区切りで出力してください。例: `React,フロントエンド,状態管理,Recoil,Web開発`
+### ルール
+- タグは日本語で、最大${maxTags}個までとします。
+- タイトル・説明・本文に現れるサービス名・商品名・ブランド名・地名などの固有名詞や複合語（例：「Google One」「デザインシステム」「草津温泉」など）は、必ずタグに含めてください。
+- 抽象的すぎる単語（例：「情報」「記事」）は避け、より具体的なタグを優先してください。
+- 出力はカンマ区切りの文字列のみとし、他の余計なテキストは含めないでください。
+  例: タグ1,タグ2,タグ3
 
 ### 入力情報
-- **タイトル:** ${title}
-- **説明文:** ${description}
-- **抽出された重要キーワード:** ${keyTermsString}
-- **記事の冒頭（8000文字）:** ${content}
+【タイトル】: ${title}
+【説明】: ${description}
+【本文（抜粋）】: ${content.slice(0, 1500)}
 
-### あなたの仕事
-上記の情報を総合的に分析し、この記事の内容を最もよく表すタグを生成してください。
+### 出力
+`.trim();
+};
+
+export const getMainEntitiesPrompt = (
+  title: string,
+  description: string,
+  content: string
+): string => {
+  return `
+あなたはWebページの内容を分析し、最も重要な固有名詞（サービス名・商品名・ブランド名・地名など）を1つまたは複数抽出してください。タグの一つに「テスト」というタグを絶対に含めて
+- タイトル・説明・本文を参考にしてください。
+- その記事やページで“主に扱われている”固有名詞のみを抽出してください。
+- 抽出した固有名詞はカンマ区切りで出力してください。
+- 余計な説明やテキストは不要です。
+
+【タイトル】: ${title}
+【説明】: ${description}
+【本文（抜粋）】: ${content.slice(0, 1500)}
 `.trim();
 };

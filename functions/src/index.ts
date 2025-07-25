@@ -17,6 +17,7 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {initializeApp} from "firebase-admin/app";
 import {GoogleGenerativeAI} from "@google/generative-ai";
 import { getTaggingPrompt } from "./prompts";
+import { getMainEntitiesPrompt } from "./prompts";
 
 // Firebase Admin初期化
 initializeApp();
@@ -88,7 +89,7 @@ async function generateTagsLogic(
   const maxTags = AI_LIMITS[userPlan]?.maxTagsPerRequest || 5;
 
   // 5. タイトルとメタデータから重要キーワードを抽出
-  const keyTerms = extractKeyTerms(analysisTitle);
+  const keyTerms = extractKeyTerms(analysisTitle, analysisDescription);
   if (pageContent.keywords) {
     pageContent.keywords.forEach(term => {
       if (term) keyTerms.add(term);
@@ -100,7 +101,6 @@ async function generateTagsLogic(
   const genAI = getGeminiClient();
   const model = genAI.getGenerativeModel({ model: "gemini-pro" });
   const prompt = getTaggingPrompt(analysisTitle, analysisDescription, analysisContent, maxTags, Array.from(keyTerms));
-  
   let aiTags: string[] = [];
   try {
     logger.info(`🤖 [AI Tagging API Call] Calling Gemini API for userId: ${userId}`);
@@ -116,9 +116,53 @@ async function generateTagsLogic(
     aiTags = generateFallbackTags(combinedText, userPlan);
   }
 
+  // --- 主題固有名詞抽出AI呼び出し ---
+  let mainEntities: string[] = [];
+  try {
+    const mainEntitiesPrompt = getMainEntitiesPrompt(analysisTitle, analysisDescription, analysisContent);
+    const mainEntitiesModel = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const mainEntitiesResult = await mainEntitiesModel.generateContent(mainEntitiesPrompt);
+    const mainEntitiesResponse = await mainEntitiesResult.response;
+    mainEntities = (mainEntitiesResponse.text() || "")
+      .split(",")
+      .map(e => e.trim())
+      .filter(e => e);
+    logger.info(`[MainEntities] AI抽出:`, mainEntities);
+  } catch (error) {
+    logger.warn(`[MainEntities] AI抽出失敗`, error);
+  }
+
+  // --- タイトル・説明文から英単語・カタカナ語・サービス名らしき語を抽出 ---
+  function extractCandidateEntities(...texts: string[]): string[] {
+    const pattern = /\b([A-Za-z][A-Za-z0-9]+|[ァ-ヴー]{2,}|[一-龠々]{2,})\b/g;
+    const set = new Set<string>();
+    for (const text of texts) {
+      const matches = text.match(pattern);
+      if (matches) matches.forEach(word => set.add(word));
+    }
+    return Array.from(set);
+  }
+  const candidateEntities = extractCandidateEntities(analysisTitle, analysisDescription);
+
+  // --- AIタグ・主題固有名詞・候補語を優先度順にマージし、maxTagsまで埋める ---
+  const tagSet = new Set<string>();
+  // 1. まずAIタグを追加
+  for (const tag of aiTags) {
+    if (tagSet.size < maxTags && tag && !tagSet.has(tag)) tagSet.add(tag);
+  }
+  // 2. 主題固有名詞を優先的に追加
+  for (const entity of mainEntities) {
+    if (tagSet.size < maxTags && entity && !tagSet.has(entity)) tagSet.add(entity);
+  }
+  // 3. 候補語をさらに追加
+  for (const cand of candidateEntities) {
+    if (tagSet.size < maxTags && cand && !tagSet.has(cand)) tagSet.add(cand);
+  }
+  const tags = Array.from(tagSet);
+
   // 7. 結果を検証・補強
-  const finalTags = new Set([...keyTerms, ...aiTags, ...domainTags]);
-  const tags = Array.from(finalTags).slice(0, maxTags);
+  // const finalTags = new Set([...keyTerms, ...aiTags, ...domainTags]); // This line is no longer needed
+  // const tags = Array.from(finalTags).slice(0, maxTags); // This line is no longer needed
 
   // 8. コスト計算と記録
   const tokensUsed = Math.ceil(prompt.length / 4); // 概算
@@ -146,7 +190,13 @@ export const generateAITags = onCall({ timeoutSeconds: 60, memory: "512MiB" }, a
   return await generateTagsLogic(userId, userPlan, url, title, description);
 });
 
+export const generateEnhancedAITags = onCall({ timeoutSeconds: 60, memory: "1GiB" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
+  const { metadata, userId, userPlan = "free" } = request.data;
+  if (!metadata || !userId) throw new HttpsError("invalid-argument", "メタデータとユーザーIDが必要です");
 
+  return await generateTagsLogic(userId, userPlan, metadata.url, metadata.title, metadata.description);
+});
 
 
 // ===================================================================
@@ -166,19 +216,30 @@ async function fetchPageContent(url: string) {
 
   $("script, style, nav, header, footer, aside").remove();
   const mainContent = $("main, article, .content, .post").first();
-  const fullContent = (mainContent.length ? mainContent.text() : $("body").text()).trim().slice(0, 8000);
+  const fullContent = (mainContent.length ? mainContent.text() : $("body").text()).trim().slice(0, 2000);
 
   return { fullContent, pageTitle, pageDescription, keywords };
 }
 
-function extractKeyTerms(title: string): Set<string> {
+function extractKeyTerms(title: string, description?: string): Set<string> {
   const terms = new Set<string>();
-  const knownEntities = ["Obsidian", "Cursor", "AI", "ChatGPT", "Gemini", "GitHub", "JavaScript", "TypeScript", "Python", "React", "Vue", "Node.js", "AWS", "Firebase", "Docker", "Figma", "Notion"];
+  const knownEntities = [
+    "Obsidian", "Cursor", "AI", "ChatGPT", "Gemini", "GitHub", "JavaScript", "TypeScript", "Python", "React", "Vue", "Node.js", "AWS", "Firebase", "Docker", "Figma", "Notion"
+  ];
   knownEntities.forEach(entity => {
-    if (new RegExp(`\b${entity}\b`, "i").test(title)) terms.add(entity);
+    if (new RegExp(`\\b${entity}\\b`, "i").test(title)) terms.add(entity);
   });
+  // かぎ括弧内の語句
   const bracketMatches = title.match(/[「『]([^」』]+)[」』]/g);
   if (bracketMatches) bracketMatches.forEach(m => terms.add(m.slice(1, -1)));
+  // 複合語・固有名詞（英数字+スペースを含む語句）
+  const phraseMatches = title.match(/([A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+ [A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+)/g);
+  if (phraseMatches) phraseMatches.forEach(m => terms.add(m.trim()));
+  // 説明文にも同様の抽出を適用
+  if (description) {
+    const descPhraseMatches = description.match(/([A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+ [A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+)/g);
+    if (descPhraseMatches) descPhraseMatches.forEach(m => terms.add(m.trim()));
+  }
   return terms;
 }
 

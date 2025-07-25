@@ -11,6 +11,7 @@ import { LinkMetadata } from './metadataService';
 // Cloud Functions
 const generateAITagsFunction = httpsCallable(functions, 'generateAITags');
 const clearTagCacheFunction = httpsCallable(functions, 'clearTagCache');
+const generateEnhancedAITagsFunction = httpsCallable(functions, 'generateEnhancedAITags');
 
 interface AIResponse {
   tags: string[];
@@ -47,8 +48,6 @@ export const aiService = {
 
       const data = result.data as AIResponse;
       
-      console.log('AI tags generated via Gemini:', data);
-      
       return data;
     } catch (error) {
       console.error('AI tag generation error:', error);
@@ -84,11 +83,37 @@ export const aiService = {
       const result = await clearTagCacheFunction();
       const data = result.data as {success: boolean; deletedCount: number; message: string};
       
-      console.log('Tag cache cleared:', data);
       return data;
     } catch (error) {
       console.error('Failed to clear tag cache:', error);
       throw error;
+    }
+  },
+
+  /**
+   * 拡張AIタグ生成
+   */
+  async generateEnhancedTags(
+    metadata: LinkMetadata,
+    userId: string,
+    plan: UserPlan
+  ): Promise<AIResponse> {
+    try {
+      const result = await generateEnhancedAITagsFunction({
+        metadata,
+        userId,
+        userPlan: plan,
+      });
+      const data = result.data as AIResponse;
+      return data;
+    } catch (error) {
+      console.error('AI enhanced tag generation error:', error);
+      return {
+        tags: [],
+        fromCache: false,
+        tokensUsed: 0,
+        cost: 0,
+      };
     }
   },
 };
@@ -96,6 +121,7 @@ export const aiService = {
 // 既存のコードとの互換性を保つためのエクスポート
 export const {
   generateTags,
+  generateEnhancedTags,
   checkUsageLimit,
   clearTagCache,
 } = aiService;

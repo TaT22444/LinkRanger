@@ -163,8 +163,7 @@ export const HomeScreen: React.FC = () => {
         
         setTimeout(async () => {
           try {
-            console.log(`🤖 [AI Tagging Home] Starting automatic AI processing for linkId: ${newLinkId}`);
-            
+            console.log('[AI自動タグ付与] 開始: linkId', newLinkId, linkData);
             let finalTitle = linkData.title || '';
             let finalDescription = linkData.description || '';
             
@@ -172,11 +171,12 @@ export const HomeScreen: React.FC = () => {
               const metadata = await metadataService.fetchMetadata(linkData.url || '', user.uid);
               finalTitle = finalTitle || metadata.title || linkData.url || '';
               finalDescription = finalDescription || metadata.description || '';
+              console.log('[AI自動タグ付与] メタデータ取得成功', { finalTitle, finalDescription });
             } catch (metadataError) {
               finalTitle = finalTitle || linkData.url || '';
+              console.log('[AI自動タグ付与] メタデータ取得失敗', metadataError);
             }
-
-            console.log(`🤖 [AI Tagging Home] Calling AI service for linkId: ${newLinkId}`);
+            console.log('[AI自動タグ付与] Gemini呼び出し', { finalTitle, finalDescription });
             const aiResponse = await aiService.generateTags(
               finalTitle,
               finalDescription,
@@ -184,7 +184,8 @@ export const HomeScreen: React.FC = () => {
               user.uid,
               userPlan
             );
-            console.log(`🤖 [AI Tagging Home] AI response for linkId: ${newLinkId}`, { tags: aiResponse.tags, fromCache: aiResponse.fromCache });
+            console.log('[AI自動タグ付与] Gemini応答', aiResponse);
+            
 
             const finalTagIds: string[] = [...initialTagIds];
             
@@ -202,8 +203,9 @@ export const HomeScreen: React.FC = () => {
                   if (newTagId && !finalTagIds.includes(newTagId)) {
                     finalTagIds.push(newTagId);
                   }
+                  console.log('[AI自動タグ付与] 新規AIタグ作成', { tagName: normalizedTagName, newTagId });
                 } catch (error) {
-                  console.error(`🤖🔥 [AI Tagging Home] Failed to create new AI tag for linkId: ${newLinkId}`, { tagName: normalizedTagName, error });
+                  console.log('[AI自動タグ付与] 新規AIタグ作成失敗', { tagName: normalizedTagName, error });
                 }
               }
             }
@@ -223,7 +225,8 @@ export const HomeScreen: React.FC = () => {
             };
 
             await updateLink(newLinkId, updateData);
-            console.log(`🤖 [AI Tagging Home] Successfully updated link with AI tags. linkId: ${newLinkId}`, { finalTagIds });
+            console.log('[AI自動タグ付与] 完了: linkId', newLinkId, updateData);
+            
 
             const userTagCount = userSelectedTagIds.length;
             const platformTagCount = platformTagId ? 1 : 0;
@@ -261,7 +264,7 @@ export const HomeScreen: React.FC = () => {
             Alert.alert('🎉 自動AI分析完了', message);
 
           } catch (error) {
-            console.error(`🤖🔥 [AI Tagging Home] Auto AI processing failed for linkId: ${newLinkId}`, { error });
+            console.log('[AI自動タグ付与] 失敗: linkId', newLinkId, error);
             await updateLink(newLinkId, {
               status: 'error',
               error: {
