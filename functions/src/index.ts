@@ -16,8 +16,7 @@ import * as cheerio from "cheerio";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {initializeApp} from "firebase-admin/app";
 import {GoogleGenerativeAI} from "@google/generative-ai";
-import { getTaggingPrompt } from "./prompts";
-import { getMainEntitiesPrompt } from "./prompts";
+import {getTaggingPrompt, getMainEntitiesPrompt} from "./prompts";
 
 // Firebase Admin初期化
 initializeApp();
@@ -33,73 +32,86 @@ const getGeminiClient = () => {
 };
 
 // セキュリティ設定
-setGlobalOptions({ region: "asia-northeast1" });
+setGlobalOptions({region: "asia-northeast1"});
 
 const db = getFirestore();
 
 const AI_LIMITS = {
-  free: { maxTagsPerRequest: 5, costPerRequest: 0.025 },
-  pro: { maxTagsPerRequest: 8, costPerRequest: 0.025 },
+  free: {maxTagsPerRequest: 5, costPerRequest: 0.025},
+  pro: {maxTagsPerRequest: 8, costPerRequest: 0.025},
 } as const;
 
 // ===================================================================
-// 
+//
 // タグ生成のコアロジック
-// 
+//
 // ===================================================================
-async function generateTagsLogic( 
-  userId: string, 
-  userPlan: keyof typeof AI_LIMITS, 
-  url: string, 
-  title: string, 
+async function generateTagsLogic(
+  userId: string,
+  userPlan: keyof typeof AI_LIMITS,
+  url: string,
+  title: string,
   description?: string
 ) {
   logger.info(`🤖 [AI Tagging Start] userId: ${userId}, url: ${url}`);
   const combinedText = `${title} ${description || ""}`.trim();
 
   // 1. キャッシュを確認
+  logger.info(`🤖 [Cache Check] Checking cache for text: "${combinedText}" (length: ${combinedText.length})`);
   const cachedTags = await getCachedTags(combinedText);
   if (cachedTags) {
-    logger.info(`🤖 [AI Tagging Cache Hit] Found cached tags for userId: ${userId}`, { tags: cachedTags });
-    return { tags: cachedTags, fromCache: true, tokensUsed: 0, cost: 0 };
+    logger.info(`🤖 [AI Tagging Cache Hit] Found cached tags for userId: ${userId}`, {tags: cachedTags});
+    return {tags: cachedTags, fromCache: true, tokensUsed: 0, cost: 0};
+  } else {
+    logger.info(`🤖 [Cache Miss] No cached tags found for text: "${combinedText.slice(0, 100)}..."`);
   }
 
-  // 2. ドメインベースの簡易タグをまず生成
-  const domainTags = generateTagsFromDomain(url);
-  if (domainTags.length > 0 && combinedText.length < 100) {
-    logger.info(`🤖 [AI Tagging Domain Based] Using domain-based tags for userId: ${userId}`, { domainTags });
-    await cacheTags(combinedText, domainTags);
-    return { tags: domainTags, fromCache: false, tokensUsed: 0, cost: 0 };
-  }
-
-  // 3. Webページからコンテンツを抽出
-  let pageContent = { fullContent: "", pageTitle: "", pageDescription: "", keywords: [] as string[] };
+  // 2. Webページからコンテンツを抽出（メタデータ含む）
+  let pageContent = {fullContent: "", pageTitle: "", pageDescription: "", keywords: [] as string[]};
   try {
     pageContent = await fetchPageContent(url);
   } catch (error) {
-    logger.warn(`🤖 [AI Tagging Page Fetch Failed] Using fallback for userId: ${userId}`, { url, error });
-    const fallbackTags = generateFallbackTags(combinedText, userPlan);
-    return { tags: fallbackTags, fromCache: false, tokensUsed: 0, cost: 0 };
+    logger.warn(`🤖 [AI Tagging Page Fetch Failed] Using provided data for userId: ${userId}`, {url, error});
   }
 
-  // 4. AIへの入力情報を整理
-  const analysisTitle = pageContent.pageTitle || title;
+  // 3. 最終的な分析用データを決定（メタデータ優先、フォールバック付き）
+  const analysisTitle = pageContent.pageTitle || title || "";
   const analysisDescription = pageContent.pageDescription || description || "";
   const analysisContent = pageContent.fullContent || combinedText;
   const maxTags = AI_LIMITS[userPlan]?.maxTagsPerRequest || 5;
 
+  // 4. プラットフォーム検出とドメインベースタグ生成
+  const domainTags = generateTagsFromDomain(url);
+
+  // Google Mapsのリンクの場合、タイトル（店舗名）をタグに追加
+  if (isGoogleMapsUrl(url) && title) {
+    // 「・」以降を削除して、店舗名だけを抽出
+    const storeName = title.split("・")[0].trim();
+    if (storeName) {
+      domainTags.push(storeName); // 完全な店舗名をタグとして追加
+    }
+  }
+
   // 5. タイトルとメタデータから重要キーワードを抽出
   const keyTerms = extractKeyTerms(analysisTitle, analysisDescription);
   if (pageContent.keywords) {
-    pageContent.keywords.forEach(term => {
+    pageContent.keywords.forEach((term) => {
       if (term) keyTerms.add(term);
     });
   }
-  if (url.includes("note.com")) keyTerms.add("note");
+  domainTags.forEach((tag) => keyTerms.add(tag));
 
-  // 6. Gemini APIでタグを生成
+  // 6. 内容が少ない場合はドメインタグと基本的な処理のみ
+  if (combinedText.length < 50 && domainTags.length > 0) {
+    logger.info(`🤖 [AI Tagging Domain Based] Using domain-based tags for userId: ${userId}`, {domainTags});
+    const simpleTags = [...domainTags, ...Array.from(keyTerms)].slice(0, maxTags);
+    await cacheTags(combinedText, simpleTags);
+    return {tags: simpleTags, fromCache: false, tokensUsed: 0, cost: 0};
+  }
+
+  // 7. Gemini APIでタグを生成
   const genAI = getGeminiClient();
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  const model = genAI.getGenerativeModel({model: "gemini-pro"});
   const prompt = getTaggingPrompt(analysisTitle, analysisDescription, analysisContent, maxTags, Array.from(keyTerms));
   let aiTags: string[] = [];
   try {
@@ -108,139 +120,533 @@ async function generateTagsLogic(
     const response = await result.response;
     aiTags = (response.text() || "")
       .split(",")
-      .map(tag => tag.trim())
-      .filter(tag => tag && tag.length <= 20);
-    logger.info(`🤖 [AI Tagging API Success] Received tags from Gemini for userId: ${userId}`, { aiTags });
+      .map((tag) => tag.trim())
+      .filter((tag) => tag && tag.length <= 20);
+    logger.info(`🤖 [AI Tagging API Success] Received tags from Gemini for userId: ${userId}`, {aiTags});
   } catch (error) {
-    logger.error(`🤖🔥 [AI Tagging API Failed] Gemini API call failed for userId: ${userId}`, { error });
+    logger.error(`🤖🔥 [AI Tagging API Failed] Gemini API call failed for userId: ${userId}`, {error});
     aiTags = generateFallbackTags(combinedText, userPlan);
   }
 
-  // --- 主題固有名詞抽出AI呼び出し ---
+  // 8. 主題固有名詞抽出AI呼び出し
   let mainEntities: string[] = [];
   try {
     const mainEntitiesPrompt = getMainEntitiesPrompt(analysisTitle, analysisDescription, analysisContent);
-    const mainEntitiesModel = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const mainEntitiesModel = genAI.getGenerativeModel({model: "gemini-pro"});
     const mainEntitiesResult = await mainEntitiesModel.generateContent(mainEntitiesPrompt);
     const mainEntitiesResponse = await mainEntitiesResult.response;
     mainEntities = (mainEntitiesResponse.text() || "")
       .split(",")
-      .map(e => e.trim())
-      .filter(e => e);
-    logger.info(`[MainEntities] AI抽出:`, mainEntities);
+      .map((e) => e.trim())
+      .filter((e) => e);
+    logger.info("[MainEntities] AI抽出:", mainEntities);
   } catch (error) {
-    logger.warn(`[MainEntities] AI抽出失敗`, error);
+    logger.warn("[MainEntities] AI抽出失敗", error);
   }
 
-  // --- タイトル・説明文から英単語・カタカナ語・サービス名らしき語を抽出 ---
+  // 9. タイトル・説明文から候補語を抽出
   function extractCandidateEntities(...texts: string[]): string[] {
     const pattern = /\b([A-Za-z][A-Za-z0-9]+|[ァ-ヴー]{2,}|[一-龠々]{2,})\b/g;
     const set = new Set<string>();
     for (const text of texts) {
       const matches = text.match(pattern);
-      if (matches) matches.forEach(word => set.add(word));
+      if (matches) matches.forEach((word) => set.add(word));
     }
     return Array.from(set);
   }
   const candidateEntities = extractCandidateEntities(analysisTitle, analysisDescription);
 
-  // --- AIタグ・主題固有名詞・候補語を優先度順にマージし、maxTagsまで埋める ---
+  // 10. 全てのタグ候補を優先度順にマージ
   const tagSet = new Set<string>();
-  // 1. まずAIタグを追加
+  // プラットフォーム/ドメインタグ（最優先）
+  for (const tag of domainTags) {
+    if (tagSet.size < maxTags && tag && !tagSet.has(tag)) tagSet.add(tag);
+  }
+  // AIタグ
   for (const tag of aiTags) {
     if (tagSet.size < maxTags && tag && !tagSet.has(tag)) tagSet.add(tag);
   }
-  // 2. 主題固有名詞を優先的に追加
+  // 主題固有名詞
   for (const entity of mainEntities) {
     if (tagSet.size < maxTags && entity && !tagSet.has(entity)) tagSet.add(entity);
   }
-  // 3. 候補語をさらに追加
+  // 候補語
   for (const cand of candidateEntities) {
     if (tagSet.size < maxTags && cand && !tagSet.has(cand)) tagSet.add(cand);
   }
+  // キーワード
+  for (const term of keyTerms) {
+    if (tagSet.size < maxTags && term && !tagSet.has(term)) tagSet.add(term);
+  }
   const tags = Array.from(tagSet);
 
-  // 7. 結果を検証・補強
-  // const finalTags = new Set([...keyTerms, ...aiTags, ...domainTags]); // This line is no longer needed
-  // const tags = Array.from(finalTags).slice(0, maxTags); // This line is no longer needed
-
-  // 8. コスト計算と記録
-  const tokensUsed = Math.ceil(prompt.length / 4); // 概算
+  // 11. コスト計算と記録
+  const tokensUsed = Math.ceil(prompt.length / 4);
   const cost = AI_LIMITS[userPlan]?.costPerRequest || 0;
   await recordAIUsage(userId, "tags", tokensUsed, combinedText.length, cost);
   await cacheTags(combinedText, tags);
 
-  logger.info(`🤖 [AI Tagging Success] Generated tags for userId: ${userId}`, { tagsCount: tags.length, fromCache: false });
+  logger.info(`🤖 [AI Tagging Success] Generated tags for userId: ${userId}`, {
+    tagsCount: tags.length,
+    fromCache: false,
+    domainTags: domainTags.length,
+    aiTags: aiTags.length,
+    mainEntities: mainEntities.length,
+  });
 
-  return { tags, fromCache: false, tokensUsed, cost };
+  return {tags, fromCache: false, tokensUsed, cost};
 }
 
 
 // ===================================================================
-// 
+//
 // Callable Functions (UIから呼び出されるエンドポイント)
-// 
+//
 // ===================================================================
 
-export const generateAITags = onCall({ timeoutSeconds: 60, memory: "512MiB" }, async (request) => {
+export const generateAITags = onCall({timeoutSeconds: 60, memory: "512MiB"}, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
-  const { title, description, url, userId, userPlan = "free" } = request.data;
+  const {title, description, url, userId, userPlan = "free"} = request.data;
   if (!title || !url || !userId) throw new HttpsError("invalid-argument", "タイトル、URL、ユーザーIDは必須です");
 
   return await generateTagsLogic(userId, userPlan, url, title, description);
 });
 
-export const generateEnhancedAITags = onCall({ timeoutSeconds: 60, memory: "1GiB" }, async (request) => {
+export const generateEnhancedAITags = onCall({timeoutSeconds: 60, memory: "1GiB"}, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
-  const { metadata, userId, userPlan = "free" } = request.data;
+  const {metadata, userId, userPlan = "free"} = request.data;
   if (!metadata || !userId) throw new HttpsError("invalid-argument", "メタデータとユーザーIDが必要です");
 
   return await generateTagsLogic(userId, userPlan, metadata.url, metadata.title, metadata.description);
 });
 
+export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
+  const {url} = request.data;
+  if (!url) throw new HttpsError("invalid-argument", "URLが必要です");
+
+  try {
+    // 一時的にGoogle Maps特別処理を無効化して、通常のWebページとして処理
+    // if (isGoogleMapsUrl(url)) {
+    //   logger.info("Processing Google Maps URL", {url});
+    //   return await handleGoogleMapsUrl(url);
+    // }
+
+    const response = await axios.get(url, {timeout: 10000, maxRedirects: 5});
+    const $ = cheerio.load(response.data);
+
+    const title = $("meta[property='og:title']").attr("content") || $("title").text() || "";
+    const description = $("meta[property='og:description']").attr("content") || $("meta[name='description']").attr("content") || "";
+    const imageUrl = $("meta[property='og:image']").attr("content") || "";
+    const siteName = $("meta[property='og:site_name']").attr("content") || "";
+
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+
+    return {
+      title: title.trim(),
+      description: description.trim(),
+      imageUrl: imageUrl.trim(),
+      siteName: siteName.trim(),
+      domain,
+    };
+  } catch (error) {
+    logger.error("Failed to fetch metadata", {url, error});
+
+    // フォールバック: URLからドメイン名を抽出
+    try {
+      const urlObj = new URL(url);
+      return {
+        title: urlObj.hostname.replace("www.", ""),
+        description: "",
+        domain: urlObj.hostname,
+      };
+    } catch {
+      throw new HttpsError("invalid-argument", "無効なURLです");
+    }
+  }
+});
+
 
 // ===================================================================
-// 
+//
+// Google Maps関連の関数
+//
+// ===================================================================
+
+function isGoogleMapsUrl(url: string): boolean {
+  const patterns = [
+    /maps\.google\./,
+    /goo\.gl\/maps/,
+    /maps\.app\.goo\.gl/,
+    /google\..*\/maps/,
+  ];
+
+  return patterns.some((pattern) => pattern.test(url));
+}
+
+/*
+async function handleGoogleMapsUrl(url: string) {
+  // ... Google Maps処理ロジック
+}
+
+function parseGoogleMapsUrl(url: string) {
+  // ... URL解析ロジック
+}
+
+function generateMapTitle(mapInfo: {[key: string]: string | object}): string {
+  // ... タイトル生成ロジック
+}
+
+function generateMapDescription(mapInfo: {[key: string]: string | object}): string {
+  // ... 説明生成ロジック
+}
+*/
+
+// ===================================================================
+//
 // ヘルパー関数群
-// 
+//
 // ===================================================================
 
 async function fetchPageContent(url: string) {
-  const response = await axios.get(url, { timeout: 10000, maxRedirects: 5 });
+  const response = await axios.get(url, {timeout: 10000, maxRedirects: 5});
   const $ = cheerio.load(response.data);
 
   const pageTitle = $("meta[property='og:title']").attr("content") || $("title").text() || "";
   const pageDescription = $("meta[property='og:description']").attr("content") || $("meta[name='description']").attr("content") || "";
-  const keywords = ($("meta[name='keywords']").attr("content") || "").split(",").map(k => k.trim());
+  const keywords = ($("meta[name='keywords']").attr("content") || "").split(",").map((k) => k.trim());
 
 
   $("script, style, nav, header, footer, aside").remove();
   const mainContent = $("main, article, .content, .post").first();
   const fullContent = (mainContent.length ? mainContent.text() : $("body").text()).trim().slice(0, 2000);
 
-  return { fullContent, pageTitle, pageDescription, keywords };
+  return {fullContent, pageTitle, pageDescription, keywords};
 }
 
 function extractKeyTerms(title: string, description?: string): Set<string> {
   const terms = new Set<string>();
-  const knownEntities = [
-    "Obsidian", "Cursor", "AI", "ChatGPT", "Gemini", "GitHub", "JavaScript", "TypeScript", "Python", "React", "Vue", "Node.js", "AWS", "Firebase", "Docker", "Figma", "Notion"
-  ];
-  knownEntities.forEach(entity => {
-    if (new RegExp(`\\b${entity}\\b`, "i").test(title)) terms.add(entity);
-  });
-  // かぎ括弧内の語句
-  const bracketMatches = title.match(/[「『]([^」』]+)[」』]/g);
-  if (bracketMatches) bracketMatches.forEach(m => terms.add(m.slice(1, -1)));
-  // 複合語・固有名詞（英数字+スペースを含む語句）
-  const phraseMatches = title.match(/([A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+ [A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+)/g);
-  if (phraseMatches) phraseMatches.forEach(m => terms.add(m.trim()));
-  // 説明文にも同様の抽出を適用
-  if (description) {
-    const descPhraseMatches = description.match(/([A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+ [A-Za-z0-9\u3040-\u30FF\u4E00-\u9FFF]+)/g);
-    if (descPhraseMatches) descPhraseMatches.forEach(m => terms.add(m.trim()));
+
+  // タイトルを優先して処理（説明文は補助的に使用）
+  const titleText = title || "";
+  const allText = `${title} ${description || ""}`;
+
+  // 1. タイトルから重要な単語を抽出（複合キーワード生成の基礎）
+  const titleKeywords = extractTitleKeywords(titleText);
+  titleKeywords.forEach((keyword) => terms.add(keyword));
+
+  // 2. 複合キーワードを生成（タイトルの語句組み合わせ）
+  const compoundKeywords = generateCompoundKeywords(titleKeywords);
+  compoundKeywords.forEach((compound) => terms.add(compound));
+
+  // 3. 括弧内の重要な情報（「」『』()（））
+  const bracketMatches = allText.match(/[「『（(]([^」』）)]+)[」』）)]/g);
+  if (bracketMatches) {
+    bracketMatches.forEach((m) => {
+      const content = m.slice(1, -1).trim();
+      if (content.length >= 1 && content.length <= 30) {
+        terms.add(content);
+      }
+    });
   }
+
+  // 4. 英語の固有名詞や略語（特に重要）
+  const englishTerms = allText.match(/\b([A-Z][a-zA-Z0-9]+(?:\s[A-Z][a-zA-Z0-9]+)*)\b/g);
+  if (englishTerms) {
+    englishTerms.forEach((term) => {
+      if (term.length >= 2) {
+        terms.add(term);
+
+        // 略語を生成 (例: "Model Context Protocol" -> "MCP")
+        if (term.includes(" ")) {
+          const acronym = term.split(" ").map((word) => word[0]).join("");
+          if (acronym.length > 1) {
+            terms.add(acronym);
+          }
+        }
+
+        // 英語略語と日本語の組み合わせも生成
+        const japaneseWords = ["メリット", "勉強法", "資格", "試験", "対策"];
+        japaneseWords.forEach((jp) => {
+          if (titleText.includes(jp.replace("勉強法", "勉強方法"))) {
+            terms.add(`${term}${jp}`);
+          }
+        });
+      }
+    });
+  }
+
+  // 5. ハッシュタグ
+  const hashtags = allText.match(/#[\w\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]+/g);
+  if (hashtags) {
+    hashtags.forEach((tag) => {
+      const cleanTag = tag.slice(1);
+      if (cleanTag.length >= 1 && cleanTag.length <= 20) {
+        terms.add(cleanTag);
+      }
+    });
+  }
+
+  // 6. 年号
+  const years = allText.match(/\b(20\d{2}|令和\d+|平成\d+)年?\b/g);
+  if (years) {
+    years.forEach((year) => terms.add(year));
+  }
+
   return terms;
+}
+
+// タイトルから重要キーワードを動的に抽出
+function extractTitleKeywords(title: string): string[] {
+  const keywords: string[] = [];
+
+  // 1. 英語の専門用語・略語（大文字で始まる）
+  const acronyms = title.match(/\b[A-Z][A-Za-z0-9]{1,10}\b/g) || [];
+  keywords.push(...acronyms);
+
+  // 2. カタカナ専門用語（3文字以上）
+  const katakanaTerms = title.match(/[ァ-ヴー]{3,15}/g) || [];
+  keywords.push(...katakanaTerms);
+
+  // 3. 漢字・ひらがな混合の重要語句（形態素解析的アプローチ）
+  const japaneseKeywords = extractJapaneseKeywords(title);
+  keywords.push(...japaneseKeywords);
+
+  // 4. 助詞や接続詞を含む意味のある句を抽出
+  const meaningfulPhrases = extractMeaningfulPhrases(title);
+  keywords.push(...meaningfulPhrases);
+
+  // 5. 略語化のパターン適用
+  const abbreviations = generateAbbreviations(keywords);
+  keywords.push(...abbreviations);
+
+  return [...new Set(keywords)]; // 重複除去
+}
+
+// 日本語キーワードを動的に抽出
+function extractJapaneseKeywords(text: string): string[] {
+  const keywords: string[] = [];
+
+  // 1. 複合語・固有名詞を優先抽出（分割を防ぐ）
+  const protectedCompounds = extractProtectedCompounds(text);
+  keywords.push(...protectedCompounds);
+
+  // 保護された複合語をマスクして単語分割を防ぐ
+  let maskedText = text;
+  const maskMap = new Map<string, string>();
+  protectedCompounds.forEach((compound, index) => {
+    const mask = `__PROTECTED_${index}__`;
+    maskMap.set(mask, compound);
+    maskedText = maskedText.replace(new RegExp(compound, "g"), mask);
+  });
+
+  // 2. 残りの意味のある単語を抽出（マスクされた部分は除外）
+  const remainingKeywords = extractRemainingKeywords(maskedText);
+  keywords.push(...remainingKeywords);
+
+  // 複合語パターン（○○方法、○○対策、○○メリットなど）
+  const compoundPatterns = [
+    /([一-龠ひらがなカタカナA-Za-z]+)方法/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)対策/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)メリット/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)効果/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)手順/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)やり方/g,
+  ];
+
+  compoundPatterns.forEach((pattern) => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match) => {
+      if (match[1] && match[1].length >= 1) {
+        keywords.push(match[0]); // 全体（例：MCP方法）
+        keywords.push(match[1]); // 前半部分（例：MCP）
+      }
+    });
+  });
+
+  return keywords;
+}
+
+// 意味のある句を抽出
+function extractMeaningfulPhrases(text: string): string[] {
+  const phrases: string[] = [];
+
+  // 疑問文パターン（○○とは、○○って何、○○の意味など）
+  const questionPatterns = [
+    /([一-龠ひらがなカタカナA-Za-z]+)とは/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)って何/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)の意味/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)について/g,
+  ];
+
+  questionPatterns.forEach((pattern) => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match) => {
+      if (match[1] && match[1].length >= 1) {
+        phrases.push(match[1]); // 主要語句のみ抽出
+      }
+    });
+  });
+
+  // 目的・用途パターン（○○活用、○○選び方、○○比較など）
+  const purposePatterns = [
+    /([一-龠ひらがなカタカナA-Za-z]+)活用/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)選び方/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)比較/g,
+    /([一-龠ひらがなカタカナA-Za-z]+)評価/g,
+  ];
+
+  purposePatterns.forEach((pattern) => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match) => {
+      if (match[1] && match[1].length >= 1) {
+        phrases.push(match[0]); // 全体を保持
+        phrases.push(match[1]); // 主要部分も保持
+      }
+    });
+  });
+
+  return phrases;
+}
+
+// 略語化パターンを生成
+function generateAbbreviations(keywords: string[]): string[] {
+  const abbreviations: string[] = [];
+
+  // 一般的な略語化パターン
+  const abbreviationMap: Record<string, string> = {
+    "勉強方法": "勉強法",
+    "学習方法": "学習法",
+    "攻略方法": "攻略法",
+    "プログラミング": "プログラム",
+    "アプリケーション": "アプリ",
+    "データベース": "DB",
+    "マネジメント": "管理",
+  };
+
+  keywords.forEach((keyword) => {
+    Object.entries(abbreviationMap).forEach(([full, abbrev]) => {
+      if (keyword.includes(full)) {
+        abbreviations.push(keyword.replace(full, abbrev));
+      }
+    });
+  });
+
+  return abbreviations;
+}
+
+// 複合語・固有名詞を保護（分割を防ぐ）
+function extractProtectedCompounds(text: string): string[] {
+  const protectedTerms: string[] = [];
+
+  // 1. 企業名・ブランド名パターン（カタカナ + 英語）
+  const brandPatterns = [
+    /[ァ-ヴー]{2,}[A-Za-z][A-Za-z0-9]*/g, // ソフトバンク、リクルート等
+    /[A-Za-z][A-Za-z0-9]*[ァ-ヴー]{2,}/g, // IBM等
+    /[一-龠]{1,3}[ァ-ヴー]{2,}/g, // 東急リバブル、三井不動産等
+  ];
+
+  brandPatterns.forEach((pattern) => {
+    const matches = text.match(pattern) || [];
+    protectedTerms.push(...matches.filter((m) => m.length >= 3));
+  });
+
+  // 2. 専門用語・システム名（複合語として保護）
+  const technicalTerms = [
+    /デザインシステム/g,
+    /デザインガイドライン/g,
+    /マネジメントシステム/g,
+    /プロジェクトマネジメント/g,
+    /データベース/g,
+    /アプリケーション/g,
+    /インフラストラクチャ/g,
+    /フレームワーク/g,
+    /プラットフォーム/g,
+    /アーキテクチャ/g,
+    /ソリューション/g,
+  ];
+
+  technicalTerms.forEach((pattern) => {
+    const matches = text.match(pattern) || [];
+    protectedTerms.push(...matches);
+  });
+
+  // 3. 複合カタカナ語（3文字以上の連続）
+  const compoundKatakana = text.match(/[ァ-ヴー]{3,}/g) || [];
+  protectedTerms.push(...compoundKatakana);
+
+  // 4. 漢字複合語（固有名詞として扱うべきもの）
+  const kanjiCompounds = [
+    /[一-龠]{2,}(?:会社|株式会社|コーポレーション|グループ|ホールディングス)/g,
+    /[一-龠]{2,}(?:大学|学校|研究所|機構)/g,
+    /[一-龠]{2,}(?:システム|サービス|ソリューション)/g,
+  ];
+
+  kanjiCompounds.forEach((pattern) => {
+    const matches = text.match(pattern) || [];
+    protectedTerms.push(...matches);
+  });
+
+  // 5. 動的パターン：○○システム、○○サービス等
+  const dynamicCompoundPatterns = [
+    /([一-龠ァ-ヴーA-Za-z]+)(?:システム|サービス|プラットフォーム|ソリューション)/g,
+    /([一-龠ァ-ヴーA-Za-z]+)(?:マネジメント|コンサルティング)/g,
+  ];
+
+  dynamicCompoundPatterns.forEach((pattern) => {
+    const matches = [...text.matchAll(pattern)];
+    matches.forEach((match) => {
+      if (match[0] && match[0].length >= 4) {
+        protectedTerms.push(match[0]); // 全体を保護
+      }
+    });
+  });
+
+  return [...new Set(protectedTerms)]; // 重複除去
+}
+
+// 保護されなかった残りのキーワードを抽出
+function extractRemainingKeywords(maskedText: string): string[] {
+  const keywords: string[] = [];
+
+  // マスクされていない部分から意味のある単語を抽出
+  const nounPattern = /[一-龠ひらがなカタカナ]{2,6}(?=[はがをにへとでからまで｜？！。、\s]|$)/g;
+  const nouns = maskedText.match(nounPattern) || [];
+
+  const meaningfulNouns = nouns.filter((noun) => {
+    return (
+      noun.length >= 2 &&
+      !noun.includes("__PROTECTED_") && // マスク除外
+      !noun.match(/^[はがをにへとでからまで、。！？]+$/) && // 助詞・句読点除外
+      !noun.match(/^[するですますだったではある]+$/) && // 動詞・助動詞除外
+      !noun.match(/^[このその他これそれあのどの]+$/) && // 指示語除外
+      !noun.match(/^[というからでもやはりだけ]+$/) // 接続詞・副詞除外
+    );
+  });
+
+  keywords.push(...meaningfulNouns);
+  return keywords;
+}
+
+// 複合キーワードを生成
+function generateCompoundKeywords(keywords: string[]): string[] {
+  const compounds: string[] = [];
+
+  // 英語略語 + 日本語の組み合わせ
+  const englishTerms = keywords.filter((k) => /^[A-Z][A-Za-z0-9]*$/.test(k));
+  const japaneseTerms = keywords.filter((k) => /[ひらがなカタカナ漢字]/.test(k));
+
+  englishTerms.forEach((eng) => {
+    japaneseTerms.forEach((jp) => {
+      // 意味のある組み合わせのみ生成
+      if (jp.match(/メリット|デメリット|勉強法|資格|試験|対策|効果|方法/)) {
+        compounds.push(`${eng}${jp}`);
+      }
+    });
+  });
+
+  return compounds;
 }
 
 function generateTagsFromDomain(url: string): string[] {
@@ -251,31 +657,41 @@ function generateTagsFromDomain(url: string): string[] {
     if (domain.includes("zenn.dev")) return ["Zenn", "技術"];
     if (domain.includes("github.com")) return ["GitHub", "コード"];
     if (domain.includes("youtube.com")) return ["YouTube", "動画"];
-  } catch {}
+  } catch (error) {
+    logger.warn("Failed to parse domain for tagging", {url, error});
+  }
   return [];
 }
 
 function generateFallbackTags(text: string, plan: keyof typeof AI_LIMITS): string[] {
   const maxTags = AI_LIMITS[plan]?.maxTagsPerRequest || 5;
-  const keywords = ["技術", "ビジネス", "デザイン", "プログラミング", "AI", "ツール"];
-  const relevantTags = keywords.filter(kw => text.toLowerCase().includes(kw));
+  const keywords = ["技術", "ビジネス", "デザインシステム", "プログラミング", "AI", "ツール"];
+  const relevantTags = keywords.filter((kw) => text.toLowerCase().includes(kw));
   return relevantTags.slice(0, maxTags);
 }
 
 async function getCachedTags(text: string): Promise<string[] | null> {
   const hash = generateContentHash(text);
+  logger.info(`🤖 [Cache Lookup] Looking for hash: ${hash}`);
   const cacheDoc = await db.collection("tagCache").doc(hash).get();
   if (cacheDoc.exists) {
     const data = cacheDoc.data();
-    const isCacheValid = (new Date().getTime() - data?.createdAt.toDate().getTime()) < 7 * 24 * 60 * 60 * 1000;
+    const cacheAge = new Date().getTime() - data?.createdAt.toDate().getTime();
+    const cacheAgeHours = Math.floor(cacheAge / (1000 * 60 * 60));
+    const isCacheValid = cacheAge < 7 * 24 * 60 * 60 * 1000;
+    logger.info(`🤖 [Cache Found] Cache age: ${cacheAgeHours}h, valid: ${isCacheValid}`, {cachedTags: data?.tags});
     if (isCacheValid) return data?.tags || null;
+    logger.info("🤖 [Cache Expired] Cache too old, ignoring");
+  } else {
+    logger.info(`🤖 [Cache Not Found] No cache document found for hash: ${hash}`);
   }
   return null;
 }
 
 async function cacheTags(text: string, tags: string[]): Promise<void> {
   const hash = generateContentHash(text);
-  await db.collection("tagCache").doc(hash).set({ tags, createdAt: FieldValue.serverTimestamp() });
+  logger.info(`🤖 [Cache Store] Storing tags for text: "${text.slice(0, 100)}..." (hash: ${hash})`, {tags});
+  await db.collection("tagCache").doc(hash).set({tags, createdAt: FieldValue.serverTimestamp()});
 }
 
 function generateContentHash(text: string): string {
@@ -291,7 +707,7 @@ async function recordAIUsage(userId: string, type: string, tokensUsed: number, t
   const now = new Date();
   const month = now.toISOString().slice(0, 7);
   const day = now.toISOString().slice(0, 10);
-  await db.collection("aiUsage").add({ userId, type, tokensUsed, textLength, cost, timestamp: FieldValue.serverTimestamp(), month, day });
+  await db.collection("aiUsage").add({userId, type, tokensUsed, textLength, cost, timestamp: FieldValue.serverTimestamp(), month, day});
   const summaryRef = db.collection("aiUsageSummary").doc(`${userId}_${month}`);
-  await summaryRef.set({ totalRequests: FieldValue.increment(1), totalTokens: FieldValue.increment(tokensUsed), totalCost: FieldValue.increment(cost), lastUpdated: FieldValue.serverTimestamp() }, { merge: true });
+  await summaryRef.set({totalRequests: FieldValue.increment(1), totalTokens: FieldValue.increment(tokensUsed), totalCost: FieldValue.increment(cost), lastUpdated: FieldValue.serverTimestamp()}, {merge: true});
 }

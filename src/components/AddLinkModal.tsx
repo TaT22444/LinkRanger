@@ -209,7 +209,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         const userTagCount = preservedUserTags.length;
         const aiTagCount = newTagIds.length;
         
-        let successMessage = `${aiTagCount}個の新しいAIタグを追加しました！
+        let successMessage = `${aiTagCount}個の新しいAIタグを追加しました！!!!!!!!!!!
 
 `;
         if (userTagCount > 0) successMessage += `👤 ユーザー選択: ${userTagCount}個
@@ -249,8 +249,40 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     }
   };
 
+  const hasUnsavedChanges = () => {
+    return (
+      url.trim() !== initialUrl || 
+      title.trim() !== '' || 
+      description.trim() !== '' || 
+      selectedTags.length > 0
+    );
+  };
+
   const handleClose = () => {
-    if (!loading && !generatingAITags) {
+    if (loading || generatingAITags) {
+      return;
+    }
+
+    if (hasUnsavedChanges()) {
+      Alert.alert(
+        '未保存の変更があります',
+        '入力内容を破棄してモーダルを閉じますか？',
+        [
+          {
+            text: 'キャンセル',
+            style: 'cancel',
+          },
+          {
+            text: '変更を破棄',
+            style: 'destructive',
+            onPress: () => {
+              resetForm();
+              onClose();
+            },
+          },
+        ]
+      );
+    } else {
       resetForm();
       onClose();
     }

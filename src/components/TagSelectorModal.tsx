@@ -80,10 +80,31 @@ export const TagSelectorModal: React.FC<TagSelectorModalProps> = ({
     onClose();
   };
 
-  // キャンセル
+  // キャンセル（変更確認付き）
   const handleCancel = () => {
-    setLocalSelectedTags([...selectedTags]);
-    onClose();
+    if (hasChanges) {
+      Alert.alert(
+        '未保存の変更があります',
+        'タグの変更を保存せずに閉じますか？',
+        [
+          {
+            text: 'キャンセル',
+            style: 'cancel',
+          },
+          {
+            text: '変更を破棄',
+            style: 'destructive',
+            onPress: () => {
+              setLocalSelectedTags([...selectedTags]);
+              onClose();
+            },
+          },
+        ]
+      );
+    } else {
+      setLocalSelectedTags([...selectedTags]);
+      onClose();
+    }
   };
 
   // タグ名を取得

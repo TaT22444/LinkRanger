@@ -301,9 +301,10 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
         newTagIds.push(tagId);
       }
       
-      // 作成したタグを適用して閉じる
-      onTagsChange(newTagIds);
-      onClose();
+      // 既存のタグ + 新規作成したタグを合わせて適用して閉じる
+      const allTagIds = [...(selectedTags || []), ...newTagIds];
+      onTagsChange(allTagIds);
+      performClose();
     } catch (error) {
       console.error('AddTagModal: bulk tag creation error:', error);
       Alert.alert('エラー', 'タグの作成に失敗しました');
@@ -325,13 +326,46 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
     }
   };
 
+  // 変更があるかどうかをチェック
+  const hasUnsavedChanges = () => {
+    return (
+      pendingTags.length > 0 || // 作成予定のタグがある
+      createdTags.length > 0 || // 作成済みのタグがある
+      deletedTags.size > 0 // 削除されたタグがある
+      // newTagName.trim() !== '' は除外（入力途中はアラート不要）
+    );
+  };
+
   const handleClose = () => {
+    if (hasUnsavedChanges()) {
+      Alert.alert(
+        '未保存の変更があります',
+        '作成中のタグや変更を破棄して閉じますか？',
+        [
+          {
+            text: 'キャンセル',
+            style: 'cancel',
+          },
+          {
+            text: '変更を破棄',
+            style: 'destructive',
+            onPress: () => {
+              performClose();
+            },
+          },
+        ]
+      );
+    } else {
+      performClose();
+    }
+  };
+
+  const performClose = () => {
     // Undoタイマーをクリア
     if (undoState.timeoutId) {
       clearTimeout(undoState.timeoutId);
     }
     
-    // setLocalSelectedTags(selectedTags || []); // この行は削除
     setCreatedTags([]);
     setPendingTags([]);
     setNewTagName('');
@@ -341,7 +375,7 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
   };
 
   const handleBackdropPress = () => {
-    onTagsChange(createdTags);
+    // バックドロップタップ時は変更確認を行う
     handleClose();
   };
 
@@ -363,7 +397,7 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       animationType="none"
       presentationStyle="overFullScreen"
       transparent={true}
-      onRequestClose={handleBackdropPress}
+      onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}

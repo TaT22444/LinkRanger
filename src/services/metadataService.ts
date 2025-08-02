@@ -18,6 +18,22 @@ export interface LinkMetadata {
   readingTime?: number;          // 推定読了時間（分）
   wordCount?: number;            // 文字数
   language?: string;             // 言語検出
+  // Google Maps専用メタデータ
+  mapInfo?: GoogleMapInfo;       // マップ情報
+}
+
+export interface GoogleMapInfo {
+  placeName?: string;            // 場所名
+  address?: string;              // 住所
+  coordinates?: {                // 座標
+    lat: number;
+    lng: number;
+  };
+  placeType?: string;            // 場所のタイプ（レストラン、駅など）
+  rating?: number;               // 評価
+  businessHours?: string;        // 営業時間
+  phoneNumber?: string;          // 電話番号
+  website?: string;              // ウェブサイト
 }
 
 export interface ImageMetadata {
@@ -35,7 +51,7 @@ export interface CodeSnippet {
 }
 
 export interface ContentType {
-  category: 'article' | 'tutorial' | 'documentation' | 'news' | 'blog' | 'tool' | 'video' | 'social' | 'ecommerce' | 'other';
+  category: 'article' | 'tutorial' | 'documentation' | 'news' | 'blog' | 'tool' | 'video' | 'social' | 'ecommerce' | 'map' | 'other';
   subCategory?: string;
   confidence: number; // 0.0-1.0
   indicators: string[]; // 判定根拠
@@ -51,6 +67,11 @@ export const metadataService = {
   async fetchMetadata(url: string, userId?: string): Promise<LinkMetadata> {
     try {
       console.log('Fetching basic metadata for:', url);
+      
+      // 一時的にGoogle Maps特別処理を無効化して、通常のWebページとして処理
+      // if (this.isGoogleMapsUrl(url)) {
+      //   return this.handleGoogleMapsUrl(url);
+      // }
       
       const fetchMetadataFunction = httpsCallable(functions, 'fetchMetadata');
       const result = await fetchMetadataFunction({ url, userId });
@@ -127,6 +148,8 @@ export const metadataService = {
       'mainichi.jp': ['news'],
       'asahi.com': ['news'],
       'yomiuri.co.jp': ['news'],
+      'maps.google.com': ['map'],
+      'goo.gl': ['map'], // Google Maps短縮URL
     };
     
     return domainMap[domain.toLowerCase()] || [];
@@ -209,7 +232,7 @@ export const metadataService = {
   calculateCategoryScores(indicators: string[]): Record<string, number> {
     const scores: Record<string, number> = {
       article: 0, tutorial: 0, documentation: 0, news: 0, blog: 0,
-      tool: 0, video: 0, social: 0, ecommerce: 0, other: 0
+      tool: 0, video: 0, social: 0, ecommerce: 0, map: 0, other: 0
     };
     
     indicators.forEach(indicator => {
@@ -383,5 +406,225 @@ export const metadataService = {
         };
       }
     }
+  },
+
+  /**
+   * Google MapsのURLかどうか判定
+   */
+  isGoogleMapsUrl(url: string): boolean {
+    const patterns = [
+      /maps\.google\./,
+      /goo\.gl\/maps/,
+      /maps\.app\.goo\.gl/,
+      /google\..*\/maps/,
+    ];
+    
+    return patterns.some(pattern => pattern.test(url));
+  },
+
+  /**
+   * Google MapsのURLを処理してメタデータを生成
+   */
+  async handleGoogleMapsUrl(url: string): Promise<LinkMetadata> {
+    try {
+      console.log('Processing Google Maps URL:', url);
+      
+      // 短縮URLの場合は展開を試行
+      let finalUrl = url;
+      if (url.includes('goo.gl') || url.includes('maps.app.goo.gl')) {
+        try {
+          console.log('Attempting to expand shortened URL:', url);
+          const response = await fetch(url, { 
+            method: 'HEAD',
+            redirect: 'manual'
+          });
+          const location = response.headers.get('location');
+          if (location && this.isGoogleMapsUrl(location)) {
+            finalUrl = location;
+            console.log('Expanded URL:', finalUrl);
+          }
+        } catch (error) {
+          console.log('Failed to expand URL, using original:', error);
+        }
+      }
+      
+      const mapInfo = this.parseGoogleMapsUrl(finalUrl);
+      const title = this.generateMapTitle(mapInfo);
+      const description = this.generateMapDescription(mapInfo);
+      
+      return {
+        title,
+        description,
+        siteName: 'Google Maps',
+        domain: 'maps.google.com',
+        mapInfo,
+        contentType: {
+          category: 'map',
+          confidence: 1.0,
+          indicators: ['google-maps-url'],
+        },
+      };
+    } catch (error) {
+      console.error('Error processing Google Maps URL:', error);
+      
+      // フォールバック
+      return {
+        title: 'Google Maps',
+        description: 'マップリンク',
+        siteName: 'Google Maps',
+        domain: 'maps.google.com',
+        contentType: {
+          category: 'map',
+          confidence: 0.8,
+          indicators: ['google-maps-fallback'],
+        },
+      };
+    }
+  },
+
+  /**
+   * Google MapsのURLを解析
+   */
+  parseGoogleMapsUrl(url: string): GoogleMapInfo {
+    const mapInfo: GoogleMapInfo = {};
+    
+    try {
+      console.log('Parsing Google Maps URL:', url);
+      const urlObj = new URL(url);
+      const params = urlObj.searchParams;
+      const pathname = urlObj.pathname;
+      
+      // クエリパラメータから場所名を取得 (例: ?q=東京駅)
+      const query = params.get('q');
+      if (query) {
+        mapInfo.placeName = decodeURIComponent(query);
+        console.log('Place name from query:', mapInfo.placeName);
+      }
+      
+      // パスから場所情報を抽出（/maps/place/場所名/@座標 形式）
+      const placeMatch = pathname.match(/\/maps\/place\/([^/@]+)/);
+      if (placeMatch) {
+        const placeName = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
+        mapInfo.placeName = placeName;
+        console.log('Place name from path:', placeName);
+      }
+      
+      // より詳細なパターンマッチング
+      // /maps/search/場所名 形式
+      const searchMatch = pathname.match(/\/maps\/search\/([^/@]+)/);
+      if (searchMatch && !mapInfo.placeName) {
+        const placeName = decodeURIComponent(searchMatch[1]).replace(/\+/g, ' ');
+        mapInfo.placeName = placeName;
+        console.log('Place name from search path:', placeName);
+      }
+      
+      // /maps/dir/出発地/目的地 形式
+      const dirMatch = pathname.match(/\/maps\/dir\/[^/]+\/([^/@]+)/);
+      if (dirMatch && !mapInfo.placeName) {
+        const placeName = decodeURIComponent(dirMatch[1]).replace(/\+/g, ' ');
+        mapInfo.placeName = placeName;
+        console.log('Place name from directions:', placeName);
+      }
+      
+      // 座標情報を抽出
+      const coordMatch = pathname.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (coordMatch) {
+        mapInfo.coordinates = {
+          lat: parseFloat(coordMatch[1]),
+          lng: parseFloat(coordMatch[2]),
+        };
+        console.log('Coordinates found:', mapInfo.coordinates);
+      }
+      
+      // URLフラグメント（#）からの情報抽出
+      if (urlObj.hash) {
+        const hashMatch = urlObj.hash.match(/!1m[^!]*!3d(-?\d+\.?\d*)[^!]*!4d(-?\d+\.?\d*)/);
+        if (hashMatch && !mapInfo.coordinates) {
+          mapInfo.coordinates = {
+            lat: parseFloat(hashMatch[1]),
+            lng: parseFloat(hashMatch[2]),
+          };
+          console.log('Coordinates from hash:', mapInfo.coordinates);
+        }
+      }
+      
+      // data パラメータから詳細情報を抽出
+      const dataParam = params.get('data');
+      if (dataParam) {
+        console.log('Data parameter found:', dataParam);
+        // 住所抽出ロジック
+        const addressMatch = dataParam.match(/!1s([^!]+)/);
+        if (addressMatch) {
+          mapInfo.address = decodeURIComponent(addressMatch[1]);
+          console.log('Address from data:', mapInfo.address);
+        }
+      }
+      
+      // place_id がある場合
+      const placeId = params.get('place_id');
+      if (placeId) {
+        console.log('Place ID found:', placeId);
+      }
+      
+      console.log('Final parsed map info:', mapInfo);
+      
+    } catch (error) {
+      console.error('Error parsing Google Maps URL:', error);
+    }
+    
+    return mapInfo;
+  },
+
+  /**
+   * マップ情報からタイトルを生成
+   */
+  generateMapTitle(mapInfo: GoogleMapInfo): string {
+    console.log('Generating map title from:', mapInfo);
+    
+    if (mapInfo.placeName) {
+      const title = mapInfo.placeName.trim();
+      console.log('Using place name as title:', title);
+      return title;
+    }
+    
+    if (mapInfo.address) {
+      const title = mapInfo.address.trim();
+      console.log('Using address as title:', title);
+      return title;
+    }
+    
+    if (mapInfo.coordinates) {
+      const title = `地図 (${mapInfo.coordinates.lat.toFixed(4)}, ${mapInfo.coordinates.lng.toFixed(4)})`;
+      console.log('Using coordinates as title:', title);
+      return title;
+    }
+    
+    console.log('Using fallback title: Google Maps');
+    return 'Google Maps';
+  },
+
+  /**
+   * マップ情報から説明を生成
+   */
+  generateMapDescription(mapInfo: GoogleMapInfo): string {
+    const parts: string[] = [];
+    
+    if (mapInfo.address) {
+      parts.push(`住所: ${mapInfo.address}`);
+    }
+    
+    if (mapInfo.coordinates) {
+      parts.push(`座標: ${mapInfo.coordinates.lat.toFixed(6)}, ${mapInfo.coordinates.lng.toFixed(6)}`);
+    }
+    
+    if (mapInfo.placeType) {
+      parts.push(`タイプ: ${mapInfo.placeType}`);
+    }
+    
+    if (mapInfo.rating) {
+      parts.push(`評価: ${mapInfo.rating}/5`);
+    }
+    
+    return parts.length > 0 ? parts.join(' | ') : 'Google Mapsの地図リンク';
   }
 }; 

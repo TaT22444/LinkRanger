@@ -38,13 +38,65 @@ import { linkService } from '../services/firestoreService';
 
 import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
-import { detectPlatform, generatePlatformTagName } from '../utils/platformDetector';
+
+import { AIStatusMonitor } from '../components/AIStatusMonitor';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user, logout } = useAuth();
   const { links, loading, error, createLink, updateLink, deleteLink } = useLinks(user?.uid || null);
   const { tags: userTags, createOrGetTag, deleteTag: deleteTagById, generateRecommendedTags } = useTags(user?.uid || null);
+  
+  const [aiProcessingStatus, setAiProcessingStatus] = useState<{ [key: string]: number }>({
+    'demo-processing-1': 0.65 // デモ用の進捗バー
+  });
+  const [dismissedUntaggedIds, setDismissedUntaggedIds] = useState<Set<string>>(new Set());
+  
+  const dummyUntaggedLinks = useMemo(() => [
+    {
+      id: 'dummy-1',
+      userId: user?.uid || '',
+      url: 'https://example.com/article-1',
+      title: 'React Hooksの基礎知識',
+      description: 'React Hooksの使い方と基本的なパターンについて',
+      status: 'completed' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      tagIds: [],
+      isBookmarked: false,
+      isArchived: false,
+      priority: 'medium' as const,
+      isRead: false,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      isExpired: false,
+      notificationsSent: { threeDays: false, oneDay: false, oneHour: false }
+    },
+    {
+      id: 'dummy-2',
+      userId: user?.uid || '',
+      url: 'https://example.com/article-2', 
+      title: 'TypeScriptでの型安全な開発',
+      description: 'TypeScriptを使った型安全なコードの書き方',
+      status: 'completed' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      tagIds: [],
+      isBookmarked: false,
+      isArchived: false,
+      priority: 'high' as const,
+      isRead: false,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      isExpired: false,
+      notificationsSent: { threeDays: false, oneDay: false, oneHour: false }
+    },
+  ] as Link[], [user?.uid]);
+
+  const { processingLinks, failedLinks, untaggedLinks } = useMemo(() => {
+    const processing = [...links, ...dummyUntaggedLinks].filter(link => aiProcessingStatus[link.id] !== undefined);
+    const failed = links.filter(link => link.status === 'error' && link.error?.code === 'QUOTA_EXCEEDED');
+    const untagged = dummyUntaggedLinks.filter(link => !dismissedUntaggedIds.has(link.id) && aiProcessingStatus[link.id] === undefined);
+    return { processingLinks: processing, failedLinks: failed, untaggedLinks: untagged };
+  }, [links, aiProcessingStatus, dummyUntaggedLinks, dismissedUntaggedIds]);
   
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
@@ -100,6 +152,7 @@ export const HomeScreen: React.FC = () => {
   const handleAddLink = async (linkData: Partial<Link>) => {
     if (!user?.uid) return;
     
+    // ... (URL重複チェックのロジックは変更なし)
     if (linkData.url) {
       try {
         const existingLink = await linkService.findExistingLinkByUrl(user.uid, linkData.url);
@@ -118,36 +171,11 @@ export const HomeScreen: React.FC = () => {
       }
     }
     
-    const userSelectedTagIds: string[] = linkData.tagIds ? [...linkData.tagIds] : [];
-
-    let platformTagId: string | null = null;
-    if (linkData.url) {
-      const platformInfo = detectPlatform(linkData.url);
-      if (platformInfo) {
-        const platformTagName = generatePlatformTagName(platformInfo);
-        const existingPlatformTag = userTags.find(t => t.name.toLowerCase() === platformTagName.toLowerCase());
-        if (existingPlatformTag) {
-          platformTagId = existingPlatformTag.id;
-        } else {
-          try {
-            platformTagId = await handleAddTag(platformTagName, 'recommended');
-          } catch (error) {
-            // エラーハンドリング
-          }
-        }
-      }
-    }
-    
-    const initialTagIds: string[] = [...userSelectedTagIds];
-    if (platformTagId && !initialTagIds.includes(platformTagId)) {
-      initialTagIds.push(platformTagId);
-    }
-    
     const fullLinkData = {
       ...linkData,
       userId: user.uid,
       status: 'processing',
-      tagIds: initialTagIds,
+      tagIds: linkData.tagIds || [],
       isBookmarked: false,
       isArchived: false,
       priority: 'medium',
@@ -155,133 +183,139 @@ export const HomeScreen: React.FC = () => {
     
     try {
       const newLinkId = await createLink(fullLinkData);
-      
       Alert.alert('✅ 保存完了', 'リンクを保存しました。AIが追加のタグを生成します...');
       
-      if (newLinkId) {
-        
-        
-        setTimeout(async () => {
-          try {
-            console.log('[AI自動タグ付与] 開始: linkId', newLinkId, linkData);
-            let finalTitle = linkData.title || '';
-            let finalDescription = linkData.description || '';
-            
-            try {
-              const metadata = await metadataService.fetchMetadata(linkData.url || '', user.uid);
-              finalTitle = finalTitle || metadata.title || linkData.url || '';
-              finalDescription = finalDescription || metadata.description || '';
-              console.log('[AI自動タグ付与] メタデータ取得成功', { finalTitle, finalDescription });
-            } catch (metadataError) {
-              finalTitle = finalTitle || linkData.url || '';
-              console.log('[AI自動タグ付与] メタデータ取得失敗', metadataError);
-            }
-            console.log('[AI自動タグ付与] Gemini呼び出し', { finalTitle, finalDescription });
-            const aiResponse = await aiService.generateTags(
-              finalTitle,
-              finalDescription,
-              linkData.url || '',
-              user.uid,
-              userPlan
-            );
-            console.log('[AI自動タグ付与] Gemini応答', aiResponse);
-            
+      // 新しく作成した関数を呼び出す
+      processAITagging(newLinkId, fullLinkData);
 
-            const finalTagIds: string[] = [...initialTagIds];
-            
-            for (const tagName of aiResponse.tags) {
-              const normalizedTagName = tagName.trim();
-              const existingTag = userTags.find(t => t.name.trim().toLowerCase() === normalizedTagName.toLowerCase());
-              
-              if (existingTag) {
-                if (!finalTagIds.includes(existingTag.id)) {
-                  finalTagIds.push(existingTag.id);
-                }
-              } else {
-                try {
-                  const newTagId = await handleAddTag(normalizedTagName, 'ai');
-                  if (newTagId && !finalTagIds.includes(newTagId)) {
-                    finalTagIds.push(newTagId);
-                  }
-                  console.log('[AI自動タグ付与] 新規AIタグ作成', { tagName: normalizedTagName, newTagId });
-                } catch (error) {
-                  console.log('[AI自動タグ付与] 新規AIタグ作成失敗', { tagName: normalizedTagName, error });
-                }
-              }
-            }
-
-            const updateData: Partial<Link> = {
-              status: 'completed',
-              tagIds: finalTagIds,
-              aiAnalysis: {
-                sentiment: 'neutral',
-                category: 'General',
-                keywords: aiResponse.tags,
-                confidence: 0.8,
-                fromCache: aiResponse.fromCache,
-                tokensUsed: aiResponse.tokensUsed,
-                cost: aiResponse.cost,
-              },
-            };
-
-            await updateLink(newLinkId, updateData);
-            console.log('[AI自動タグ付与] 完了: linkId', newLinkId, updateData);
-            
-
-            const userTagCount = userSelectedTagIds.length;
-            const platformTagCount = platformTagId ? 1 : 0;
-            const aiTagCount = finalTagIds.length - userTagCount - platformTagCount;
-            
-            let message = `🤖 AI分析が完了しました！
-
-`;
-            if (userTagCount > 0) {
-              message += `👤 ユーザー選択: ${userTagCount}個
-`;
-            }
-            if (platformTagCount > 0) {
-              message += `🌐 プラットフォーム: ${platformTagCount}個
-`;
-            }
-            if (aiTagCount > 0) {
-              message += `🤖 AI生成: ${aiTagCount}個
-`;
-            }
-            message += `
-📊 合計: ${finalTagIds.length}個のタグ
-
-`;
-            message += `🏷️ 生成されたタグ: ${aiResponse.tags.join(', ')}
-
-`;
-            
-            if (aiResponse.fromCache) {
-              message += '💾 キャッシュから取得';
-            } else {
-              message += `🔥 新規AI分析 (トークン: ${aiResponse.tokensUsed})`;
-            }
-            
-            Alert.alert('🎉 自動AI分析完了', message);
-
-          } catch (error) {
-            console.log('[AI自動タグ付与] 失敗: linkId', newLinkId, error);
-            await updateLink(newLinkId, {
-              status: 'error',
-              error: {
-                message: 'AI自動タグ生成中にエラーが発生しました',
-                code: 'AUTO_TAG_GENERATION_FAILED',
-                timestamp: new Date()
-              }
-            });
-            Alert.alert('⚠️ AI処理エラー', 'AIタグの自動生成に失敗しましたが、リンクとユーザー選択タグは正常に保存されました。');
-          }
-        }, 1000);
-      }
-      
     } catch (error) {
       Alert.alert('エラー', 'リンクの保存に失敗しました');
     }
   };
+
+  const processAITagging = async (linkId: string, linkData: Partial<Link>) => {
+    if (!user?.uid) return;
+
+    setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.1 }));
+
+    try {
+      console.log('[AI自動タグ付与] 開始: linkId', linkId, linkData);
+      setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.3 }));
+
+      const metadata = await metadataService.fetchMetadata(linkData.url || '', user.uid);
+      console.log('[AI自動タグ付与] メタデータ取得', metadata);
+      setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.6 }));
+
+      const aiResponse = await aiService.generateEnhancedTags(
+        metadata,
+        user.uid,
+        userPlan
+      );
+      console.log('[AI自動タグ付与] Gemini応答', aiResponse);
+      setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.8 }));
+
+      const finalTagIds: string[] = [...(linkData.tagIds || [])];
+      
+      for (const tagName of aiResponse.tags) {
+        const normalizedTagName = tagName.trim();
+        const existingTag = userTags.find(t => t.name.trim().toLowerCase() === normalizedTagName.toLowerCase());
+        
+        if (existingTag) {
+          if (!finalTagIds.includes(existingTag.id)) {
+            finalTagIds.push(existingTag.id);
+          }
+        } else {
+          try {
+            const newTagId = await handleAddTag(normalizedTagName, 'ai');
+            if (newTagId && !finalTagIds.includes(newTagId)) {
+              finalTagIds.push(newTagId);
+            }
+          } catch (error) {
+            // タグ作成失敗は許容
+          }
+        }
+      }
+
+      const updateData: Partial<Link> = {
+        status: 'completed',
+        tagIds: finalTagIds,
+        aiAnalysis: {
+          sentiment: 'neutral',
+          category: 'General',
+          keywords: aiResponse.tags,
+          confidence: 0.8,
+          fromCache: aiResponse.fromCache,
+          tokensUsed: aiResponse.tokensUsed,
+          cost: aiResponse.cost,
+        },
+      };
+
+      await updateLink(linkId, updateData);
+      console.log('[AI自動タグ付与] 完了: linkId', linkId, updateData);
+      
+      // ... (Alert表示のロジックは変更なし)
+      const userTagCount = (linkData.tagIds || []).length;
+      const aiTagCount = finalTagIds.length - userTagCount;
+      let message = `🤖 AI分析が完了しました！\n\n`;
+      if (userTagCount > 0) message += `👤 ユーザー選択: ${userTagCount}個\n`;
+      if (aiTagCount > 0) message += `🤖 AI生成: ${aiTagCount}個\n`;
+      message += `\n📊 合計: ${finalTagIds.length}個のタグ\n\n`;
+      message += `🏷️ 生成されたタグ: ${aiResponse.tags.join(', ')}\n\n`;
+      if (aiResponse.fromCache) {
+        message += '💾 キャッシュから取得';
+      } else {
+        message += `🔥 新規AI分析 (トークン: ${aiResponse.tokensUsed})`;
+      }
+      Alert.alert('🎉 自動AI分析完了', message);
+
+    } catch (error: any) {
+      console.log('[AI自動タグ付与] 失敗: linkId', linkId, error);
+      
+      // エラーの種類を判定
+      const isQuotaError = error.message?.includes('quota') || error.code === 'resource-exhausted';
+      const errorCode = isQuotaError ? 'QUOTA_EXCEEDED' : 'AUTO_TAG_GENERATION_FAILED';
+      const errorMessage = isQuotaError 
+        ? 'AIタグ付けの月間上限に達しました。' 
+        : 'AI自動タグ生成中にエラーが発生しました';
+
+      await updateLink(linkId, {
+        status: 'error',
+        error: {
+          message: errorMessage,
+          code: errorCode,
+          timestamp: new Date()
+        }
+      });
+      
+      if (!isQuotaError) {
+        Alert.alert('⚠️ AI処理エラー', 'AIタグの自動生成に失敗しましたが、リンクとユーザー選択タグは正常に保存されました。');
+      }
+    } finally {
+      // 処理が完了または失敗したら、進捗表示から削除
+      setAiProcessingStatus(prev => {
+        const newState = { ...prev };
+        delete newState[linkId];
+        return newState;
+      });
+    }
+  };
+
+  const handleExecuteAI = (linkId: string) => {
+    const link = dummyUntaggedLinks.find(l => l.id === linkId);
+    if (link) {
+      processAITagging(linkId, link);
+      setDismissedUntaggedIds(prev => new Set([...prev, linkId]));
+    }
+  };
+
+  const handleDismissUntagged = (linkId: string) => {
+    setDismissedUntaggedIds(prev => new Set([...prev, linkId]));
+  };
+
+  const mockUserPlan = 'free' as UserPlan;
+  const mockAiUsageCount = 8;
+  const mockAiUsageLimit = 10;
+  const canUseAI = mockAiUsageCount < mockAiUsageLimit;
 
   const handleToggleBookmark = async (link: Link) => {
     try {
@@ -685,7 +719,7 @@ export const HomeScreen: React.FC = () => {
             </Text>
           </View>
 
-          {groupedData.unfolderLinks && groupedData.unfolderLinks.length > 0 && (
+          {/* {groupedData.unfolderLinks && groupedData.unfolderLinks.length > 0 && (
             <View style={styles.untaggedSection}>
               <Text style={styles.sectionTitle}>フォルダなしのリンク</Text>
               {groupedData.unfolderLinks.map(link => (
@@ -712,7 +746,7 @@ export const HomeScreen: React.FC = () => {
                 </View>
               ))}
             </View>
-          )}
+          )} */}
         </ScrollView>
       );
     }
@@ -872,7 +906,18 @@ export const HomeScreen: React.FC = () => {
                 >
                   <Feather name="search" size={20} color="#8B5CF6" />
                 </TouchableOpacity>
-                <Text style={styles.title}>LinkRanger</Text>
+                <AIStatusMonitor 
+                  processingLinks={processingLinks}
+                  failedLinks={failedLinks}
+                  untaggedLinks={untaggedLinks}
+                  onRetry={processAITagging}
+                  onExecuteAI={handleExecuteAI}
+                  onDismissUntagged={handleDismissUntagged}
+                  aiProcessingStatus={aiProcessingStatus}
+                  canUseAI={canUseAI}
+                  aiUsageCount={mockAiUsageCount}
+                  aiUsageLimit={mockAiUsageLimit}
+                />
                 <TouchableOpacity style={styles.accountButton} onPress={handleAccountPress}>
                   <Text style={styles.accountText}>{getUserInitial()}</Text>
                 </TouchableOpacity>
@@ -1082,29 +1127,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
   },
-  iconButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 20,
-    backgroundColor: '#2A2A2A',
-  },
   searchHeaderButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    backgroundColor: '#2A2A2A',
+    borderRadius: 22,
+    backgroundColor: '#27272A',
   },
   searchCloseButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    backgroundColor: '#2A2A2A',
+    borderRadius: 22,
+    backgroundColor: '#27272A',
   },
   searchInputContainer: {
     flex: 1,
@@ -1130,14 +1167,12 @@ const styles = StyleSheet.create({
   },
 
   accountButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#666',
-    backgroundColor: 'transparent',
+    borderRadius: 22,
+    backgroundColor: '#27272A',
   },
   accountText: {
     fontSize: 16,

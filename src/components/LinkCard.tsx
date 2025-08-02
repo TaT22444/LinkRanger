@@ -63,6 +63,17 @@ export const LinkCard: React.FC<LinkCardProps> = ({
     }
   };
 
+  const isGoogleMapsLink = () => {
+    const patterns = [
+      /maps\.google\./,
+      /goo\.gl\/maps/,
+      /maps\.app\.goo\.gl/,
+      /google\..*\/maps/,
+    ];
+    
+    return patterns.some(pattern => pattern.test(link.url));
+  };
+
   const getTimeUntilExpiry = () => {
     if (link.isRead) return null; // 既読の場合は表示しない
     
@@ -112,9 +123,14 @@ export const LinkCard: React.FC<LinkCardProps> = ({
             {link.title}
           </Text>
           
-          <Text style={styles.domain} numberOfLines={1}>
-            {getDomainFromUrl(link.url)}
-          </Text>
+          <View style={styles.domainContainer}>
+            {isGoogleMapsLink() && (
+              <Feather name="map-pin" size={12} color="#4285F4" style={styles.mapIcon} />
+            )}
+            <Text style={styles.domain} numberOfLines={1}>
+              {getDomainFromUrl(link.url)}
+            </Text>
+          </View>
 
           {/* タグ表示（最大2個） */}
           {link.tagIds && Array.isArray(link.tagIds) && link.tagIds.length > 0 && (
@@ -205,10 +221,17 @@ const styles = StyleSheet.create({
     color: '#FFF',
     marginBottom: 4,
   },
+  domainContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  mapIcon: {
+    marginRight: 4,
+  },
   domain: {
     fontSize: 12,
     color: '#00FFFF',
-    marginBottom: 6,
   },
   tagsContainer: {
     flexDirection: 'row',
