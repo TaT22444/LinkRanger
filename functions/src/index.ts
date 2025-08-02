@@ -220,28 +220,342 @@ export const generateEnhancedAITags = onCall({timeoutSeconds: 60, memory: "1GiB"
   return await generateTagsLogic(userId, userPlan, metadata.url, metadata.title, metadata.description);
 });
 
+// 新機能: AI分析（文章による詳細分析）
+export const generateAIAnalysis = onCall({timeoutSeconds: 60, memory: "1GiB"}, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
+
+  const {title, analysisPrompt, userId} = request.data;
+  if (!title || !analysisPrompt || !userId) {
+    throw new HttpsError("invalid-argument", "タイトル、分析プロンプト、ユーザーIDは必須です");
+  }
+
+  logger.info(`🔬 [AI Analysis Start] userId: ${userId}, title: ${title}`);
+
+  try {
+    const gemini = getGeminiClient();
+    const model = gemini.getGenerativeModel({
+      model: "gemini-2.0-flash-exp", // Latest Gemini 2.0 Flash (experimental)
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.8,
+        topK: 40,
+        maxOutputTokens: 3072, // Increased for longer summaries
+      },
+    });
+
+    // AIに統合的で簡潔な分析を要求
+    const prompt = `${analysisPrompt}
+
+【追加指示】
+- 統合的で簡潔な分析を心がけてください
+- 冗長な説明は避け、最も重要な情報のみを含めてください
+- 参考リンクは必ず最後に含めてください
+- マークダウン形式で見やすく整理してください`;
+
+    logger.info(`🤖 [AI Analysis Prompt] length: ${prompt.length}`);
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const analysisText = response.text();
+
+    // 実際のGemini APIの使用量を取得
+    const usageMetadata = response.usageMetadata;
+    const actualInputTokens = usageMetadata?.promptTokenCount || Math.ceil(prompt.length / 4);
+    const actualOutputTokens = usageMetadata?.candidatesTokenCount || Math.ceil(analysisText.length / 4);
+    const actualTotalTokens = usageMetadata?.totalTokenCount || (actualInputTokens + actualOutputTokens);
+
+    // Gemini 2.0 Flash (experimental) の料金体系
+    // Input: $0.075 per 1M tokens, Output: $0.30 per 1M tokens (same as 1.5 Flash for now)
+    const actualInputCost = (actualInputTokens / 1000000) * 0.075;
+    const actualOutputCost = (actualOutputTokens / 1000000) * 0.30;
+    const actualTotalCost = actualInputCost + actualOutputCost;
+
+    // 概算vs実際の比較ログ
+    const estimatedInputTokens = Math.ceil(prompt.length / 4);
+    const estimatedOutputTokens = Math.ceil(analysisText.length / 4);
+    const estimatedCost = ((estimatedInputTokens + estimatedOutputTokens) / 1000000) * 0.1;
+
+    logger.info("🤖 [AI Analysis Success] 実際vs概算の使用量比較:", {
+      responseLength: analysisText.length,
+      promptLength: prompt.length,
+      actual: {
+        inputTokens: actualInputTokens,
+        outputTokens: actualOutputTokens,
+        totalTokens: actualTotalTokens,
+        inputCost: actualInputCost.toFixed(8),
+        outputCost: actualOutputCost.toFixed(8),
+        totalCost: actualTotalCost.toFixed(8),
+      },
+      estimated: {
+        inputTokens: estimatedInputTokens,
+        outputTokens: estimatedOutputTokens,
+        totalCost: estimatedCost.toFixed(8),
+      },
+      discrepancy: {
+        tokenDifference: actualTotalTokens - (estimatedInputTokens + estimatedOutputTokens),
+        costDifference: (actualTotalCost - estimatedCost).toFixed(8),
+        accuracy: `${((estimatedInputTokens + estimatedOutputTokens) / actualTotalTokens * 100).toFixed(1)}%`,
+      },
+      model: "gemini-2.0-flash-exp",
+      hasUsageMetadata: !!usageMetadata,
+    });
+
+    return {
+      analysis: analysisText,
+      fromCache: false,
+      tokensUsed: actualTotalTokens,
+      cost: actualTotalCost,
+      usage: {
+        inputTokens: actualInputTokens,
+        outputTokens: actualOutputTokens,
+        inputCost: actualInputCost,
+        outputCost: actualOutputCost,
+        model: "gemini-2.0-flash-exp",
+        hasActualUsage: !!usageMetadata,
+        promptCharacterCount: prompt.length,
+        responseCharacterCount: analysisText.length,
+      },
+    };
+  } catch (error) {
+    logger.error(`🤖 [AI Analysis Error] userId: ${userId}`, error);
+    throw new HttpsError("internal", `AI分析に失敗しました: ${error}`);
+  }
+});
+
+// 新機能: AI分析候補生成
+export const generateAnalysisSuggestions = onCall({timeoutSeconds: 30, memory: "512MiB"}, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
+
+  try {
+    const {tagName, linkTitles, userId, userPlan} = request.data;
+
+    logger.info("🔍 AI分析候補生成開始:", {
+      tagName,
+      linkCount: linkTitles?.length || 0,
+      userId: userId?.slice(0, 8) + "...",
+      userPlan,
+    });
+
+    // 入力検証
+    if (!tagName || !linkTitles || !Array.isArray(linkTitles) || linkTitles.length === 0) {
+      throw new HttpsError("invalid-argument", "タグ名とリンクタイトルが必要です");
+    }
+
+    if (!userId) {
+      throw new HttpsError("invalid-argument", "ユーザーIDが必要です");
+    }
+
+    const gemini = getGeminiClient();
+    const model = gemini.getGenerativeModel({
+      model: "gemini-2.0-flash-exp",
+      generationConfig: {
+        temperature: 0.8,
+        topP: 0.9,
+        topK: 40,
+        maxOutputTokens: 1024,
+      },
+    });
+
+    // AI候補生成用プロンプト
+    const prompt = `以下の「${tagName}」タグが付いたリンクタイトル一覧から、ユーザーが知りたそうな分析テーマを3-4個提案してください。
+
+【リンクタイトル一覧】
+${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).join("\n")}
+
+【出力形式】
+以下のJSON形式で出力してください：
+
+{
+  "suggestions": [
+    {
+      "title": "${tagName}とは",
+      "description": "基本的な概念や定義について",
+      "keywords": ["基本", "概念", "定義"]
+    },
+    {
+      "title": "${tagName}の活用方法", 
+      "description": "実践的な使い方やコツについて",
+      "keywords": ["活用", "実践", "方法"]
+    },
+    {
+      "title": "${tagName}のトレンド",
+      "description": "最新動向や注目ポイントについて", 
+      "keywords": ["トレンド", "最新", "動向"]
+    }
+  ]
+}
+
+【重要な指示】
+- タイトルは簡潔で分かりやすく（15文字以内）
+- 説明文は具体的で魅力的に（20文字以内）
+- リンクタイトルの内容に基づいて提案すること
+- ユーザーが実際に知りたそうなテーマを選ぶこと
+- JSON形式以外は出力しないこと`;
+
+    logger.info("🤖 AI候補生成 API呼び出し:", {
+      tagName,
+      promptLength: prompt.length,
+      linkTitlesCount: linkTitles.length,
+    });
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const suggestionsText = response.text().trim();
+
+    logger.info("📥 AI候補生成 API応答:", {
+      responseLength: suggestionsText.length,
+      responsePreview: suggestionsText.slice(0, 200),
+    });
+
+    // JSONパース
+    let suggestions;
+    try {
+      const jsonMatch = suggestionsText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        suggestions = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("JSON形式が見つかりません");
+      }
+    } catch (parseError) {
+      logger.error("❌ JSON解析エラー:", parseError);
+      // フォールバック候補を生成
+      suggestions = {
+        suggestions: [
+          {
+            title: `${tagName}とは`,
+            description: "基本的な概念について",
+            keywords: ["基本", "概念"],
+          },
+          {
+            title: `${tagName}の活用法`,
+            description: "実践的な使い方について",
+            keywords: ["活用", "実践"],
+          },
+          {
+            title: `${tagName}のコツ`,
+            description: "効果的な方法について",
+            keywords: ["コツ", "効果的"],
+          },
+        ],
+      };
+    }
+
+    // コスト計算
+    const usageMetadata = response.usageMetadata;
+    const actualInputTokens = usageMetadata?.promptTokenCount || Math.ceil(prompt.length / 4);
+    const actualOutputTokens = usageMetadata?.candidatesTokenCount || Math.ceil(suggestionsText.length / 4);
+    const actualTotalTokens = actualInputTokens + actualOutputTokens;
+
+    const actualInputCost = (actualInputTokens / 1000000) * 0.075;
+    const actualOutputCost = (actualOutputTokens / 1000000) * 0.30;
+    const actualTotalCost = actualInputCost + actualOutputCost;
+
+    logger.info("✅ AI候補生成完了:", {
+      suggestionsCount: suggestions.suggestions?.length || 0,
+      tokensUsed: actualTotalTokens,
+      cost: actualTotalCost,
+      costUSD: `$${actualTotalCost.toFixed(6)}`,
+    });
+
+    return {
+      suggestions: suggestions.suggestions || [],
+      fromCache: false,
+      tokensUsed: actualTotalTokens,
+      cost: actualTotalCost,
+      usage: {
+        inputTokens: actualInputTokens,
+        outputTokens: actualOutputTokens,
+        inputCost: actualInputCost,
+        outputCost: actualOutputCost,
+        model: "gemini-2.0-flash-exp",
+        hasActualUsage: !!usageMetadata,
+      },
+    };
+  } catch (error) {
+    logger.error("❌ AI候補生成エラー:", error);
+    throw new HttpsError("internal", "AI候補生成中にエラーが発生しました");
+  }
+});
+
 export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
   const {url} = request.data;
   if (!url) throw new HttpsError("invalid-argument", "URLが必要です");
 
   try {
-    // 一時的にGoogle Maps特別処理を無効化して、通常のWebページとして処理
-    // if (isGoogleMapsUrl(url)) {
-    //   logger.info("Processing Google Maps URL", {url});
-    //   return await handleGoogleMapsUrl(url);
-    // }
+    logger.info(`🌐 Fetching enhanced metadata for: ${url}`);
 
-    const response = await axios.get(url, {timeout: 10000, maxRedirects: 5});
+    const response = await axios.get(url, {timeout: 15000, maxRedirects: 5});
     const $ = cheerio.load(response.data);
 
+    // Basic metadata
     const title = $("meta[property='og:title']").attr("content") || $("title").text() || "";
     const description = $("meta[property='og:description']").attr("content") || $("meta[name='description']").attr("content") || "";
     const imageUrl = $("meta[property='og:image']").attr("content") || "";
     const siteName = $("meta[property='og:site_name']").attr("content") || "";
+    const keywords = ($("meta[name='keywords']").attr("content") || "").split(",").map((k) => k.trim()).filter((k) => k);
 
     const urlObj = new URL(url);
     const domain = urlObj.hostname;
+
+    // Extract full content for AI analysis
+    $("script, style, nav, header, footer, aside, .advertisement, .ad, .sidebar").remove();
+
+    // Try to find main content areas
+    const mainContent = $("main, article, .content, .post, .entry, .article-body, .story-body").first();
+    let fullContent = "";
+
+    if (mainContent.length) {
+      fullContent = mainContent.text();
+    } else {
+      // Fallback to body content
+      fullContent = $("body").text();
+    }
+
+    // Clean and limit content
+    fullContent = fullContent
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // Dynamic content limiting with cost estimation
+    const originalLength = fullContent.length;
+    const maxChars = 8000; // Increased base limit
+    const costThreshold = 0.01; // $0.01 threshold for safety
+
+    if (fullContent.length > maxChars) {
+      const estimatedTokens = Math.ceil(fullContent.length / 4);
+      const estimatedInputCost = (estimatedTokens / 1000000) * 0.075;
+
+      if (estimatedInputCost > costThreshold) {
+        fullContent = fullContent.slice(0, maxChars);
+        logger.info(`📊 Content limited: ${originalLength} → ${maxChars} chars (est. cost: $${estimatedInputCost.toFixed(6)})`);
+      } else {
+        logger.info(`📊 Full content preserved: ${originalLength} chars (est. cost: $${estimatedInputCost.toFixed(6)})`);
+      }
+    } else {
+      logger.info(`📊 Content within limits: ${originalLength} chars`);
+    }
+
+    // Extract headings for structure
+    const headings: string[] = [];
+    $("h1, h2, h3, h4").each((_, el) => {
+      const heading = $(el).text().trim();
+      if (heading && heading.length > 0 && heading.length < 100) {
+        headings.push(heading);
+      }
+    });
+
+    // Determine content type
+    const contentType = analyzeContentType($, fullContent, title, description, domain);
+
+    logger.info("🌐 Enhanced metadata extracted:", {
+      url,
+      titleLength: title.length,
+      descriptionLength: description.length,
+      fullContentLength: fullContent.length,
+      headingsCount: headings.length,
+      contentType,
+    });
 
     return {
       title: title.trim(),
@@ -249,9 +563,16 @@ export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, asyn
       imageUrl: imageUrl.trim(),
       siteName: siteName.trim(),
       domain,
+      fullContent,
+      headings: headings.slice(0, 10), // Limit to first 10 headings
+      keywords,
+      contentType: {
+        category: contentType,
+        confidence: 0.8,
+      },
     };
   } catch (error) {
-    logger.error("Failed to fetch metadata", {url, error});
+    logger.error("Failed to fetch enhanced metadata", {url, error});
 
     // フォールバック: URLからドメイン名を抽出
     try {
@@ -260,12 +581,39 @@ export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, asyn
         title: urlObj.hostname.replace("www.", ""),
         description: "",
         domain: urlObj.hostname,
+        fullContent: "",
+        headings: [],
+        keywords: [],
+        contentType: {
+          category: "other",
+          confidence: 0.1,
+        },
       };
     } catch {
       throw new HttpsError("invalid-argument", "無効なURLです");
     }
   }
 });
+
+// Simple content type analysis
+function analyzeContentType($: any, content: string, title: string, description: string, domain: string): string {
+  const text = `${title} ${description} ${content}`.toLowerCase();
+
+  // Domain-based detection
+  if (domain.includes("github")) return "documentation";
+  if (domain.includes("youtube") || domain.includes("vimeo")) return "video";
+  if (domain.includes("qiita") || domain.includes("zenn")) return "article";
+  if (domain.includes("blog")) return "blog";
+
+  // Content-based detection
+  if (text.includes("tutorial") || text.includes("how to") || text.includes("step")) return "tutorial";
+  if (text.includes("documentation") || text.includes("api") || text.includes("reference")) return "documentation";
+  if ($("pre, code").length > 3) return "tutorial";
+  if (text.includes("news") || text.includes("breaking")) return "news";
+  if (content.length > 2000) return "article";
+
+  return "other";
+}
 
 
 // ===================================================================

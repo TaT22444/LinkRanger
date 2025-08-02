@@ -6,6 +6,8 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Tag, Link } from '../types';
 
 interface TagGroupCardProps {
@@ -25,6 +27,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
   isExpanded,
   onMarkAsRead,
 }) => {
+  const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const [showAllLinks, setShowAllLinks] = useState(false);
 
   const formatDate = (date: Date) => {
@@ -63,6 +66,21 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
     }
   };
 
+  const handleOpenTagDetail = (e: any) => {
+    e.stopPropagation(); // Prevent header tap event
+    
+    // Convert Date objects to serializable format for navigation
+    const serializableTag = {
+      ...tag,
+      createdAt: tag.createdAt.toISOString(),
+      updatedAt: tag.updatedAt.toISOString(),
+      lastUsedAt: tag.lastUsedAt.toISOString(),
+      firstUsedAt: tag.firstUsedAt.toISOString(),
+    };
+    
+    navigation.navigate('TagDetail', { tag: serializableTag });
+  };
+
   return (
     <View style={styles.container}>
       <TouchableOpacity
@@ -71,31 +89,39 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
         activeOpacity={0.7}
       >
         <View style={styles.tagInfo}>
-          <View style={styles.tagIcon}>
-            <Feather name="hash" size={16} color="#8A2BE2" />
+          <View style={styles.headerToggle}>
+            <Feather
+              name={isExpanded ? 'chevron-down' : 'chevron-right'}
+              size={12}
+              color="#545454"
+              style={styles.headerToggleIcon}
+            />
           </View>
-          <View style={styles.tagText}>
-            <Text style={styles.tagName}>#{tag.name}</Text>
-            <View style={styles.linkStats}>
-              <Feather name="link" size={10} color="#666" />
-              <Text style={styles.linkCount}>{links.length}</Text>
-              {unreadCount > 0 && (
-                <>
-                  <View style={styles.unreadHeaderDot} />
-                  <Text style={styles.unreadCount}>未読{unreadCount}</Text>
-                </>
-              )}
+          <View style={styles.tagInfoContainer}>
+            {/* <View style={styles.tagIcon}>
+              <Feather name="hash" size={16} color="#8A2BE2" />
+            </View> */}
+            <View style={styles.tagText}>
+              <Text style={styles.tagName}>#{tag.name}</Text>
+              <View style={styles.linkStats}>
+                <Feather name="link" size={10} color="#666" />
+                <Text style={styles.linkCount}>{links.length}</Text>
+                {unreadCount > 0 && (
+                  <>
+                    <View style={styles.unreadHeaderDot} />
+                    <Text style={styles.unreadCount}>未読{unreadCount}</Text>
+                  </>
+                )}
+              </View>
             </View>
           </View>
-        </View>
-        
-        <View style={styles.headerRight}>
-          <Feather
-            name={isExpanded ? 'chevron-up' : 'chevron-down'}
-            size={16}
-            color="#666"
-            style={styles.chevron}
-          />
+          <TouchableOpacity 
+            style={styles.openLinkTagsButton}
+            onPress={handleOpenTagDetail}
+            activeOpacity={0.7}
+          >
+            <Feather name="arrow-right" size={12} color="#fff" />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
 
@@ -177,22 +203,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
   },
   tagInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    gap: 8,
   },
-  tagIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: '#8A2BE220',
+  tagInfoContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
+    flex: 1,
   },
   tagText: {
     flex: 1,
@@ -216,17 +238,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#EC9C5B',
   },
-  headerRight: {
+  headerToggle: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  headerToggleIcon: {
+    marginLeft: 4,
+  },
+  openLinkTagsButton: {
+    backgroundColor: '#333',
+    width: 56,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
   },
   lastUpdated: {
     fontSize: 11,
     color: '#666',
     marginRight: 8,
-  },
-  chevron: {
-    marginLeft: 4,
   },
   linksContainer: {
     borderTopWidth: 1,

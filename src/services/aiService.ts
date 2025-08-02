@@ -12,12 +12,52 @@ import { LinkMetadata } from './metadataService';
 const generateAITagsFunction = httpsCallable(functions, 'generateAITags');
 const clearTagCacheFunction = httpsCallable(functions, 'clearTagCache');
 const generateEnhancedAITagsFunction = httpsCallable(functions, 'generateEnhancedAITags');
+const generateAIAnalysisFunction = httpsCallable(functions, 'generateAIAnalysis');
+const generateAnalysisSuggestionsFunction = httpsCallable(functions, 'generateAnalysisSuggestions');
 
 interface AIResponse {
   tags: string[];
   fromCache: boolean;
   tokensUsed: number;
   cost: number;
+}
+
+export interface AIAnalysisResponse {
+  analysis: string;
+  fromCache: boolean;
+  tokensUsed: number;
+  cost: number;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    inputCost: number;
+    outputCost: number;
+    model: string;
+    hasActualUsage?: boolean;
+    promptCharacterCount?: number;
+    responseCharacterCount?: number;
+  };
+}
+
+export interface AnalysisSuggestion {
+  title: string;
+  description: string;
+  keywords: string[];
+}
+
+export interface AnalysisSuggestionsResponse {
+  suggestions: AnalysisSuggestion[];
+  fromCache: boolean;
+  tokensUsed: number;
+  cost: number;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    inputCost: number;
+    outputCost: number;
+    model: string;
+    hasActualUsage?: boolean;
+  };
 }
 
 interface AIUsageCheck {
@@ -27,6 +67,54 @@ interface AIUsageCheck {
 }
 
 export const aiService = {
+  /**
+   * AI分析候補を生成
+   */
+  async generateSuggestions(
+    tagName: string,
+    linkTitles: string[],
+    userId: string,
+    userPlan: UserPlan
+  ): Promise<AnalysisSuggestionsResponse> {
+    try {
+      const result = await generateAnalysisSuggestionsFunction({
+        tagName,
+        linkTitles,
+        userId,
+        userPlan,
+      });
+
+      const data = result.data as AnalysisSuggestionsResponse;
+      
+      return data;
+    } catch (error) {
+      console.error('AI suggestions error:', error);
+      // フォールバック候補を返す
+      return {
+        suggestions: [
+          {
+            title: `${tagName}とは`,
+            description: '基本的な概念について',
+            keywords: ['基本', '概念']
+          },
+          {
+            title: `${tagName}の活用法`,
+            description: '実践的な使い方について',
+            keywords: ['活用', '実践']
+          },
+          {
+            title: `${tagName}のコツ`,
+            description: '効果的な方法について',
+            keywords: ['コツ', '効果的']
+          }
+        ],
+        fromCache: false,
+        tokensUsed: 0,
+        cost: 0,
+      };
+    }
+  },
+
   /**
    * 従来のAIタグ生成（後方互換性）
    */
@@ -110,6 +198,38 @@ export const aiService = {
       console.error('AI enhanced tag generation error:', error);
       return {
         tags: [],
+        fromCache: false,
+        tokensUsed: 0,
+        cost: 0,
+      };
+    }
+  },
+
+  /**
+   * AI分析（文章による詳細分析）
+   */
+  async generateAnalysis(
+    title: string,
+    analysisPrompt: string,
+    userId: string,
+    userPlan: UserPlan
+  ): Promise<AIAnalysisResponse> {
+    try {
+      const result = await generateAIAnalysisFunction({
+        title,
+        analysisPrompt,
+        userId,
+        userPlan,
+      });
+
+      const data = result.data as AIAnalysisResponse;
+      
+      return data;
+    } catch (error) {
+      console.error('AI analysis error:', error);
+      // エラー時は空の分析結果を返す
+      return {
+        analysis: '分析に失敗しました。しばらく時間をおいてから再度お試しください。',
         fromCache: false,
         tokensUsed: 0,
         cost: 0,

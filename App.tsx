@@ -8,6 +8,9 @@ import { AuthScreen } from './src/screens/AuthScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
+import { TagDetailScreen } from './src/screens/TagDetailScreen';
+import { LinkDetailScreen } from './src/screens/LinkDetailScreen';
+import { Tag, Link } from './src/types';
 
 type RootStackParamList = {
   Auth: undefined;
@@ -20,6 +23,7 @@ type MainStackParamList = {
   EditProfile: undefined;
   LinkList: undefined;
   TagManagement: undefined;
+  TagDetail: { tag: Tag };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -62,6 +66,14 @@ const MainNavigator: React.FC = () => {
           headerTitleStyle: {
             fontWeight: 'bold',
           },
+        }}
+      />
+      <MainStack.Screen 
+        name="TagDetail" 
+        component={TagDetailScreen}
+        options={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#121212' },
         }}
       />
     </MainStack.Navigator>

@@ -29,7 +29,8 @@ import {
   LinkFilter,
   LinkSort,
   PaginatedResponse,
-  LinkWithTags
+  LinkWithTags,
+  SavedAnalysis
 } from '../types';
 
 import { getDefaultPlatformTags } from '../utils/platformDetector';
@@ -42,6 +43,7 @@ const COLLECTIONS = {
   FOLDERS: 'folders',
   SEARCH_HISTORY: 'searchHistory',
   APP_SETTINGS: 'appSettings',
+  SAVED_ANALYSES: 'savedAnalyses', // AI分析結果保存（Proプラン専用）
 } as const;
 
 // Firestoreデータを安全なLinkオブジェクトに変換
@@ -577,10 +579,8 @@ export const tagService = {
 
     return onSnapshot(q, 
       (snapshot) => {
-        console.log('subscribeToUserTags snapshot received, size:', snapshot.size);
         const tags = snapshot.docs.map(doc => {
           const data = doc.data();
-          console.log('subscribeToUserTags tag data:', { id: doc.id, name: data.name, userId: data.userId });
           return {
             ...data,
             id: doc.id,
@@ -590,7 +590,6 @@ export const tagService = {
             firstUsedAt: data.firstUsedAt?.toDate() || new Date(),
           } as Tag;
         });
-        console.log('subscribeToUserTags calling callback with tags:', tags);
         callback(tags);
       },
       (error) => {
@@ -737,5 +736,127 @@ export const batchService = {
     
     // 統計更新
     await userService.updateUserStats(userId, { totalLinks: -linkIds.length });
+  },
+};
+
+// Firestoreデータを安全なSavedAnalysisオブジェクトに変換
+const convertToSavedAnalysis = (doc: any): SavedAnalysis => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    userId: data.userId,
+    tagId: data.tagId,
+    tagName: data.tagName,
+    title: data.title,
+    result: data.result,
+    selectedLinks: data.selectedLinks || [],
+    tokensUsed: data.tokensUsed,
+    cost: data.cost,
+    createdAt: data.createdAt?.toDate() || new Date(),
+    updatedAt: data.updatedAt?.toDate() || new Date(),
+    metadata: data.metadata,
+  };
+};
+
+// AI分析結果管理サービス（Proプラン専用機能）
+export const savedAnalysisService = {
+  // AI分析結果を保存
+  async saveAnalysis(
+    userId: string,
+    tagId: string,
+    tagName: string,
+    title: string,
+    result: string,
+    selectedLinks: { id: string; title: string; url: string; description?: string }[],
+    tokensUsed: number,
+    cost: number,
+    metadata?: SavedAnalysis['metadata']
+  ): Promise<string> {
+    const analysisData = {
+      userId,
+      tagId,
+      tagName,
+      title,
+      result,
+      selectedLinks,
+      tokensUsed,
+      cost,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      metadata,
+    };
+
+    const docRef = await addDoc(collection(db, COLLECTIONS.SAVED_ANALYSES), analysisData);
+    return docRef.id;
+  },
+
+  // ユーザーのAI分析結果一覧を取得
+  async getUserAnalyses(userId: string, limitCount?: number): Promise<SavedAnalysis[]> {
+    let q = query(
+      collection(db, COLLECTIONS.SAVED_ANALYSES),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+
+    if (limitCount) {
+      q = query(q, limit(limitCount));
+    }
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(convertToSavedAnalysis);
+  },
+
+  // 特定のタグのAI分析結果を取得
+  async getAnalysesByTag(userId: string, tagId: string): Promise<SavedAnalysis[]> {
+    const q = query(
+      collection(db, COLLECTIONS.SAVED_ANALYSES),
+      where('userId', '==', userId),
+      where('tagId', '==', tagId),
+      orderBy('createdAt', 'desc')
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(convertToSavedAnalysis);
+  },
+
+  // AI分析結果を削除
+  async deleteAnalysis(analysisId: string): Promise<void> {
+    await deleteDoc(doc(db, COLLECTIONS.SAVED_ANALYSES, analysisId));
+  },
+
+  // ユーザーの全AI分析結果を削除（アカウント削除時など）
+  async deleteAllUserAnalyses(userId: string): Promise<void> {
+    const q = query(
+      collection(db, COLLECTIONS.SAVED_ANALYSES),
+      where('userId', '==', userId)
+    );
+
+    const snapshot = await getDocs(q);
+    const batch = writeBatch(db);
+
+    snapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+  },
+
+  // AI分析結果をリアルタイムで監視（特定タグ）
+  subscribeToTagAnalyses(
+    userId: string,
+    tagId: string,
+    callback: (analyses: SavedAnalysis[]) => void
+  ): () => void {
+    const q = query(
+      collection(db, COLLECTIONS.SAVED_ANALYSES),
+      where('userId', '==', userId),
+      where('tagId', '==', tagId),
+      orderBy('createdAt', 'desc')
+    );
+
+    return onSnapshot(q, snapshot => {
+      const analyses = snapshot.docs.map(convertToSavedAnalysis);
+      callback(analyses);
+    });
   },
 }; 

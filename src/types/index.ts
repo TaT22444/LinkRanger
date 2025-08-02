@@ -1,5 +1,5 @@
 // ユーザープラン型
-export type UserPlan = 'free' | 'pro' | 'premium';
+export type UserPlan = 'free' | 'standard' | 'pro' | 'premium';
 
 // リンク表示モード型
 export type LinkViewMode = 'list' | 'folder' | 'tag';
@@ -119,6 +119,33 @@ export interface Link {
     threeDays: boolean; // 3日後通知送信済み
     oneDay: boolean; // 1日前通知送信済み
     oneHour: boolean; // 1時間前通知送信済み
+  };
+}
+
+// AI分析結果保存型（Proプラン専用機能）
+export interface SavedAnalysis {
+  id: string;
+  userId: string;
+  tagId: string;
+  tagName: string;
+  title: string; // 分析のタイトル（例: "Reactタグの深掘り分析（3件対象）"）
+  result: string; // 分析結果テキスト
+  selectedLinks: {
+    id: string;
+    title: string;
+    url: string;
+    description?: string;
+  }[]; // 分析対象リンクの簡略版
+  tokensUsed: number;
+  cost: number;
+  createdAt: Date;
+  updatedAt: Date;
+  // メタデータ
+  metadata?: {
+    model: string; // 使用したAIモデル
+    linkCount: number; // 分析対象リンク数
+    analysisType: 'tag_summary' | 'custom'; // 分析種別
+    processingTime: number; // 処理時間（ms）
   };
 }
 

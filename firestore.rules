@@ -61,6 +61,27 @@ service cloud.firestore {
       allow write: if false;
     }
     
+    // ===== AI分析結果保存（Proプラン専用機能） =====
+    match /savedAnalyses/{analysisId} {
+      // ユーザーは自分の保存されたAI分析結果のみアクセス可能
+      allow read: if request.auth != null 
+                  && request.auth.uid == resource.data.userId;
+      
+      // Proプランユーザーのみ作成・更新可能
+      allow create: if request.auth != null 
+                    && request.auth.uid == request.resource.data.userId
+                    && isValidSavedAnalysisData(request.resource.data);
+      
+      // 作成者のみ削除可能
+      allow delete: if request.auth != null 
+                    && request.auth.uid == resource.data.userId;
+      
+      // 更新は基本的に不要だが、一応作成者のみ許可
+      allow update: if request.auth != null 
+                    && request.auth.uid == resource.data.userId
+                    && isValidSavedAnalysisData(request.resource.data);
+    }
+    
     // ===== フォルダ関連 =====
     match /folders/{folderId} {
       // ユーザーは自分のフォルダのみアクセス可能
@@ -187,6 +208,35 @@ service cloud.firestore {
              data.query.size() <= 200 &&
              // resultCountは非負数
              data.resultCount >= 0;
+    }
+    
+    // AI分析結果保存データの検証（Proプラン専用機能）
+    function isValidSavedAnalysisData(data) {
+      let requiredFields = ['userId', 'tagId', 'tagName', 'title', 'result', 'selectedLinks', 'tokensUsed', 'cost'];
+      
+      return data.keys().hasAll(requiredFields) &&
+             data.userId is string &&
+             data.tagId is string &&
+             data.tagName is string &&
+             data.title is string &&
+             data.result is string &&
+             data.selectedLinks is list &&
+             data.tokensUsed is number &&
+             data.cost is number &&
+             // タイトルの長さ制限
+             data.title.size() >= 1 &&
+             data.title.size() <= 200 &&
+             // タグ名の長さ制限
+             data.tagName.size() >= 1 &&
+             data.tagName.size() <= 50 &&
+             // 分析結果の長さ制限（最大10KB）
+             data.result.size() >= 1 &&
+             data.result.size() <= 10000 &&
+             // selectedLinksの要素数制限
+             data.selectedLinks.size() <= 10 &&
+             // tokensUsedとcostは非負数
+             data.tokensUsed >= 0 &&
+             data.cost >= 0;
     }
     
     // アプリ設定データの検証

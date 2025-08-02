@@ -107,15 +107,12 @@ export const useLinks = (
 
 // ===== タグ関連のHooks =====
 export const useTags = (userId: string | null) => {
-  console.log('useTags hook called with userId:', userId);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('useTags useEffect called with userId:', userId);
     if (!userId) {
-      console.log('useTags: no userId, setting empty state');
       setTags([]);
       setLoading(false);
       return;
@@ -125,12 +122,9 @@ export const useTags = (userId: string | null) => {
     setError(null);
 
     try {
-      console.log('useTags: calling subscribeToUserTags');
       const unsubscribe = tagService.subscribeToUserTags(
         userId,
         (newTags) => {
-          console.log('useTags: received tags from subscription:', newTags);
-          console.log('useTags: tags count:', newTags.length);
           setTags(newTags);
           setLoading(false);
           setError(null);
@@ -145,16 +139,11 @@ export const useTags = (userId: string | null) => {
     }
   }, [userId]);
 
-  // デバッグログを追加
-  console.log('useTags hook state:', { tagsCount: tags.length, loading, error });
-
   const createOrGetTag = useCallback(async (tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual') => {
     if (!userId) return '';
     
     try {
-      console.log('useTags: creating tag:', tagName, 'type:', type);
       const tagId = await tagService.createOrGetTag(userId, tagName, type);
-      console.log('useTags: tag created with ID:', tagId);
       return tagId;
     } catch (err) {
       console.error('useTags: error creating tag:', err);
