@@ -34,16 +34,16 @@ export const ViewModeSelector: React.FC<ViewModeSelectorProps> = ({
       description: '全てのリンクを時系列で表示',
     },
     {
-      key: 'folder' as LinkViewMode,
-      icon: 'folder',
-      label: 'フォルダ',
-      description: 'フォルダ別にグループ化して表示',
-    },
-    {
       key: 'tag' as LinkViewMode,
       icon: 'hash',
       label: 'タグ',
       description: 'タグ別にグループ化して表示',
+    },
+    {
+      key: 'folder' as LinkViewMode,
+      icon: 'folder',
+      label: 'フォルダ',
+      description: 'フォルダ別にグループ化して表示',
     },
   ];
 

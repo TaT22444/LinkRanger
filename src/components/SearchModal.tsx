@@ -138,6 +138,16 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoFocus
+              autoCapitalize="none"
+              autoCorrect={true}
+              keyboardType="default"
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              autoComplete="off"
+              onSubmitEditing={() => {
+                // 検索結果が表示されているので特別な処理は不要
+                // キーボードは開いたままにしてユーザーが編集を続けられるようにする
+              }}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity

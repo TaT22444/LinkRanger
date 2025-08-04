@@ -213,8 +213,20 @@ export const EditProfileScreen: React.FC = () => {
                 onBlur={handleDisplayNameBlur}
                 placeholder={getOriginalDisplayName()}
                 placeholderTextColor="#666"
-                autoCapitalize="none"
+                autoCapitalize="words"
+                autoCorrect={true}
+                keyboardType="default"
+                returnKeyType="done"
                 editable={!isLoading}
+                autoComplete="name"
+                textContentType="name"
+                clearButtonMode="while-editing"
+                maxLength={50}
+                onSubmitEditing={() => {
+                  if (hasUnsavedChanges()) {
+                    handleSave();
+                  }
+                }}
               />
               {hasUnsavedChanges() && (
                 <TouchableOpacity

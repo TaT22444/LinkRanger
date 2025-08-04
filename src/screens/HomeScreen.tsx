@@ -34,18 +34,44 @@ import { AddTagModal } from '../components/AddTagModal';
 import { SearchModal } from '../components/SearchModal';
 import { LinkDetailScreen } from './LinkDetailScreen';
 import { Link, UserPlan, LinkViewMode, Tag, Folder } from '../types';
-import { linkService } from '../services/firestoreService';
+import { linkService, batchService } from '../services/firestoreService';
 
 import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
+import { PlanService } from '../services/planService';
 
 import { AIStatusMonitor } from '../components/AIStatusMonitor';
+import { UpgradeModal } from '../components/UpgradeModal';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user, logout } = useAuth();
+  
+  // 🚀 最適化されたHooksの使用
+  console.log('🏠 HomeScreen: Hooksを初期化', {
+    userId: user?.uid,
+    hasUser: !!user,
+    timestamp: new Date().toISOString()
+  });
+  
   const { links, loading, error, createLink, updateLink, deleteLink } = useLinks(user?.uid || null);
   const { tags: userTags, createOrGetTag, deleteTag: deleteTagById, generateRecommendedTags } = useTags(user?.uid || null);
+  
+  console.log('🏠 HomeScreen: Hooks初期化完了', {
+    linksCount: links.length,
+    tagsCount: userTags.length,
+    loading,
+    error: !!error
+  });
+  
+  // タグの変更を監視（デバッグ用）
+  useEffect(() => {
+    console.log('🏷️ HomeScreen: userTags更新検知', {
+      tagsCount: userTags.length,
+      tagNames: userTags.map(tag => tag.name),
+      timestamp: new Date().toISOString()
+    });
+  }, [userTags]);
   
   const [aiProcessingStatus, setAiProcessingStatus] = useState<{ [key: string]: number }>({
     'demo-processing-1': 0.65 // デモ用の進捗バー
@@ -115,6 +141,13 @@ export const HomeScreen: React.FC = () => {
   const [viewMode, setViewMode] = useState<LinkViewMode>('list');
   const [expandedTagIds, setExpandedTagIds] = useState<Set<string>>(new Set());
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
+  
+  // 選択モード関連の状態
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
+  const [selectedTagIdsForDeletion, setSelectedTagIdsForDeletion] = useState<Set<string>>(new Set());
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeModalContext, setUpgradeModalContext] = useState<'link_limit' | 'tag_limit' | 'ai_limit' | 'account' | 'general'>('general');
 
   // スワイプジェスチャー用の状態
   const swipeGestureRef = useRef<PanGestureHandler>(null);
@@ -151,6 +184,20 @@ export const HomeScreen: React.FC = () => {
 
   const handleAddLink = async (linkData: Partial<Link>) => {
     if (!user?.uid) return;
+    
+    // プラン制限チェック
+    const currentLinkCount = links.length;
+    if (!PlanService.canCreateLink(user, currentLinkCount)) {
+      const limitMessage = PlanService.getLimitExceededMessage(user, 'links');
+      Alert.alert('制限に達しました', limitMessage, [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: 'プラン変更', onPress: () => {
+          setUpgradeModalContext('link_limit');
+          setShowUpgradeModal(true);
+        }}
+      ]);
+      return;
+    }
     
     // ... (URL重複チェックのロジックは変更なし)
     if (linkData.url) {
@@ -256,7 +303,7 @@ export const HomeScreen: React.FC = () => {
       // ... (Alert表示のロジックは変更なし)
       const userTagCount = (linkData.tagIds || []).length;
       const aiTagCount = finalTagIds.length - userTagCount;
-      let message = `🤖 AI分析が完了しました！\n\n`;
+      let message = `🤖 AI解説が完了しました！\n\n`;
       if (userTagCount > 0) message += `👤 ユーザー選択: ${userTagCount}個\n`;
       if (aiTagCount > 0) message += `🤖 AI生成: ${aiTagCount}個\n`;
       message += `\n📊 合計: ${finalTagIds.length}個のタグ\n\n`;
@@ -264,9 +311,9 @@ export const HomeScreen: React.FC = () => {
       if (aiResponse.fromCache) {
         message += '💾 キャッシュから取得';
       } else {
-        message += `🔥 新規AI分析 (トークン: ${aiResponse.tokensUsed})`;
+        message += `🔥 新規AI解説 (トークン: ${aiResponse.tokensUsed})`;
       }
-      Alert.alert('🎉 自動AI分析完了', message);
+      Alert.alert('🎉 自動AI解説完了', message);
 
     } catch (error: any) {
       console.log('[AI自動タグ付与] 失敗: linkId', linkId, error);
@@ -498,10 +545,27 @@ export const HomeScreen: React.FC = () => {
   const handleAddTag = async (tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual') => {
     if (!user?.uid) return '';
     
+    // プラン制限チェック
+    const currentTagCount = userTags.length;
+    if (!PlanService.canCreateTag(user, currentTagCount)) {
+      const limitMessage = PlanService.getLimitExceededMessage(user, 'tags');
+      Alert.alert('制限に達しました', limitMessage, [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: 'プラン変更', onPress: () => {
+          setUpgradeModalContext('tag_limit');
+          setShowUpgradeModal(true);
+        }}
+      ]);
+      return '';
+    }
+    
     try {
+      console.log('🏷️ HomeScreen: タグ作成開始', { tagName, type, userId: user.uid });
       const tagId = await createOrGetTag(tagName, type);
+      console.log('✅ HomeScreen: タグ作成完了', { tagName, tagId, currentTagsCount: userTags.length });
       return tagId;
     } catch (error) {
+      console.error('❌ HomeScreen: タグ作成エラー', { tagName, error });
       Alert.alert('エラー', 'タグの作成に失敗しました');
       throw error;
     }
@@ -526,6 +590,259 @@ export const HomeScreen: React.FC = () => {
     }
   };
 
+  // 選択モード関連の関数
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    setSelectedLinkIds(new Set()); // 選択をクリア
+    setSelectedTagIdsForDeletion(new Set()); // タグ選択もクリア
+  };
+
+  const toggleLinkSelection = (linkId: string) => {
+    setSelectedLinkIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(linkId)) {
+        newSet.delete(linkId);
+      } else {
+        newSet.add(linkId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllLinks = () => {
+    const allLinkIds = new Set(filteredLinks.map(link => link.id));
+    setSelectedLinkIds(allLinkIds);
+  };
+
+  const clearSelection = () => {
+    setSelectedLinkIds(new Set());
+  };
+
+  const toggleTagSelection = (tagId: string) => {
+    setSelectedTagIdsForDeletion(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(tagId)) {
+        newSet.delete(tagId);
+      } else {
+        newSet.add(tagId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllTags = () => {
+    if (viewMode === 'tag' && groupedData.tagGroups) {
+      const allTagIds = new Set(groupedData.tagGroups.map(group => group?.tag.id).filter(Boolean) as string[]);
+      setSelectedTagIdsForDeletion(allTagIds);
+    }
+  };
+
+  const clearTagSelection = () => {
+    setSelectedTagIdsForDeletion(new Set());
+  };
+
+  // ViewModeHeader コンポーネント
+  const renderViewModeHeader = () => {
+    if (viewMode === 'folder') return null; // folderモードでは表示しない
+
+    const getHeaderInfo = () => {
+      if (viewMode === 'list') {
+        return {
+          label: 'リンク',
+          count: filteredLinks.length,
+          items: filteredLinks
+        };
+      } else if (viewMode === 'tag') {
+        // タグモードでの表示用データを計算
+        const tagGroups = groupedData.tagGroups || [];
+        const untaggedLinks = groupedData.untaggedLinks || [];
+        const totalTaggedLinks = tagGroups.reduce((total, group) => total + (group?.links.length || 0), 0);
+        const totalLinks = totalTaggedLinks + untaggedLinks.length;
+        
+        return {
+          label: 'タグ',
+          count: tagGroups.length, // タグの総数を表示（リンク数ではなく）
+          items: filteredLinks
+        };
+      }
+      return { label: '', count: 0, items: [] };
+    };
+
+    const { label, count } = getHeaderInfo();
+
+    return (
+      <View style={styles.viewModeHeaderContainer}>
+        <View style={styles.viewModeHeader}>
+          <View style={styles.viewModeHeaderLeft}>
+            <Text style={styles.viewModeHeaderLabel}>{label}</Text>
+            <Text style={styles.viewModeHeaderCount}>({count})</Text>
+          </View>
+          
+          <View style={styles.viewModeHeaderRight}>
+            {/* タグモード時のアクションボタン */}
+            {viewMode === 'tag' && (
+              <>
+                <TouchableOpacity 
+                  style={styles.tagActionButton}
+                  onPress={() => {
+                    console.log('🔘 HomeScreen: +タグボタンが押されました', { 
+                      currentTagsCount: userTags.length, 
+                      userId: user?.uid 
+                    });
+                    setShowAddTagModal(true);
+                  }}
+                >
+                  <Feather name="plus" size={16} color="#8A2BE2" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.tagActionButton}
+                  onPress={() => {
+                    // タグ結合機能（今後実装予定）
+                    Alert.alert('タグ結合', 'タグ結合機能は近日公開予定です');
+                  }}
+                >
+                  <Feather name="git-merge" size={16} color="#8A2BE2" />
+                </TouchableOpacity>
+              </>
+            )}
+            
+            <TouchableOpacity 
+              style={[
+                styles.selectionButton,
+                isSelectionMode && styles.selectionButtonActive
+              ]}
+              onPress={toggleSelectionMode}
+            >
+              <Text style={[
+                styles.selectionButtonText,
+                isSelectionMode && styles.selectionButtonTextActive
+              ]}>
+                {isSelectionMode ? 'キャンセル' : '選択'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {/* 選択モード時の状態バー */}
+        {isSelectionMode && (
+          <View style={styles.selectionStatusBar}>
+            <View style={styles.selectionStatusLeft}>
+              <Text style={styles.selectionStatusText}>
+                {viewMode === 'tag' 
+                  ? `${selectedTagIdsForDeletion.size}件選択中`
+                  : `${selectedLinkIds.size}件選択中`
+                }
+              </Text>
+              {((viewMode === 'tag' && groupedData.tagGroups && groupedData.tagGroups.length > 0) ||
+                (viewMode !== 'tag' && filteredLinks.length > 0)) && (
+                <TouchableOpacity 
+                  style={styles.selectAllButton}
+                  onPress={() => {
+                    if (viewMode === 'tag') {
+                      const allTagsSelected = groupedData.tagGroups?.length === selectedTagIdsForDeletion.size;
+                      if (allTagsSelected) {
+                        clearTagSelection();
+                      } else {
+                        selectAllTags();
+                      }
+                    } else {
+                      const allLinksSelected = selectedLinkIds.size === filteredLinks.length;
+                      if (allLinksSelected) {
+                        clearSelection();
+                      } else {
+                        selectAllLinks();
+                      }
+                    }
+                  }}
+                >
+                  <Text style={styles.selectAllButtonText}>
+                    {viewMode === 'tag' 
+                      ? (groupedData.tagGroups?.length === selectedTagIdsForDeletion.size ? 'すべて解除' : 'すべて選択')
+                      : (selectedLinkIds.size === filteredLinks.length ? 'すべて解除' : 'すべて選択')
+                    }
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            <View style={styles.selectionActions}>
+              <TouchableOpacity 
+                style={[
+                  styles.selectionActionButton,
+                  ((viewMode === 'tag' && selectedTagIdsForDeletion.size === 0) ||
+                   (viewMode !== 'tag' && selectedLinkIds.size === 0)) && styles.selectionActionButtonDisabled
+                ]}
+                onPress={() => {
+                  if (viewMode === 'tag' && selectedTagIdsForDeletion.size > 0) {
+                    Alert.alert(
+                      'タグの削除',
+                      `${selectedTagIdsForDeletion.size}件のタグを削除しますか？`,
+                      [
+                        { text: 'キャンセル', style: 'cancel' },
+                        {
+                          text: '削除',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              // タグの一括削除を実行
+                              const tagIdsArray = Array.from(selectedTagIdsForDeletion);
+                              await batchService.bulkDeleteTags(tagIdsArray, user?.uid || '');
+                              // 選択をクリア
+                              setSelectedTagIdsForDeletion(new Set());
+                              // 選択モードを終了
+                              setIsSelectionMode(false);
+                            } catch (error) {
+                              Alert.alert('エラー', 'タグの削除に失敗しました');
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  } else if (viewMode !== 'tag' && selectedLinkIds.size > 0) {
+                    Alert.alert(
+                      'リンクの削除',
+                      `${selectedLinkIds.size}件のリンクを削除しますか？`,
+                      [
+                        { text: 'キャンセル', style: 'cancel' },
+                        {
+                          text: '削除',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              // リンクの一括削除を実行
+                              const linkIdsArray = Array.from(selectedLinkIds);
+                              await batchService.bulkDeleteLinks(linkIdsArray, user?.uid || '');
+                              // 選択をクリア
+                              setSelectedLinkIds(new Set());
+                              // 選択モードを終了
+                              setIsSelectionMode(false);
+                            } catch (error) {
+                              Alert.alert('エラー', 'リンクの削除に失敗しました');
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  }
+                }}
+                disabled={(viewMode === 'tag' && selectedTagIdsForDeletion.size === 0) ||
+                         (viewMode !== 'tag' && selectedLinkIds.size === 0)}
+              >
+                <Feather 
+                  name="trash-2" 
+                  size={16} 
+                  color={((viewMode === 'tag' && selectedTagIdsForDeletion.size === 0) ||
+                          (viewMode !== 'tag' && selectedLinkIds.size === 0)) ? "#666" : "#FF6B6B"} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderLinkItem = ({ item }: { item: Link }) => (
     <View style={styles.linkItem}>
       <LinkCard
@@ -533,8 +850,12 @@ export const HomeScreen: React.FC = () => {
         link={item}
         tags={userTags}
         onPress={() => {
-          setSelectedLink(item);
-          setShowDetailModal(true);
+          if (isSelectionMode) {
+            toggleLinkSelection(item.id);
+          } else {
+            setSelectedLink(item);
+            setShowDetailModal(true);
+          }
         }}
         onToggleBookmark={() => {
           //
@@ -547,6 +868,9 @@ export const HomeScreen: React.FC = () => {
             //
           }
         }}
+        isSelectionMode={isSelectionMode}
+        isSelected={selectedLinkIds.has(item.id)}
+        onToggleSelection={() => toggleLinkSelection(item.id)}
       />
     </View>
   );
@@ -641,6 +965,7 @@ export const HomeScreen: React.FC = () => {
           scrollEventThrottle={8}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8A2BE2" />}
         >
+          {renderViewModeHeader()}
           <View style={styles.tagGroupsContainer}>
             {groupedData.tagGroups?.map((group) => {
               if (!group) return null;
@@ -653,8 +978,12 @@ export const HomeScreen: React.FC = () => {
                   isExpanded={expandedTagIds.has(tag.id)}
                   onToggleExpanded={() => toggleTagExpansion(tag.id)}
                   onPress={(link) => {
-                    setSelectedLink(link);
-                    setShowDetailModal(true);
+                    if (isSelectionMode) {
+                      toggleLinkSelection(link.id);
+                    } else {
+                      setSelectedLink(link);
+                      setShowDetailModal(true);
+                    }
                   }}
                   onMarkAsRead={async (linkId: string) => {
                     try {
@@ -663,6 +992,11 @@ export const HomeScreen: React.FC = () => {
                       //
                     }
                   }}
+                  isSelectionMode={isSelectionMode}
+                  isSelected={selectedTagIdsForDeletion.has(tag.id)}
+                  onToggleSelection={() => toggleTagSelection(tag.id)}
+                  selectedLinkIds={selectedLinkIds}
+                  onToggleLinkSelection={toggleLinkSelection}
                 />
               );
             })}
@@ -677,8 +1011,12 @@ export const HomeScreen: React.FC = () => {
                     link={link}
                     tags={userTags}
                     onPress={() => {
-                      setSelectedLink(link);
-                      setShowDetailModal(true);
+                      if (isSelectionMode) {
+                        toggleLinkSelection(link.id);
+                      } else {
+                        setSelectedLink(link);
+                        setShowDetailModal(true);
+                      }
                     }}
                     onToggleBookmark={() => {
                       //
@@ -691,6 +1029,9 @@ export const HomeScreen: React.FC = () => {
                         //
                       }
                     }}
+                    isSelectionMode={isSelectionMode}
+                    isSelected={selectedLinkIds.has(link.id)}
+                    onToggleSelection={() => toggleLinkSelection(link.id)}
                   />
                 </View>
               ))}
@@ -710,6 +1051,7 @@ export const HomeScreen: React.FC = () => {
           scrollEventThrottle={8}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8A2BE2" />}
         >
+          {renderViewModeHeader()}
           <View style={styles.comingSoonContainer}>
             <Feather name="folder" size={48} color="#666" />
             <Text style={styles.comingSoonTitle}>フォルダ機能</Text>
@@ -718,35 +1060,6 @@ export const HomeScreen: React.FC = () => {
               しばらくお待ちください。
             </Text>
           </View>
-
-          {/* {groupedData.unfolderLinks && groupedData.unfolderLinks.length > 0 && (
-            <View style={styles.untaggedSection}>
-              <Text style={styles.sectionTitle}>フォルダなしのリンク</Text>
-              {groupedData.unfolderLinks.map(link => (
-                <View key={link.id} style={styles.linkItem}>
-                  <LinkCard
-                    link={link}
-                    tags={userTags}
-                    onPress={() => {
-                      setSelectedLink(link);
-                      setShowDetailModal(true);
-                    }}
-                    onToggleBookmark={() => {
-                      //
-                    }}
-                    onDelete={() => handleDeleteLink(link)}
-                    onMarkAsRead={async () => {
-                      try {
-                        await linkService.markAsRead(link.id);
-                      } catch (error) {
-                        //
-                      }
-                    }}
-                  />
-                </View>
-              ))}
-            </View>
-          )} */}
         </ScrollView>
       );
     }
@@ -762,6 +1075,7 @@ export const HomeScreen: React.FC = () => {
         onScroll={handleScroll}
         scrollEventThrottle={8}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8A2BE2" />}
+        ListHeaderComponent={renderViewModeHeader}
         ListEmptyComponent={() => (
           <View style={styles.emptyStateContainer}>
             {loading ? (
@@ -791,7 +1105,7 @@ export const HomeScreen: React.FC = () => {
         <>
           <Text style={styles.emptyStateTitle}>🔍 検索結果がありません</Text>
           <Text style={styles.emptyStateText}>
-            {`「${searchQuery}」に一致するリンクが見つかりません。\n別のキーワードで検索してみてください。`}
+            {`「${searchQuery}」に一致するリンクが見つかりません。別のキーワードで検索してみてください。`}
           </Text>
         </>
       ) : selectedTagIds.length > 0 ? (
@@ -806,7 +1120,7 @@ export const HomeScreen: React.FC = () => {
         <>
           <Text style={styles.emptyStateTitle}>📎 リンクがありません</Text>
           <Text style={styles.emptyStateText}>
-            {`右下の + ボタンを押して最初のリンクを保存しましょう！`}
+            {`右下のボタンを押して最初のリンクを保存しましょう！`}
           </Text>
         </>
       )}
@@ -824,15 +1138,20 @@ export const HomeScreen: React.FC = () => {
       const tagGroups = new Map<string, Link[]>();
       const untaggedLinks: Link[] = [];
       
+      // まず、すべてのユーザータグを空の配列で初期化
+      userTags.forEach(tag => {
+        tagGroups.set(tag.id, []);
+      });
+      
+      // 次に、リンクを各タグに振り分け
       filteredLinks.forEach(link => {
         if (!link.tagIds || link.tagIds.length === 0) {
           untaggedLinks.push(link);
         } else {
           link.tagIds.forEach(tagId => {
-            if (!tagGroups.has(tagId)) {
-              tagGroups.set(tagId, []);
+            if (tagGroups.has(tagId)) {
+              tagGroups.get(tagId)!.push(link);
             }
-            tagGroups.get(tagId)!.push(link);
           });
         }
       });
@@ -843,7 +1162,13 @@ export const HomeScreen: React.FC = () => {
           return tag ? { tag, links } : null;
         })
         .filter(Boolean)
-        .sort((a, b) => b!.links.length - a!.links.length);
+        .sort((a, b) => {
+          // リンク数で降順ソート、同じ場合はタグ名でソート
+          if (b!.links.length !== a!.links.length) {
+            return b!.links.length - a!.links.length;
+          }
+          return a!.tag.name.localeCompare(b!.tag.name);
+        });
       
       return { tagGroups: tagGroupsArray, untaggedLinks };
     }
@@ -885,8 +1210,17 @@ export const HomeScreen: React.FC = () => {
                     onChangeText={handleSearchTextChange}
                     returnKeyType="search"
                     autoCapitalize="none"
-                    autoCorrect={false}
+                    autoCorrect={true}
+                    autoComplete="off"
+                    keyboardType="default"
                     autoFocus
+                    clearButtonMode="while-editing"
+                    onSubmitEditing={() => {
+                      // 検索実行時にキーボードを隠す
+                      if (searchQuery.trim()) {
+                        // 既に filteredLinks で結果は表示される
+                      }
+                    }}
                   />
                   {searchQuery.length > 0 && (
                     <TouchableOpacity
@@ -999,7 +1333,7 @@ export const HomeScreen: React.FC = () => {
             </Animated.View>
           </PanGestureHandler>
 
-          <FloatingActionButton onPress={() => setShowAddModal(true)} />
+          {isSelectionMode ? null : <FloatingActionButton onPress={() => setShowAddModal(true)} />}
 
           <AddLinkModal
             visible={showAddModal}
@@ -1016,7 +1350,14 @@ export const HomeScreen: React.FC = () => {
             onClose={() => setShowAddTagModal(false)}
             availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
             selectedTags={[]}
-            onTagsChange={() => {}}
+            onTagsChange={(tagIds) => {
+              // タグ作成完了時の処理
+              console.log('AddTagModal: tags created with IDs:', tagIds);
+              // モーダルを閉じる（タグ作成が完了したため）
+              setShowAddTagModal(false);
+              // 手動でリフレッシュを実行してタグリストを更新
+              handleRefresh();
+            }}
             onCreateTag={handleAddTag}
             onDeleteTag={handleDeleteTagByName}
           />
@@ -1062,6 +1403,16 @@ export const HomeScreen: React.FC = () => {
               />
             </Modal>
           )}
+          
+          {/* UpgradeModal */}
+          <UpgradeModal
+            visible={showUpgradeModal}
+            onClose={() => setShowUpgradeModal(false)}
+            currentPlan={PlanService.getUserPlan(user)}
+            heroTitle="リンクの保持数を増やそう！"
+            heroDescription="Proプランではリンクの保持数を200個まで増やせます"
+            sourceContext={upgradeModalContext}
+          />
         </View>
       </TouchableWithoutFeedback>
     </GestureHandlerRootView>
@@ -1075,7 +1426,6 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    paddingTop: 16,
   },
   scrollContent: {
     paddingBottom: 100,
@@ -1281,6 +1631,128 @@ const styles = StyleSheet.create({
     color: '#AAA',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  viewModeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+    backgroundColor: '#121212',
+    zIndex: 15,
+  },
+  viewModeHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewModeHeaderLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#CCC',
+  },
+  viewModeHeaderCount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ccc',
+    marginLeft: 8,
+  },
+  viewModeHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4, // ボタン間の間隔を調整
+  },
+  tagActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(138, 43, 226, 0.1)', // 薄い紫の背景
+    borderWidth: 1,
+    borderColor: 'rgba(138, 43, 226, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  selectionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#27272A',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  selectionButtonActive: {
+    backgroundColor: '#27272A',
+    borderColor: '#333',
+  },
+  selectionButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#fff',
+  },
+  selectionButtonTextActive: {
+    color: '#fff',
+  },
+  viewModeHeaderContainer: {
+    marginBottom: 8,
+  },
+  selectionStatusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginBottom: 8,
+    backgroundColor: '#121212',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  selectionStatusLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectionStatusText: {
+    fontSize: 12,
+    color: '#fff',
+    marginRight: 10,
+  },
+  selectAllButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#27272A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  selectAllButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8B5CF6',
+  },
+  selectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectionActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#27272A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  selectionActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FF6B6B',
+    marginLeft: 5,
+  },
+  selectionActionButtonDisabled: {
+    opacity: 0.5,
+  },
+  selectionActionTextDisabled: {
+    color: '#666',
   },
 
 });

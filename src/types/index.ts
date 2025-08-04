@@ -36,6 +36,9 @@ export interface User {
   avatarIcon?: string;
   isAnonymous: boolean;
   createdAt: Date;
+  // テスト・管理用フラグ
+  isTestAccount?: boolean; // テストアカウント（AI制限なし）
+  role?: 'user' | 'admin' | 'tester'; // ユーザーロール
   // ユーザー設定
   preferences?: {
     theme: 'dark' | 'light';

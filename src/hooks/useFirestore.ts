@@ -15,6 +15,47 @@ import {
   userService 
 } from '../services/firestoreService';
 
+// 🚀 グローバルキャッシュシステム
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  isSubscribed: boolean;
+}
+
+const globalCache = {
+  links: new Map<string, CacheEntry<Link[]>>(),
+  tags: new Map<string, CacheEntry<Tag[]>>(),
+  activeSubscriptions: new Map<string, () => void>()
+};
+
+// キャッシュ設定
+const CACHE_CONFIG = {
+  CACHE_DURATION: 2 * 60 * 1000, // 2分間キャッシュ
+  REALTIME_THRESHOLD: 5, // 5人以上のアクティブユーザーでリアルタイム停止
+  MAX_CACHE_SIZE: 50 // 最大50ユーザーのキャッシュ保持
+};
+
+// キャッシュ管理ユーティリティ
+const cacheUtils = {
+  isValid<T>(entry: CacheEntry<T> | undefined): boolean {
+    if (!entry) return false;
+    return (Date.now() - entry.timestamp) < CACHE_CONFIG.CACHE_DURATION;
+  },
+  
+  shouldUseRealtime(): boolean {
+    return globalCache.activeSubscriptions.size < CACHE_CONFIG.REALTIME_THRESHOLD;
+  },
+  
+  cleanupCache<T>(cache: Map<string, CacheEntry<T>>): void {
+    if (cache.size > CACHE_CONFIG.MAX_CACHE_SIZE) {
+      const entries = Array.from(cache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      const toRemove = entries.slice(0, cache.size - CACHE_CONFIG.MAX_CACHE_SIZE);
+      toRemove.forEach(([key]) => cache.delete(key));
+    }
+  }
+};
+
 // ===== リンク関連のHooks =====
 export const useLinks = (
   userId: string | null,
@@ -32,39 +73,110 @@ export const useLinks = (
       return;
     }
 
+    const cacheKey = `${userId}-${JSON.stringify(filter)}-${JSON.stringify(sort)}`;
+    console.log('🔄 useLinks: 初期化', {
+      userId,
+      cacheKey: cacheKey.slice(0, 20) + '...',
+      shouldUseRealtime: cacheUtils.shouldUseRealtime(),
+      activeSubscriptions: globalCache.activeSubscriptions.size
+    });
+
+    // キャッシュチェック
+    const cachedEntry = globalCache.links.get(cacheKey);
+    if (cacheUtils.isValid(cachedEntry)) {
+      console.log('💾 useLinks: キャッシュヒット', {
+        linksCount: cachedEntry!.data.length,
+        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60))
+      });
+      setLinks(cachedEntry!.data);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const unsubscribe = linkService.subscribeToUserLinks(
-      userId,
-      (newLinks) => {
-        setLinks(newLinks);
-        setLoading(false);
-        setError(null); // 成功時はエラーをクリア
-      },
-      filter,
-      sort
-    );
+    // リアルタイム監視 vs 一回限り読み取りの選択
+    if (cacheUtils.shouldUseRealtime()) {
+      console.log('📡 useLinks: リアルタイム監視開始', {
+        userId,
+        activeSubscriptions: globalCache.activeSubscriptions.size
+      });
 
-    // エラーハンドリング（インデックス構築中など）
-    const handleError = (error: any) => {
-      console.log('useLinks error:', error);
-      if (error?.code === 'failed-precondition') {
-        setError('インデックス構築中です。しばらくお待ちください。');
-      } else {
-        setError(error?.message || 'リンクの読み込みに失敗しました');
-      }
-      setLoading(false);
-    };
+      const unsubscribe = linkService.subscribeToUserLinks(
+        userId,
+        (newLinks) => {
+          console.log('📥 useLinks: リアルタイム更新受信', {
+            userId,
+            linksCount: newLinks.length
+          });
+          
+          setLinks(newLinks);
+          setLoading(false);
+          setError(null);
+          
+          // キャッシュ更新
+          globalCache.links.set(cacheKey, {
+            data: newLinks,
+            timestamp: Date.now(),
+            isSubscribed: true
+          });
+          cacheUtils.cleanupCache(globalCache.links);
+        },
+        filter,
+        sort
+      );
 
-    // エラーの場合も処理を継続
-    try {
-      // unsubscribeは既に設定済み
-    } catch (err) {
-      handleError(err);
+      // サブスクリプション管理
+      globalCache.activeSubscriptions.set(cacheKey, unsubscribe);
+
+      // クリーンアップ
+      return () => {
+        console.log('🧹 useLinks: リアルタイム監視停止', {
+          userId,
+          remainingSubscriptions: globalCache.activeSubscriptions.size - 1
+        });
+        unsubscribe();
+        globalCache.activeSubscriptions.delete(cacheKey);
+      };
+    } else {
+      // 一回限り読み取り（高負荷時）
+      console.log('📖 useLinks: 一回限り読み取り（高負荷対応）', {
+        userId,
+        activeSubscriptions: globalCache.activeSubscriptions.size,
+        threshold: CACHE_CONFIG.REALTIME_THRESHOLD
+      });
+
+      const fetchLinks = async () => {
+        try {
+          const result = await linkService.getUserLinks(userId, filter, sort, 100);
+          console.log('📥 useLinks: 一回限り読み取り完了', {
+            userId,
+            linksCount: result.data.length,
+            strategy: 'one_time_read'
+          });
+          
+          setLinks(result.data);
+          setLoading(false);
+          setError(null);
+          
+          // キャッシュ保存
+          globalCache.links.set(cacheKey, {
+            data: result.data,
+            timestamp: Date.now(),
+            isSubscribed: false
+          });
+          cacheUtils.cleanupCache(globalCache.links);
+        } catch (err) {
+          console.error('❌ useLinks: 読み取りエラー', err);
+          setError(err instanceof Error ? err.message : 'リンクの読み込みに失敗しました');
+          setLoading(false);
+        }
+      };
+
+      fetchLinks();
     }
-
-    return unsubscribe;
   }, [userId, filter, sort]);
 
   const createLink = useCallback(async (linkData: Omit<Link, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -118,24 +230,113 @@ export const useTags = (userId: string | null) => {
       return;
     }
 
+    const cacheKey = `tags-${userId}`;
+    console.log('🔄 useTags: 初期化', {
+      userId,
+      shouldUseRealtime: cacheUtils.shouldUseRealtime(),
+      activeSubscriptions: globalCache.activeSubscriptions.size
+    });
+
+    // キャッシュチェック
+    const cachedEntry = globalCache.tags.get(cacheKey);
+    if (cacheUtils.isValid(cachedEntry)) {
+      console.log('💾 useTags: キャッシュヒット', {
+        tagsCount: cachedEntry!.data.length,
+        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60))
+      });
+      setTags(cachedEntry!.data);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    try {
-      const unsubscribe = tagService.subscribeToUserTags(
+    // リアルタイム監視 vs 一回限り読み取りの選択
+    if (cacheUtils.shouldUseRealtime()) {
+      console.log('📡 useTags: リアルタイム監視開始', {
         userId,
-        (newTags) => {
-          setTags(newTags);
+        activeSubscriptions: globalCache.activeSubscriptions.size
+      });
+
+      try {
+        const unsubscribe = tagService.subscribeToUserTags(
+          userId,
+          (newTags) => {
+            console.log('📥 useTags: リアルタイム更新受信', {
+              userId,
+              tagsCount: newTags.length
+            });
+            
+            setTags(newTags);
+            setLoading(false);
+            setError(null);
+            
+            // キャッシュ更新
+            globalCache.tags.set(cacheKey, {
+              data: newTags,
+              timestamp: Date.now(),
+              isSubscribed: true
+            });
+            cacheUtils.cleanupCache(globalCache.tags);
+          }
+        );
+
+        // サブスクリプション管理
+        globalCache.activeSubscriptions.set(cacheKey, unsubscribe);
+
+        // クリーンアップ
+        return () => {
+          console.log('🧹 useTags: リアルタイム監視停止', {
+            userId,
+            remainingSubscriptions: globalCache.activeSubscriptions.size - 1
+          });
+          unsubscribe();
+          globalCache.activeSubscriptions.delete(cacheKey);
+        };
+      } catch (err) {
+        console.error('❌ useTags: リアルタイム監視エラー', err);
+        setError(err instanceof Error ? err.message : 'Failed to subscribe to tags');
+        setLoading(false);
+      }
+    } else {
+      // 一回限り読み取り（高負荷時）
+      console.log('📖 useTags: 一回限り読み取り（高負荷対応）', {
+        userId,
+        activeSubscriptions: globalCache.activeSubscriptions.size,
+        threshold: CACHE_CONFIG.REALTIME_THRESHOLD
+      });
+
+      const fetchTags = async () => {
+        try {
+          // 直接的なタグ取得（リアルタイムなし）
+          const tagsResult = await tagService.getUserTags(userId);
+          console.log('📥 useTags: 一回限り読み取り完了', {
+            userId,
+            tagsCount: tagsResult.length,
+            strategy: 'one_time_read'
+          });
+          
+          setTags(tagsResult);
           setLoading(false);
           setError(null);
+          
+          // キャッシュ保存
+          globalCache.tags.set(cacheKey, {
+            data: tagsResult,
+            timestamp: Date.now(),
+            isSubscribed: false
+          });
+          cacheUtils.cleanupCache(globalCache.tags);
+        } catch (err) {
+          console.error('❌ useTags: 読み取りエラー', err);
+          setError(err instanceof Error ? err.message : 'タグの読み込みに失敗しました');
+          setLoading(false);
         }
-      );
+      };
 
-      return unsubscribe;
-    } catch (err) {
-      console.error('useTags: error setting up subscription:', err);
-      setError(err instanceof Error ? err.message : 'Failed to subscribe to tags');
-      setLoading(false);
+      fetchTags();
     }
   }, [userId]);
 

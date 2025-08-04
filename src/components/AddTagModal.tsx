@@ -452,11 +452,15 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
                     value={newTagName}
                     onChangeText={setNewTagName}
                     autoCapitalize="none"
-                    autoCorrect={false}
+                    autoCorrect={true}
                     keyboardType="default"
                     returnKeyType="done"
                     onSubmitEditing={handleCreateTag}
                     onFocus={handleInputFocus} // ★ フォーカス時のハンドラを追加
+                    clearButtonMode="while-editing"
+                    autoComplete="off"
+                    maxLength={50}
+                    blurOnSubmit={false}
                   />
                   {newTagName.trim() ? (
                     <TouchableOpacity

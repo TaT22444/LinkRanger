@@ -3,14 +3,14 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'rea
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { TagDetailScreen } from './src/screens/TagDetailScreen';
-import { LinkDetailScreen } from './src/screens/LinkDetailScreen';
-import { Tag, Link } from './src/types';
+import { Tag } from './src/types';
 
 type RootStackParamList = {
   Auth: undefined;
@@ -109,17 +109,18 @@ const App: React.FC = () => {
   return (
     <GestureHandlerRootView style={styles.container}>
       <AuthProvider>
-        <AppContent />
+        <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_dummy'}>
+          <AppContent />
+        </StripeProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );
 };
 
-export default App;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#121212',
   },
   loadingContainer: {
     flex: 1,
@@ -128,14 +129,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   loadingText: {
-    color: '#FFF',
-    fontSize: 16,
-    marginTop: 10,
-  },
-  headerButton: {
-    color: '#8A2BE2',
-    fontSize: 16,
-    fontWeight: 'bold',
-    paddingHorizontal: 8,
+    color: '#fff',
+    fontSize: 18,
   },
 });
+
+export default App;

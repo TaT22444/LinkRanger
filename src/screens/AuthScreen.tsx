@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,10 @@ export const AuthScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const { login, register, loginAnonymously, loading } = useAuth();
+
+  // 🚀 入力フィールドのref管理
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   const handleEmailAuth = async () => {
     if (!email || !password) {
@@ -43,16 +47,38 @@ export const AuthScreen: React.FC = () => {
     }
   };
 
+  // 🚀 Enter キー処理
+  const handleEmailSubmit = () => {
+    if (email.trim()) {
+      passwordRef.current?.focus();
+    }
+  };
+
+  const handlePasswordSubmit = () => {
+    if (password.trim() && email.trim()) {
+      handleEmailAuth();
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        contentInsetAdjustmentBehavior="automatic"
+      >
         <View style={styles.content}>
           {/* アプリタイトル */}
-          <Text style={styles.title}>LinkRanger</Text>
-          <Text style={styles.subtitle}>あなただけの知の羅針盤</Text>
+          <View style={styles.titleSection}>
+            <Text style={styles.title}>LinkRanger</Text>
+            <Text style={styles.subtitle}>あなただけの知の羅針盤</Text>
+          </View>
 
           {/* 認証フォーム */}
           <View style={styles.form}>
@@ -61,6 +87,7 @@ export const AuthScreen: React.FC = () => {
             </Text>
 
             <TextInput
+              ref={emailRef}
               style={styles.input}
               placeholder="メールアドレス"
               placeholderTextColor="#666"
@@ -69,10 +96,15 @@ export const AuthScreen: React.FC = () => {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              returnKeyType="done"
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              onSubmitEditing={handleEmailSubmit}
+              blurOnSubmit={false}
             />
 
             <TextInput
+              ref={passwordRef}
               style={styles.input}
               placeholder="パスワード"
               placeholderTextColor="#666"
@@ -81,7 +113,10 @@ export const AuthScreen: React.FC = () => {
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-              returnKeyType="done"
+              autoComplete={isLogin ? "password" : "password-new"}
+              textContentType={isLogin ? "password" : "newPassword"}
+              returnKeyType="go"
+              onSubmitEditing={handlePasswordSubmit}
             />
 
             <TouchableOpacity
@@ -127,75 +162,96 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   scrollContainer: {
+    backgroundColor: '#121212',
     flexGrow: 1,
-    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
   },
   content: {
-    padding: 20,
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    // minHeight: '100%',
+  },
+  titleSection: {
+    alignItems: 'center',
+    marginBottom: 60,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
     color: '#00FFFF',
     marginBottom: 8,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
     color: '#888',
-    marginBottom: 40,
+    textAlign: 'center',
   },
   form: {
     width: '100%',
     maxWidth: 300,
-    marginBottom: 30,
+    marginBottom: 40,
   },
   formTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#FFF',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 30,
   },
   input: {
     backgroundColor: '#2A2A2A',
-    borderRadius: 8,
-    padding: 15,
+    borderRadius: 12,
+    padding: 16,
     color: '#FFF',
-    marginBottom: 15,
+    marginBottom: 16,
     fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   button: {
-    borderRadius: 8,
-    padding: 15,
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   primaryButton: {
     backgroundColor: '#8A2BE2',
+    shadowColor: '#8A2BE2',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   buttonText: {
     color: '#FFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   switchButton: {
-    alignItems: 'center',
-    padding: 10,
+    marginTop: 8,
+    padding: 8,
   },
   switchText: {
     color: '#00FFFF',
-    fontSize: 14,
+    fontSize: 16,
+    textAlign: 'center',
   },
   anonymousSection: {
-    alignItems: 'center',
     width: '100%',
     maxWidth: 300,
+    alignItems: 'center',
   },
   orText: {
-    color: '#888',
-    fontSize: 14,
-    marginBottom: 15,
+    color: '#666',
+    fontSize: 16,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   anonymousButton: {
     backgroundColor: 'transparent',
@@ -203,7 +259,8 @@ const styles = StyleSheet.create({
     borderColor: '#666',
   },
   anonymousButtonText: {
-    color: '#CCC',
+    color: '#666',
     fontSize: 16,
+    fontWeight: '500',
   },
 }); 

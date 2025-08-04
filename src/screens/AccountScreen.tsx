@@ -1,16 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { UserPlan } from '../types';
+import { PlanService } from '../services/planService';
+import { UpgradeModal } from '../components/UpgradeModal';
+import { AIUsageManager } from '../services/aiUsageService';
 
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user, logout } = useAuth();
   const userEmail = user?.email || 'No Email';
-  const userPlan: UserPlan = (user?.subscription?.plan as UserPlan) || 'free';
+  
+  // PlanServiceを使用してプラン情報を取得（useMemoで最適化）
+  const userPlan = useMemo(() => PlanService.getUserPlan(user), [user]);
+  const planLimits = useMemo(() => PlanService.getPlanLimits(user), [user]);
+  const isTestAccount = useMemo(() => PlanService.isTestAccount(user), [user]);
 
   // Freeプランかどうか
   const isFree = userPlan === 'free';
@@ -28,18 +35,32 @@ export const AccountScreen: React.FC = () => {
     manualTagging: true,
   });
 
+  // UpgradeModal表示状態
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
   // AI使用状況を取得
   useEffect(() => {
     const fetchAIUsage = async () => {
       if (!user?.uid) return;
       
       try {
-        // プランに応じた制限値を設定
-        const limit = userPlan === 'pro' ? 1000 : 20;
+        // PlanServiceから制限値を取得
+        const limit = planLimits.aiUsageLimit;
         
-        // 実際の使用量は後で実装（今はダミーデータ）
-        const used = userPlan === 'pro' ? 245 : 8;
+        // 実際のAI使用量をFirebaseから取得
+        const aiUsageManager = AIUsageManager.getInstance();
+        const usageStats = await aiUsageManager.getUserUsageStats(user.uid);
+        const used = usageStats.currentMonth.totalRequests;
         const remaining = Math.max(0, limit - used);
+        
+        console.log('🔍 AI使用状況取得:', {
+          userId: user.uid,
+          plan: userPlan,
+          limit,
+          used,
+          remaining,
+          monthlyStats: usageStats.currentMonth
+        });
         
         setAiUsage({ used, limit, remaining });
 
@@ -50,11 +71,14 @@ export const AccountScreen: React.FC = () => {
         });
       } catch (error) {
         console.error('Failed to fetch AI usage:', error);
+        // エラー時はデフォルト値を設定
+        const limit = planLimits.aiUsageLimit;
+        setAiUsage({ used: 0, limit, remaining: limit });
       }
     };
 
     fetchAIUsage();
-  }, [user?.uid, userPlan]);
+  }, [user?.uid, userPlan, planLimits.aiUsageLimit]);
 
   // AIタグ付与設定を切り替える
   const toggleAutoTagging = async (enabled: boolean) => {
@@ -70,16 +94,19 @@ export const AccountScreen: React.FC = () => {
 
   // 各アクションのハンドラ（仮実装）
   const handleUpgrade = () => {
-    Alert.alert('アップグレード', 'Proプランへのアップグレード画面へ遷移');
+    setShowUpgradeModal(true);
   };
+
+  const handlePlan = () => {
+    setShowUpgradeModal(true);
+  };
+
+  const handleChangePassword = () => {
+    navigation.navigate('ChangePassword');
+  };
+
   const handleEditProfile = () => {
     navigation.navigate('EditProfile');
-  };
-  const handlePlan = () => {
-    Alert.alert('プラン', 'プラン詳細・変更画面へ遷移');
-  };
-  const handleChangePassword = () => {
-    Alert.alert('パスワード変更', 'パスワード変更画面へ遷移');
   };
   const handleLinks = () => {
     navigation.navigate('LinkList');
@@ -137,7 +164,16 @@ export const AccountScreen: React.FC = () => {
           </View>
           <View style={styles.profileInfo}>
             <Text style={styles.email}>{user?.username || userEmail}</Text>
-            <Text style={styles.plan}>プラン: {userPlan}</Text>
+            <View style={styles.planContainer}>
+              <Text style={styles.plan}>
+                {isTestAccount ? 'テストアカウント' : `${PlanService.getPlanDisplayName(user)}プラン`}
+              </Text>
+              {isTestAccount && (
+                <View style={styles.testBadge}>
+                  <Text style={styles.testBadgeText}>無制限</Text>
+                </View>
+              )}
+            </View>
           </View>
           <View style={styles.profileEditButton}>
             <Text style={styles.profileEditButtonText}>プロフィールを編集</Text>
@@ -152,26 +188,51 @@ export const AccountScreen: React.FC = () => {
         
         <View style={styles.aiUsageItem}>
           <View style={styles.aiUsageHeader}>
-            <Text style={styles.aiUsageTitle}>AIタグ付与機能使用状況</Text>
-            <Text style={styles.aiUsageCount}>{aiUsage.used} / {aiUsage.limit}</Text>
+            <Text style={styles.aiUsageTitle}>
+              {isTestAccount ? 'AI機能（テストモード）' : 'AI解説機能使用状況'}
+            </Text>
+            <Text style={styles.aiUsageCount}>
+              {isTestAccount ? '無制限' : `${aiUsage.used} / ${aiUsage.limit}`}
+            </Text>
           </View>
           
-          <View style={styles.aiProgressBar}>
-            <View 
-              style={[
-                styles.aiProgressFill, 
-                { 
-                  width: `${Math.min(100, (aiUsage.used / aiUsage.limit) * 100)}%`,
-                  backgroundColor: aiUsage.remaining <= 0 ? '#FF5252' : '#8A2BE2'
-                }
-              ]} 
-            />
+          {!isTestAccount && (
+            <View style={styles.aiProgressBar}>
+              <View 
+                style={[
+                  styles.aiProgressFill, 
+                  { 
+                    width: `${Math.min(100, (aiUsage.used / aiUsage.limit) * 100)}%`,
+                    backgroundColor: aiUsage.remaining <= 0 ? '#FF5252' : '#8A2BE2'
+                  }
+                ]} 
+              />
+            </View>
+          )}
+          
+          {/* プラン制限情報 */}
+          <View style={styles.planLimitsContainer}>
+            <View style={styles.limitItem}>
+              <Text style={styles.limitLabel}>タグ保存</Text>
+              <Text style={styles.limitValue}>
+                {planLimits.maxTags === -1 ? '無制限' : `${planLimits.maxTags.toLocaleString()}個まで`}
+              </Text>
+            </View>
+            <View style={styles.limitItem}>
+              <Text style={styles.limitLabel}>リンク保存</Text>
+              <Text style={styles.limitValue}>
+                {planLimits.maxLinks === -1 ? '無制限' : `${planLimits.maxLinks}個まで`}
+              </Text>
+            </View>
           </View>
+          
           {/* アップグレードボタン */}
-          {isFree && (
+          {!isTestAccount && userPlan !== 'pro' && (
             <TouchableOpacity style={styles.upgradeItem} onPress={handleUpgrade}>
               <Feather name="star" size={18} color="#FFF" style={styles.itemIcon} />
-              <Text style={styles.upgradeItemText}>Proプランにアップグレード</Text>
+              <Text style={styles.upgradeItemText}>
+                {userPlan === 'free' ? 'プランをアップグレード' : 'プランをアップグレード'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -214,6 +275,16 @@ export const AccountScreen: React.FC = () => {
           <Text style={styles.itemText}>アプリバージョン: 1.0.0</Text>
         </View>
       </View>
+      
+      {/* UpgradeModal */}
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlan={userPlan}
+        heroTitle="より理想的なリンク管理を"
+        heroDescription="AI解説機能が多く使える「Proプラン」がおすすめ！"
+        sourceContext="account"
+      />
     </ScrollView>
   );
 };
@@ -515,10 +586,10 @@ const styles = StyleSheet.create({
     color: '#FFF',
     marginBottom: 4,
   },
-  aiUsageLabel: {
-    fontSize: 14,
-    color: '#CCC',
-  },
+  // aiUsageLabel: {
+  //   fontSize: 14,
+  //   color: '#CCC',
+  // },
   aiUsageDivider: {
     width: 1,
     height: 24,
@@ -536,11 +607,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 8,
   },
-  aiWarningText: {
-    fontSize: 12,
-    color: '#FF9800',
-    flex: 1,
-  },
+  // aiWarningText: {
+  //   fontSize: 12,
+  //   color: '#FF9800',
+  //   flex: 1,
+  // },
   aiErrorWarning: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -551,11 +622,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 8,
   },
-  aiErrorText: {
-    fontSize: 11,
-    color: '#FF5252',
-    marginTop: 4,
-  },
+  // aiErrorText: {
+  //   fontSize: 11,
+  //   color: '#FF5252',
+  //   marginTop: 4,
+  // },
   aiSettingsSection: {
     marginTop: 16,
     paddingTop: 16,
@@ -625,6 +696,44 @@ const styles = StyleSheet.create({
   },
   toggleSwitchThumbActive: {
     transform: [{ translateX: 20 }],
+  },
+  planContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  testBadge: {
+    backgroundColor: '#FF5252',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+  },
+  testBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  planLimitsContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  limitItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  limitLabel: {
+    fontSize: 14,
+    color: '#AAA',
+  },
+  limitValue: {
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '600',
   },
 
 }); 

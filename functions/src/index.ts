@@ -1059,3 +1059,6 @@ async function recordAIUsage(userId: string, type: string, tokensUsed: number, t
   const summaryRef = db.collection("aiUsageSummary").doc(`${userId}_${month}`);
   await summaryRef.set({totalRequests: FieldValue.increment(1), totalTokens: FieldValue.increment(tokensUsed), totalCost: FieldValue.increment(cost), lastUpdated: FieldValue.serverTimestamp()}, {merge: true});
 }
+
+// Export Stripe functions
+export * from './stripe';

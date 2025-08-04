@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,22 @@ import {
   Modal,
   ScrollView,
   SafeAreaView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { UserPlan } from '../types';
+import { PlanService } from '../services/planService';
+import { useStripePayment } from '../services/stripeService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface UpgradeModalProps {
   visible: boolean;
   onClose: () => void;
-  currentPlan?: 'free' | 'standard' | 'pro';
+  currentPlan?: UserPlan;
   heroTitle?: string;
   heroDescription?: string;
+  sourceContext?: 'link_limit' | 'tag_limit' | 'ai_limit' | 'account' | 'general';
 }
 
 interface PlanFeature {
@@ -25,7 +32,8 @@ interface PlanFeature {
 }
 
 interface PlanOption {
-  name: string;
+  name: UserPlan;
+  displayName: string;
   price: string;
   period: string;
   description: string;
@@ -37,86 +45,191 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   visible,
   onClose,
   currentPlan = 'free',
-  heroTitle = 'AI分析結果を\nいつでも見返そう',
-  heroDescription = 'Proプランなら分析結果が永続保存され、\n過去の学習内容をいつでも確認できます',
+  heroTitle = 'プランをアップグレード',
+  heroDescription = 'より多くのリンクとタグを保存し、\nAI機能をさらに活用しましょう',
+  sourceContext = 'general',
 }) => {
-  const plans: PlanOption[] = [
-    {
-      name: 'Free',
-      price: '¥0',
-      period: '無料',
-      description: '基本機能をお試し',
-      features: [
-        {
-          title: 'AI分析 1回/月',
-          description: '基本的なAI分析機能',
-          icon: 'cpu',
-        },
-        {
-          title: '一時的結果表示',
-          description: 'アプリ内でのみ結果確認',
-          icon: 'eye',
-        },
-        {
-          title: '基本的なリンク管理',
-          description: 'タグ付けと整理機能',
-          icon: 'link',
-        },
-      ],
-    },
-    {
-      name: 'Standard',
-      price: '¥480',
-      period: '月額',
-      description: 'AIをもっと活用したい方に',
-      features: [
-        {
-          title: 'AI分析 3回/月',
-          description: 'より多くのタグでAI分析',
-          icon: 'cpu',
-        },
-        {
-          title: '高度な検索機能',
-          description: 'フィルタリングや並び替え',
-          icon: 'search',
-        },
-        {
-          title: '優先サポート',
-          description: '問い合わせの優先対応',
-          icon: 'headphones',
-        },
-      ],
-    },
-    {
-      name: 'Pro',
-      price: '¥980',
-      period: '月額',
-      description: 'AI分析結果を保存し、いつでもアクセス',
-      recommended: true,
-      features: [
-        {
-          title: 'AI分析結果の永続保存',
-          description: 'アプリを閉じても結果が残る',
-          icon: 'save',
-        },
-        {
-          title: 'AI分析 30回/月',
-          description: '大量のタグを分析可能',
-          icon: 'cpu',
-        },
-        {
-          title: '自動AIタグ付け',
-          description: 'リンク追加時に自動でタグ生成',
-          icon: 'tag',
-        },
-      ],
-    },
-  ];
+  const { user } = useAuth();
+  const { handleSubscription } = useStripePayment();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingPlan, setProcessingPlan] = useState<UserPlan | null>(null);
 
-  const handleUpgrade = (planName: string) => {
-    // TODO: プラン変更処理を実装
-    console.log('Upgrade to:', planName);
-    onClose();
+  // プラン詳細を動的に生成
+  const generatePlanOptions = (): PlanOption[] => {
+    const planTypes: UserPlan[] = ['free', 'standard', 'pro'];
+    
+    return planTypes.map((planType): PlanOption => {
+      const details = PlanService.getPlanDetails(planType);
+      const pricing = PlanService.getPlanPricing(planType);
+      
+      // プランごとの機能定義（sourceContextに応じて説明を調整）
+      const features: PlanFeature[] = [];
+      
+      if (planType === 'free') {
+        features.push(
+          {
+            title: `タグ保持数 ${details.limits.maxTags.toLocaleString()}個まで`,
+            description: sourceContext === 'tag_limit' ? 
+              'タグの整理で思考を構造化' : 
+              '基本的なタグ管理機能',
+            icon: 'tag',
+          },
+          {
+            title: `リンク保持数 ${details.limits.maxLinks}個まで`,
+            description: sourceContext === 'link_limit' ? 
+              '重要なリンクをしっかり保存' : 
+              '基本的なリンク管理機能',
+            icon: 'link',
+          },
+          {
+            title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
+            description: sourceContext === 'ai_limit' ? 
+              '保存したリンクの内容をAIが解説' : 
+              '保存したリンクの内容をAIが解説',
+            icon: 'cpu',
+          },
+          {
+            title: '基本リマインド機能',
+            description: '固定期間でのリマインド',
+            icon: 'bell',
+          }
+        );
+      }
+      
+      if (planType === 'standard') {
+        features.push(
+          {
+            title: 'Freeプランの全機能',
+            description: '基本機能はそのまま利用可能',
+            icon: 'check',
+          },
+          {
+            title: `リンク保持数 ${details.limits.maxLinks}個まで`,
+            description: sourceContext === 'link_limit' ? 
+              'さらに多くの重要リンクを整理' : 
+              'Freeプランより多くのリンクを保存',
+            icon: 'link',
+          },
+          {
+            title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
+            description: sourceContext === 'ai_limit' ? 
+              '保存したリンクの内容をAIが解説' : 
+              '保存したリンクの内容をAIが解説',
+            icon: 'cpu',
+          },
+          {
+            title: 'カスタムリマインド機能',
+            description: sourceContext === 'account' ? 
+              '独自のリマインド設定が可能' : 
+              '独自のリマインド設定が可能',
+            icon: 'clock',
+          }
+        );
+      }
+      
+      if (planType === 'pro') {
+        features.push(
+          {
+            title: 'Standardプランの全機能',
+            description: 'これまでの機能はそのまま利用可能',
+            icon: 'check',
+          },
+          {
+            title: `タグ保持数 ${details.limits.maxTags.toLocaleString()}個まで`,
+            description: sourceContext === 'tag_limit' ? 
+              '複雑なカテゴリ分けも自由自在' : 
+              '大量のタグを管理可能',
+            icon: 'tag',
+          },
+          {
+            title: `リンク保持数 ${details.limits.maxLinks}個まで`,
+            description: sourceContext === 'link_limit' ? 
+              '大規模なリンクライブラリを構築' : 
+              '豊富なリンクライブラリ',
+            icon: 'link',
+          },
+          {
+            title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
+            description: sourceContext === 'ai_limit' ? 
+              '保存したリンクの内容をAIが解説' : 
+              '保存したリンクの内容をAIが解説',
+            icon: 'cpu',
+          },
+          {
+            title: '高度なAIモデル',
+            description: sourceContext === 'ai_limit' ? 
+              'より詳細で正確な解説を生成' : 
+              'より詳細なデータ分析',
+            icon: 'search',
+          }
+        );
+      }
+      
+      return {
+        name: planType,
+        displayName: details.displayName,
+        price: pricing.price === 0 ? '¥0' : `¥${pricing.price.toLocaleString()}`,
+        period: pricing.price === 0 ? '無料' : '月額',
+        description: planType === 'free' ? '基本機能をお試し' :
+                    planType === 'standard' ? 'Freeプランに加えて、より多くのリンクとAI解説' :
+                    'Standardプランに加えて、大量データと高度機能',
+        features,
+        recommended: planType === 'pro',
+      };
+    });
+  };
+
+  const plans = generatePlanOptions();
+
+  const handleUpgrade = async (planName: UserPlan) => {
+    if (!user?.uid) {
+      Alert.alert('エラー', 'ログインが必要です');
+      return;
+    }
+
+    if (planName === 'free') {
+      Alert.alert('情報', 'Freeプランは既に利用可能です');
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setProcessingPlan(planName);
+
+      console.log('🔄 支払い処理開始:', { planName, userId: user.uid });
+
+      const result = await handleSubscription(planName, user.uid);
+
+      if (result.success) {
+        Alert.alert(
+          '🎉 アップグレード完了',
+          `${planName.charAt(0).toUpperCase() + planName.slice(1)}プランへのアップグレードが完了しました！\n\n新しい機能をお楽しみください。`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                onClose();
+                // アプリを再起動してプラン情報を更新
+                // または、ユーザー情報を再取得する
+              }
+            }
+          ]
+        );
+      } else if (result.canceled) {
+        console.log('💳 支払いがキャンセルされました');
+      }
+
+    } catch (error) {
+      console.error('❌ 支払い処理エラー:', error);
+      Alert.alert(
+        'エラー',
+        '支払い処理中にエラーが発生しました。しばらく時間をおいて再度お試しください。',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsProcessing(false);
+      setProcessingPlan(null);
+    }
   };
 
   const renderFeature = (feature: PlanFeature) => (
@@ -132,7 +245,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   );
 
   const renderPlan = (plan: PlanOption) => {
-    const isCurrentPlan = plan.name.toLowerCase() === currentPlan;
+    const isCurrentPlan = plan.name === currentPlan;
     
     return (
       <View key={plan.name} style={[
@@ -153,7 +266,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         )}
         
         <View style={styles.planHeader}>
-          <Text style={styles.planName}>{plan.name}</Text>
+          <Text style={styles.planName}>{plan.displayName}</Text>
           <View style={styles.priceContainer}>
             <Text style={styles.planPrice}>{plan.price}</Text>
             <Text style={styles.planPeriod}>{plan.period}</Text>
@@ -169,16 +282,30 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           <TouchableOpacity
             style={[
               styles.upgradeButton,
-              plan.recommended && styles.recommendedButton
+              plan.recommended && styles.recommendedButton,
+              (isProcessing && processingPlan === plan.name) && styles.processingButton
             ]}
             onPress={() => handleUpgrade(plan.name)}
+            disabled={isProcessing}
           >
-            <Text style={[
-              styles.upgradeButtonText,
-              plan.recommended && styles.recommendedButtonText
-            ]}>
-              {plan.name}プランを選択
-            </Text>
+            {isProcessing && processingPlan === plan.name ? (
+              <View style={styles.processingContainer}>
+                <ActivityIndicator size="small" color="#FFF" style={styles.processingSpinner} />
+                <Text style={[
+                  styles.upgradeButtonText,
+                  plan.recommended && styles.recommendedButtonText
+                ]}>
+                  処理中...
+                </Text>
+              </View>
+            ) : (
+              <Text style={[
+                styles.upgradeButtonText,
+                plan.recommended && styles.recommendedButtonText
+              ]}>
+                {plan.displayName}プランを選択
+              </Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -244,7 +371,6 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: '#121212',
-    margin: 20,
     borderRadius: 16,
     overflow: 'hidden',
   },
@@ -433,5 +559,17 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
     lineHeight: 18,
+  },
+  processingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  processingSpinner: {
+    marginRight: 8,
+  },
+  processingButton: {
+    opacity: 0.7,
   },
 }); 

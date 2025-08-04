@@ -153,9 +153,17 @@ export const TagSelectorModal: React.FC<TagSelectorModalProps> = ({
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
-              autoCorrect={false}
+              autoCorrect={true}
               keyboardType="default"
               returnKeyType="search"
+              clearButtonMode="while-editing"
+              autoComplete="off"
+              onSubmitEditing={() => {
+                // 検索結果の最初のタグがあれば選択状態をトグル
+                if (filteredTags.length > 0) {
+                  handleTagToggle(filteredTags[0].id);
+                }
+              }}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>

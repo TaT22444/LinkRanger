@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,25 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
+  Dimensions,
+  Animated,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { Link, UserPlan } from '../types';
 import { metadataService } from '../services/metadataService';
 import { aiService } from '../services/aiService';
 import { TagSelectorModal } from './TagSelectorModal';
+
+const { height: screenHeight } = Dimensions.get('window');
+
+// モーダルの高さ状態
+const MODAL_HEIGHTS = {
+  COLLAPSED: screenHeight * 0.4,  // 最小高さ
+  EXPANDED: screenHeight * 0.7,   // 最大高さ
+  THRESHOLD: screenHeight * 0.1,  // スワイプの閾値
+};
 
 interface Tag {
   id: string;
@@ -48,23 +60,196 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
   onAITagSuggestion,
 }) => {
   const [url, setUrl] = useState(initialUrl);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchingMetadata, setFetchingMetadata] = useState(false);
   const [generatingAITags, setGeneratingAITags] = useState(false);
+  
+  // アニメーション用の状態
+  const [isVisible, setIsVisible] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // 🚀 メタデータキャッシュを追加
+  const [metadataCache, setMetadataCache] = useState<{[url: string]: any}>({});
+  const [lastFetchedUrl, setLastFetchedUrl] = useState<string>('');
+
+  // 🚀 入力フィールドのref管理
+  const urlRef = useRef<TextInput>(null);
+  
+  // アニメーション用の値
+  const translateY = useRef(new Animated.Value(screenHeight)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const modalTranslateY = useRef(new Animated.Value(0)).current;
+  
+  // ジェスチャー用の値
+  const gestureTranslateY = useRef(new Animated.Value(0)).current;
+  const panGestureRef = useRef<PanGestureHandler>(null);
 
   const resetForm = () => {
     setUrl(initialUrl);
-    setTitle('');
-    setDescription('');
     setSelectedTags([]);
     setShowTagSelector(false);
     setFetchingMetadata(false);
     setGeneratingAITags(false);
     setLoading(false);
+    setIsExpanded(false);
+    // キャッシュはリセットしない（セッション中は保持）
+  };
+
+  // モーダル表示/非表示の状態管理とアニメーション
+  useEffect(() => {
+    if (visible) {
+      console.log('AddLinkModal: showing modal');
+      setIsVisible(true);
+      
+      // アニメーション値を初期状態にリセット
+      fadeAnim.setValue(0);
+      translateY.setValue(screenHeight);
+      modalTranslateY.setValue(0);
+      gestureTranslateY.setValue(0);
+      
+      // アニメーション開始
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateY, {
+          toValue: 0,
+          tension: 65,
+          friction: 11,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      console.log('AddLinkModal: hiding modal');
+      
+      // 非表示アニメーション
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: screenHeight,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setIsVisible(false);
+        setIsExpanded(false);
+      });
+    }
+  }, [visible]);
+
+  // 展開/縮小状態の変更時のアニメーション
+  useEffect(() => {
+    if (visible && isVisible) {
+      const targetTranslateY = isExpanded ? 0 : (MODAL_HEIGHTS.EXPANDED - MODAL_HEIGHTS.COLLAPSED);
+      
+      Animated.spring(modalTranslateY, {
+        toValue: targetTranslateY,
+        tension: 80,
+        friction: 10,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isExpanded, visible, isVisible]);
+
+  // ジェスチャーハンドラー
+  const onGestureEvent = Animated.event(
+    [{ nativeEvent: { translationY: gestureTranslateY } }],
+    { useNativeDriver: true }
+  );
+
+  const onHandlerStateChange = (event: any) => {
+    const { state, translationY, velocityY } = event.nativeEvent;
+    
+    if (state === State.END) {
+      gestureTranslateY.flattenOffset();
+
+      const shouldExpand = translationY < -MODAL_HEIGHTS.THRESHOLD || velocityY < -1000;
+      const shouldCollapse = translationY > MODAL_HEIGHTS.THRESHOLD || velocityY > 1000;
+      const shouldClose = translationY > MODAL_HEIGHTS.COLLAPSED * 0.5 && velocityY > 500;
+
+      if (shouldClose) {
+        // モーダルを閉じる
+        handleClose();
+      } else if (shouldExpand && !isExpanded) {
+        // 展開
+        setIsExpanded(true);
+        Animated.spring(gestureTranslateY, {
+          toValue: 0,
+          tension: 65,
+          friction: 11,
+          useNativeDriver: true,
+        }).start();
+      } else if (shouldCollapse && isExpanded) {
+        // 縮小
+        setIsExpanded(false);
+        Animated.spring(gestureTranslateY, {
+          toValue: 0,
+          tension: 65,
+          friction: 11,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        // 元の位置に戻す
+        Animated.spring(gestureTranslateY, {
+          toValue: 0,
+          tension: 65,
+          friction: 11,
+          useNativeDriver: true,
+        }).start();
+      }
+    } else if (state === State.BEGAN) {
+      // ジェスチャー開始時の処理
+      gestureTranslateY.setOffset(0);
+      gestureTranslateY.setValue(0);
+    }
+  };
+
+  // 🚀 フィールド間のナビゲーション処理
+  const handleUrlSubmit = () => {
+    // URLを入力完了時はキーボードを閉じる
+    urlRef.current?.blur();
+  };
+
+  const handleDescriptionSubmit = () => {
+    // 説明入力完了時はキーボードを閉じる（現在は使用されていない）
+  };
+
+  // 🚀 効率的なメタデータ取得関数
+  const fetchMetadataWithCache = async (targetUrl: string) => {
+    console.log('📄 AddLinkModal: メタデータ取得開始', {
+      url: targetUrl,
+      hasCache: !!metadataCache[targetUrl],
+      lastFetchedUrl
+    });
+
+    // キャッシュチェック
+    if (metadataCache[targetUrl]) {
+      console.log('💾 AddLinkModal: キャッシュヒット', { url: targetUrl });
+      return metadataCache[targetUrl];
+    }
+
+    // 新規取得
+    console.log('🌐 AddLinkModal: 新規メタデータ取得', { url: targetUrl });
+    const metadata = await metadataService.fetchMetadata(targetUrl, userId);
+    
+    // キャッシュ保存
+    setMetadataCache(prev => ({ ...prev, [targetUrl]: metadata }));
+    setLastFetchedUrl(targetUrl);
+    
+    console.log('💾 AddLinkModal: メタデータをキャッシュに保存', {
+      url: targetUrl,
+      title: metadata.title?.slice(0, 50) + '...'
+    });
+    
+    return metadata;
   };
 
   const isValidUrl = (urlString: string) => {
@@ -88,10 +273,10 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     }
 
     try {
-      let finalTitle = title.trim();
-      let finalDescription = description.trim();
+      let finalTitle = '';
+      let finalDescription = '';
       
-      // タイトルが空の場合、メタデータを取得
+      // タイトルが空の場合、メタデータを取得（キャッシュ対応）
       if (!finalTitle) {
         setFetchingMetadata(true);
         try {
@@ -100,7 +285,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
           });
           
           const metadata = await Promise.race([
-            metadataService.fetchMetadata(url.trim(), userId),
+            fetchMetadataWithCache(url.trim()),
             timeoutPromise
           ]);
           
@@ -109,6 +294,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
             finalDescription = metadata.description;
           }
         } catch (error) {
+          console.warn('⚠️ AddLinkModal: メタデータ取得失敗、URLをタイトルに使用', error);
           finalTitle = url.trim();
         } finally {
           setFetchingMetadata(false);
@@ -126,17 +312,13 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         isArchived: false,
         priority: 'medium',
         tagIds: selectedTags,
-        // AI処理済みフラグを追加（AddLinkModalでAI生成した場合）
-        aiProcessed: selectedTags.some(tagId => {
-          const tag = availableTags.find(t => t.id === tagId);
-          return tag?.type === 'ai';
-        }),
       };
 
       await onSubmit(linkData);
       resetForm();
       onClose();
     } catch (error) {
+      console.error('❌ AddLinkModal: リンク保存エラー', error);
       Alert.alert('エラー', 'リンクの保存に失敗しました');
     } finally {
       setLoading(false);
@@ -158,24 +340,37 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
       return;
     }
 
+    console.log('🤖 AddLinkModal: AIタグ生成開始', { url: url.trim() });
     setGeneratingAITags(true);
     try {
-      let finalTitle = title.trim();
-      let finalDescription = description.trim();
+      let finalTitle = '';
+      let finalDescription = '';
+      
+      // メタデータが不足している場合のみ取得（キャッシュ対応）
       if (!finalTitle || !finalDescription) {
-        const metadata = await metadataService.fetchMetadata(url.trim(), userId);
+        console.log('📄 AddLinkModal: メタデータ補完のため取得', {
+          needTitle: !finalTitle,
+          needDescription: !finalDescription
+        });
+        
+        const metadata = await fetchMetadataWithCache(url.trim());
         finalTitle = finalTitle || metadata.title || url.trim();
         finalDescription = finalDescription || metadata.description || '';
-        if (!title.trim() && metadata.title) setTitle(metadata.title);
-        if (!description.trim() && metadata.description) setDescription(metadata.description);
       }
-      // metadataを取得しgenerateEnhancedTagsに渡す
-      const metadata = await metadataService.fetchMetadata(url.trim(), userId);
+      
+      // 🚀 重複取得を防止：既にキャッシュから取得済みのメタデータを再利用
+      const metadata = metadataCache[url.trim()] || await fetchMetadataWithCache(url.trim());
+      
       const aiResponse = await aiService.generateEnhancedTags(
         metadata,
         userId,
         'free' as UserPlan
       );
+      
+      console.log('🎯 AddLinkModal: AIタグ生成完了', {
+        generatedTags: aiResponse.tags,
+        tagCount: aiResponse.tags.length
+      });
       
       const newTagIds: string[] = [];
       const preservedUserTags = [...selectedTags];
@@ -209,7 +404,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         const userTagCount = preservedUserTags.length;
         const aiTagCount = newTagIds.length;
         
-        let successMessage = `${aiTagCount}個の新しいAIタグを追加しました！!!!!!!!!!!
+        let successMessage = `${aiTagCount}個の新しいAIタグを追加しました！
 
 `;
         if (userTagCount > 0) successMessage += `👤 ユーザー選択: ${userTagCount}個
@@ -252,8 +447,6 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
   const hasUnsavedChanges = () => {
     return (
       url.trim() !== initialUrl || 
-      title.trim() !== '' || 
-      description.trim() !== '' || 
       selectedTags.length > 0
     );
   };
@@ -276,15 +469,29 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
             text: '変更を破棄',
             style: 'destructive',
             onPress: () => {
-              resetForm();
-              onClose();
+              performClose();
             },
           },
         ]
       );
     } else {
-      resetForm();
-      onClose();
+      performClose();
+    }
+  };
+
+  const performClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  const handleBackdropPress = () => {
+    // バックドロップタップ時は変更確認を行う
+    handleClose();
+  };
+
+  const handleInputFocus = () => {
+    if (!isExpanded) {
+      setIsExpanded(true);
     }
   };
 
@@ -297,179 +504,161 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
 
   return (
     <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
+      visible={isVisible}
+      animationType="none"
+      presentationStyle="overFullScreen"
+      transparent={true}
       onRequestClose={handleClose}
     >
-      <SafeAreaView style={styles.container}>
-        {/* ヘッダー */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.headerButton} 
-            onPress={handleClose} 
-            disabled={loading || generatingAITags}
+      <KeyboardAvoidingView 
+        style={styles.container} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        {/* 背景オーバーレイ */}
+        <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+          <TouchableWithoutFeedback onPress={handleBackdropPress}>
+            <View style={styles.backdropTouchable} />
+          </TouchableWithoutFeedback>
+        </Animated.View>
+        
+        {/* モーダルコンテンツ */}
+        <Animated.View 
+          style={[
+            styles.modalContainer,
+            {
+              transform: [
+                { translateY: translateY },
+                { translateY: modalTranslateY },
+              ]
+            }
+          ]}
+        >
+          {/* ジェスチャーハンドラをモーダル全体に適用 */}
+          <PanGestureHandler
+            ref={panGestureRef}
+            onGestureEvent={onGestureEvent}
+            onHandlerStateChange={onHandlerStateChange}
+            activeOffsetY={[-20, 20]}
+            failOffsetX={[-100, 100]}
           >
-            <Text style={[styles.cancelText, (loading || generatingAITags) && styles.disabledText]}>
-              キャンセル
-            </Text>
-          </TouchableOpacity>
-          
-          <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerTitle}>リンクを追加</Text>
-          </View>
-          
-          <TouchableOpacity 
-            style={[styles.addButton, !canSave && styles.addButtonDisabled]} 
-            onPress={handleSubmit}
-            disabled={!canSave}
-          >
-            <Text style={[styles.addText, !canSave && styles.addTextDisabled]}>
-              {loading ? '追加中...' : '追加'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <Animated.View style={[{flex: 1}, { transform: [{ translateY: gestureTranslateY }] }]}>
+              {/* ドラッグハンドル */}
+              <View style={styles.dragHandle}>
+                <View style={styles.dragIndicator} />
+              </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* URL入力 */}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputHeader}>
-              <Text style={styles.label}>URL</Text>
-              <Text style={styles.required}>*</Text>
-            </View>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={[styles.input, fetchingMetadata && styles.inputLoading]}
-                value={url}
-                onChangeText={setUrl}
-                placeholder="https://example.com"
-                placeholderTextColor="#666"
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                returnKeyType="done"
-                editable={!loading && !fetchingMetadata}
-              />
-              {fetchingMetadata && (
-                <View style={styles.inputSpinner}>
-                  <ActivityIndicator size="small" color="#8A2BE2" />
+              <View style={styles.header}>
+                <TouchableOpacity 
+                  style={styles.headerButton} 
+                  onPress={handleClose} 
+                  disabled={loading || generatingAITags}
+                >
+                  <Text style={[styles.cancelText, (loading || generatingAITags) && styles.disabledText]}>
+                    キャンセル
+                  </Text>
+                </TouchableOpacity>
+                
+                <View style={styles.headerTitleContainer}>
+                  <Text style={styles.headerTitle}>リンクを追加</Text>
                 </View>
-              )}
-            </View>
-            {fetchingMetadata && (
-              <Text style={styles.statusText}>ページ情報を取得中...</Text>
-            )}
-          </View>
+                
+                <TouchableOpacity 
+                  style={[styles.addButton, !canSave && styles.addButtonDisabled]} 
+                  onPress={handleSubmit}
+                  disabled={!canSave}
+                >
+                  <Text style={[styles.addText, !canSave && styles.addTextDisabled]}>
+                    {loading ? '追加中...' : '追加'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-          {/* タイトル入力 */}
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, styles.labelWithMargin]}>タイトル</Text>
-            <TextInput
-              style={styles.input}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="リンクのタイトル（省略可）"
-              placeholderTextColor="#666"
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="done"
-              editable={!loading}
-            />
-            <Text style={styles.hintText}>空白の場合、自動でタイトルを取得します</Text>
-          </View>
-
-          {/* 説明入力 */}
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, styles.labelWithMargin]}>説明</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="リンクの説明（省略可）"
-              placeholderTextColor="#666"
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="done"
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-              editable={!loading}
-            />
-          </View>
-
-          {/* タグ選択 */}
-          <View style={styles.inputGroup}>
-            <View style={styles.tagHeaderWithAI}>
-              <Text style={[styles.label, styles.labelWithMargin]}>タグ</Text>
-              <TouchableOpacity
-                style={[styles.aiTagButton, generatingAITags && styles.aiTagButtonDisabled]}
-                onPress={handleGenerateAITags}
-                disabled={!url.trim() || !isValidUrl(url.trim()) || generatingAITags || loading}
-              >
-                {generatingAITags ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Feather name="zap" size={14} color="#FFF" />
-                )}
-                <Text style={styles.aiTagButtonText}>
-                  {generatingAITags ? 'AI生成中...' : 'AI生成'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            
-            <TouchableOpacity
-              style={styles.tagSelector}
-              onPress={() => setShowTagSelector(true)}
-              disabled={loading || generatingAITags}
-            >
-              <View style={styles.tagSelectorContent}>
-                {selectedTags.length > 0 ? (
-                  <View style={styles.selectedTagsContainer}>
-                    {selectedTags.slice(0, 2).map((tagId) => (
-                      <View key={tagId} style={styles.selectedTag}>
-                        <Text style={styles.selectedTagText}>#{getTagName(tagId)}</Text>
+              <View style={styles.content}>
+                {/* URL入力 */}
+                <View style={styles.inputGroup}>
+                  <View style={styles.inputHeader}>
+                    <Text style={styles.label}>URL</Text>
+                    <Text style={styles.required}>*</Text>
+                  </View>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      style={[styles.input, fetchingMetadata && styles.inputLoading]}
+                      value={url}
+                      onChangeText={setUrl}
+                      placeholder="https://example.com"
+                      placeholderTextColor="#666"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                      returnKeyType="next"
+                      editable={!loading && !fetchingMetadata}
+                      onSubmitEditing={handleUrlSubmit}
+                      ref={urlRef}
+                      autoComplete="url"
+                      textContentType="URL"
+                      clearButtonMode="while-editing"
+                      onFocus={handleInputFocus}
+                    />
+                    {fetchingMetadata && (
+                      <View style={styles.inputSpinner}>
+                        <ActivityIndicator size="small" color="#8A2BE2" />
                       </View>
-                    ))}
-                    {selectedTags.length > 2 && (
-                      <Text style={styles.moreTagsText}>+{selectedTags.length - 2}個</Text>
                     )}
                   </View>
-                ) : (
-                  <Text style={styles.placeholderText}>タグを選択（省略可）</Text>
-                )}
+                  {fetchingMetadata && (
+                    <Text style={styles.statusText}>ページ情報を取得中...</Text>
+                  )}
+                </View>
+
+                {/* タグ選択 */}
+                <View style={styles.inputGroup}>
+                  <View style={styles.tagHeaderWithAI}>
+                    <Text style={[styles.label, styles.labelWithMargin]}>タグ（省略可）</Text>
+                  </View>
+                  
+                  <TouchableOpacity
+                    style={styles.tagSelector}
+                    onPress={() => setShowTagSelector(true)}
+                    disabled={loading || generatingAITags}
+                  >
+                    <View style={styles.tagSelectorContent}>
+                      {selectedTags.length > 0 ? (
+                        <View style={styles.selectedTagsContainer}>
+                          {selectedTags.slice(0, 2).map((tagId) => (
+                            <View key={tagId} style={styles.selectedTag}>
+                              <Text style={styles.selectedTagText}>#{getTagName(tagId)}</Text>
+                            </View>
+                          ))}
+                          {selectedTags.length > 2 && (
+                            <Text style={styles.moreTagsText}>+{selectedTags.length - 2}個</Text>
+                          )}
+                        </View>
+                      ) : (
+                        <Text style={styles.placeholderText}>タグを選択（省略可）</Text>
+                      )}
+                    </View>
+                    <Feather name="chevron-right" size={16} color="#666" />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Feather name="chevron-right" size={16} color="#666" />
-            </TouchableOpacity>
-          </View>
 
-          {/* AI機能説明 */}
-          <View style={styles.infoCard}>
-            <View style={styles.infoHeader}>
-              <Feather name="info" size={16} color="#8A2BE2" />
-              <Text style={styles.infoTitle}>AI機能について</Text>
-            </View>
-            <Text style={styles.infoText}>
-              保存後、AIが自動的にリンク先を解析し、要約文の生成や関連タグの付与を行います。
-            </Text>
-            <Text style={styles.infoNote}>
-              ※ 自動AI分析はProプラン限定です
-            </Text>
-          </View>
-        </ScrollView>
-
-        {/* TagSelectorModal */}
-        <TagSelectorModal
-          visible={showTagSelector}
-          onClose={() => setShowTagSelector(false)}
-          availableTags={availableTags}
-          selectedTags={selectedTags}
-          onTagsChange={handleTagsChange}
-          onCreateTag={onAddTag || (() => Promise.resolve(''))}
-          onDeleteTag={onDeleteTag}
-          linkTitle={title}
-          linkUrl={url}
-        />
-      </SafeAreaView>
+              {/* TagSelectorModal */}
+              <TagSelectorModal
+                visible={showTagSelector}
+                onClose={() => setShowTagSelector(false)}
+                availableTags={availableTags}
+                selectedTags={selectedTags}
+                onTagsChange={handleTagsChange}
+                onCreateTag={onAddTag || (() => Promise.resolve(''))}
+                onDeleteTag={onDeleteTag}
+                linkTitle={''} // Title is now fetched from metadata
+                linkUrl={url}
+              />
+            </Animated.View>
+          </PanGestureHandler>
+        </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -477,7 +666,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    justifyContent: 'flex-end',
   },
   
   // ヘッダー
@@ -486,9 +675,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    marginBottom: 24,
   },
   headerButton: {
     minWidth: 60,
@@ -527,8 +717,8 @@ const styles = StyleSheet.create({
   
   // コンテンツ
   content: {
-    flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 20,
   },
   inputGroup: {
     marginBottom: 24,
@@ -536,7 +726,7 @@ const styles = StyleSheet.create({
   inputHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   label: {
     fontSize: 16,
@@ -544,7 +734,6 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   labelWithMargin: {
-    marginBottom: 8,
   },
   required: {
     color: '#FF6B6B',
@@ -583,11 +772,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#888',
     marginTop: 6,
-  },
-  textArea: {
-    height: 100,
-    paddingTop: 14,
-    textAlignVertical: 'top',
   },
   
   // タグセレクター
@@ -635,7 +819,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   aiTagButton: {
     flexDirection: 'row',
@@ -656,35 +840,46 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   
-  // 情報カード
-  infoCard: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#8A2BE2',
+  // モーダルコンテナ
+  modalContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#121212',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: MODAL_HEIGHTS.EXPANDED,
+    paddingBottom: 34, // Safe area bottom padding
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
-  infoHeader: {
-    flexDirection: 'row',
+
+  // ドラッグハンドル
+  dragHandle: {
     alignItems: 'center',
-    marginBottom: 8,
+    paddingVertical: 10,
   },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFF',
-    marginLeft: 6,
+  dragIndicator: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#666',
+    borderRadius: 2,
   },
-  infoText: {
-    fontSize: 13,
-    color: '#CCC',
-    lineHeight: 18,
-    marginBottom: 6,
+
+  // 背景オーバーレイ
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  infoNote: {
-    fontSize: 11,
-    color: '#888',
-    fontStyle: 'italic',
+  backdropTouchable: {
+    flex: 1,
   },
 });

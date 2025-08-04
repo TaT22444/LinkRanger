@@ -18,6 +18,9 @@ interface LinkCardProps {
   onToggleBookmark: () => void;
   onDelete: () => void;
   onMarkAsRead?: () => void;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: () => void;
 }
 
 export const LinkCard: React.FC<LinkCardProps> = ({
@@ -27,6 +30,9 @@ export const LinkCard: React.FC<LinkCardProps> = ({
   onToggleBookmark,
   tags = [],
   onMarkAsRead,
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelection,
 }) => {
   const handleOpenExternalLink = async (e: any) => {
     e.stopPropagation(); // カードのタップイベントを阻止
@@ -102,20 +108,23 @@ export const LinkCard: React.FC<LinkCardProps> = ({
   return (
     <TouchableOpacity
       style={styles.container}
-      onPress={onPress}
+      onPress={isSelectionMode ? onToggleSelection : onPress}
       activeOpacity={0.7}
     >
       <View style={styles.content}>
-        {/* 左側：サムネイル */}
-        <View style={styles.leftSection}>
-          {link.imageUrl && (
-            <Image
-              source={{ uri: link.imageUrl }}
-              style={styles.thumbnail}
-              resizeMode="cover"
-            />
-          )}
-        </View>
+        {/* 選択モード時のチェックボックス */}
+        {isSelectionMode && (
+          <View style={styles.selectionCheckbox}>
+            <View style={[
+              styles.checkbox,
+              isSelected && styles.checkboxSelected
+            ]}>
+              {isSelected && (
+                <Feather name="check" size={12} color="#FFF" />
+              )}
+            </View>
+          </View>
+        )}
 
         {/* 中央：メインコンテンツ */}
         <View style={styles.mainContent}>
@@ -162,11 +171,18 @@ export const LinkCard: React.FC<LinkCardProps> = ({
             {/* ピン留めボタン */}
             {/* ピン留めボタン */}
             <TouchableOpacity
-              style={styles.actionButton}
+              style={[
+                styles.actionButton,
+                !link.isRead && styles.unreadActionButton // 未読の場合にオレンジ色の枠線を適用
+              ]}
               onPress={handleOpenExternalLink}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="external-link" size={14} color="#00FFFF" />
+              <Feather 
+                name="external-link" 
+                size={14} 
+                color={link.isRead ? "#00FFFF" : "#FF8C00"} 
+              />
             </TouchableOpacity>
           </View>
           
@@ -270,9 +286,16 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
+  },
+  unreadActionButton: {
+    borderColor: 'rgba(255, 140, 0, 0.6)', // 控えめなオレンジ色の枠線
+    borderWidth: 1, // 1pxの控えめな枠線  
+    backgroundColor: 'rgba(255, 140, 0, 0.1)', // 非常に薄いオレンジ背景
   },
   expiryText: {
     fontSize: 9,
@@ -286,5 +309,22 @@ const styles = StyleSheet.create({
   expiryTextRead: {
     textDecorationLine: 'line-through',
     color: '#666',
+  },
+  selectionCheckbox: {
+    marginRight: 12,
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#666',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#8A2BE2',
+    borderColor: '#8A2BE2',
   },
 }); 

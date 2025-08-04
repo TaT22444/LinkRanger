@@ -192,7 +192,8 @@ export const AIStatusMonitor: React.FC<AIStatusMonitorProps> = ({
             }
           ]}
         >
-          <MaterialIcons name="auto-awesome" size={16} color="rgb(164, 164, 164)" />
+          <Text style={styles.aiText}>Wink</Text>
+          {/* <MaterialIcons name="auto-awesome" size={16} color="rgb(164, 164, 164)" /> */}
         </Animated.View>
       </TouchableOpacity>
     );
@@ -230,8 +231,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   aiIconContainer: {
-    width: 20,
-    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -239,7 +238,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 14,
     fontWeight: '600',
-    letterSpacing: 0.5,
+    letterSpacing: 1,
   },
   // Single Item
   singleItemContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

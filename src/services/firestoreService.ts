@@ -191,25 +191,46 @@ export const linkService = {
     return docRef.id;
   },
 
-  // 同じURLの既存リンクを検索（期限切れも含む）
+  // 既存のURL重複チェック機能を活用したユーザー中心の削除
   async findExistingLinkByUrl(userId: string, url: string): Promise<Link | null> {
-    try {
-      const q = query(
-        collection(db, COLLECTIONS.LINKS),
-        where('userId', '==', userId),
-        where('url', '==', url),
-        limit(1)
-      );
-      
-      const snapshot = await getDocs(q);
-      if (!snapshot.empty) {
-        return convertToLink(snapshot.docs[0]);
+    const q = query(
+      collection(db, COLLECTIONS.LINKS),
+      where('url', '==', url),
+      limit(1)
+    );
+    
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      const link = convertToLink(doc);
+      // そのリンクが指定ユーザーのものかチェック
+      if (link.userId === userId) {
+        return link;
       }
-      return null;
-    } catch (error) {
-      console.error('Error finding existing link by URL:', error);
-      // インデックスエラーの場合はnullを返して処理を継続
-      return null;
+    }
+    
+    return null;
+  },
+
+  // ユーザー関連付けベースの削除（推奨）
+  async removeUserFromLink(linkId: string, userId: string): Promise<void> {
+    const linkRef = doc(db, COLLECTIONS.LINKS, linkId);
+    const linkDoc = await getDoc(linkRef);
+    
+    if (!linkDoc.exists()) {
+      throw new Error('リンクが見つかりません');
+    }
+    
+    const linkData = linkDoc.data();
+    
+    // 現在の実装では1ユーザー1リンクなので、完全削除
+    // 将来的に複数ユーザー対応する場合は、userIdsから削除のみ
+    if (linkData.userId === userId) {
+      await deleteDoc(linkRef);
+      await userService.updateUserStats(userId, { totalLinks: -1 });
+    } else {
+      throw new Error('このリンクを削除する権限がありません');
     }
   },
 
@@ -726,16 +747,64 @@ export const batchService = {
 
   async bulkDeleteLinks(linkIds: string[], userId: string): Promise<void> {
     const batch = writeBatch(db);
+    let validDeletions = 0;
     
-    linkIds.forEach(id => {
-      const linkRef = doc(db, COLLECTIONS.LINKS, id);
-      batch.delete(linkRef);
-    });
+    // 各リンクの所有者を確認してから削除
+    for (const linkId of linkIds) {
+      const linkRef = doc(db, COLLECTIONS.LINKS, linkId);
+      const linkDoc = await getDoc(linkRef);
+      
+      if (linkDoc.exists()) {
+        const linkData = linkDoc.data();
+        if (linkData.userId === userId) {
+          batch.delete(linkRef);
+          validDeletions++;
+        }
+      }
+    }
     
-    await batch.commit();
+    if (validDeletions > 0) {
+      await batch.commit();
+      // 統計更新
+      await userService.updateUserStats(userId, { totalLinks: -validDeletions });
+    }
+  },
+
+  async bulkDeleteTags(tagIds: string[], userId: string): Promise<void> {
+    const batch = writeBatch(db);
+    let validDeletions = 0;
     
-    // 統計更新
-    await userService.updateUserStats(userId, { totalLinks: -linkIds.length });
+    // 各タグの所有者を確認してから削除
+    for (const tagId of tagIds) {
+      const tagRef = doc(db, COLLECTIONS.TAGS, tagId);
+      const tagDoc = await getDoc(tagRef);
+      
+      if (tagDoc.exists()) {
+        const tagData = tagDoc.data();
+        if (tagData.userId === userId) {
+          // タグを使用しているリンクからタグIDを削除
+          const linksWithTag = await tagService.getLinksWithTag(userId, tagId);
+          linksWithTag.forEach(link => {
+            const linkRef = doc(db, COLLECTIONS.LINKS, link.id);
+            const updatedTagIds = link.tagIds.filter(id => id !== tagId);
+            batch.update(linkRef, { 
+              tagIds: updatedTagIds,
+              updatedAt: serverTimestamp() 
+            });
+          });
+          
+          // タグを削除
+          batch.delete(tagRef);
+          validDeletions++;
+        }
+      }
+    }
+    
+    if (validDeletions > 0) {
+      await batch.commit();
+      // 統計更新
+      await userService.updateUserStats(userId, { totalTags: -validDeletions });
+    }
   },
 };
 
@@ -772,6 +841,18 @@ export const savedAnalysisService = {
     cost: number,
     metadata?: SavedAnalysis['metadata']
   ): Promise<string> {
+    console.log('🔄 savedAnalysisService.saveAnalysis 開始:', {
+      userId,
+      tagId,
+      tagName,
+      title,
+      resultLength: result.length,
+      selectedLinksCount: selectedLinks.length,
+      tokensUsed,
+      cost,
+      metadata
+    });
+
     const analysisData = {
       userId,
       tagId,
@@ -786,8 +867,34 @@ export const savedAnalysisService = {
       metadata,
     };
 
-    const docRef = await addDoc(collection(db, COLLECTIONS.SAVED_ANALYSES), analysisData);
-    return docRef.id;
+    console.log('📝 Firestore保存データ:', {
+      ...analysisData,
+      createdAt: 'serverTimestamp()',
+      updatedAt: 'serverTimestamp()'
+    });
+
+    try {
+      const docRef = await addDoc(collection(db, COLLECTIONS.SAVED_ANALYSES), analysisData);
+      console.log('✅ Firestore保存成功:', {
+        docId: docRef.id,
+        collection: COLLECTIONS.SAVED_ANALYSES
+      });
+      return docRef.id;
+    } catch (error) {
+      console.error('❌ Firestore保存エラー:', {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorCode: error instanceof Error && 'code' in error ? error.code : undefined,
+        collection: COLLECTIONS.SAVED_ANALYSES,
+        analysisData: {
+          ...analysisData,
+          result: `${result.slice(0, 100)}...`,
+          createdAt: 'serverTimestamp()',
+          updatedAt: 'serverTimestamp()'
+        }
+      });
+      throw error;
+    }
   },
 
   // ユーザーのAI分析結果一覧を取得
