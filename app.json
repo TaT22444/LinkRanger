@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "Wink",
+    "scheme": "wink",
     "slug": "Wink",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,6 +17,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
       "googleServicesFile": "./GoogleService-Info.plist",
+      "config": {
+        "googleSignIn": {
+          "reservedClientId": "com.googleusercontent.apps.823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4"
+        }
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
