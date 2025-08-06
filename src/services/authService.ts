@@ -99,8 +99,8 @@ export const signInWithGoogle = async (): Promise<User> => {
       iosClientId: '823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com',
     });
     await GoogleSignin.hasPlayServices();
-    const { idToken } = await GoogleSignin.signIn();
-    const googleCredential = GoogleAuthProvider.credential(idToken);
+    const { user } = await GoogleSignin.signIn();
+    const googleCredential = GoogleAuthProvider.credential(user.idToken);
     const userCredential = await signInWithCredential(auth, googleCredential);
     const firebaseUser = userCredential.user;
 
