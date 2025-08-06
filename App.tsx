@@ -1,4 +1,5 @@
-import React from 'react';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
@@ -106,6 +107,13 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: '823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com',
+      iosClientId: '823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com',
+    });
+  }, []);
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <AuthProvider>
