@@ -27,6 +27,12 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
+          <string>com.tat22444.wink</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
           <string>com.googleusercontent.apps.823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4</string>
         </array>
       </dict>
@@ -39,8 +45,6 @@
     </array>
     <key>CFBundleVersion</key>
     <string>1</string>
-    <key>GIDClientID</key>
-    <string>823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>LSMinimumSystemVersion</key>

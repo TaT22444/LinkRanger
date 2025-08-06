@@ -95,12 +95,13 @@ export const loginAnonymously = async (): Promise<User> => {
 // Googleログイン
 export const signInWithGoogle = async (): Promise<User> => {
   try {
-    GoogleSignin.configure({
-      iosClientId: '823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com',
-    });
     await GoogleSignin.hasPlayServices();
-    const { user } = await GoogleSignin.signIn();
-    const googleCredential = GoogleAuthProvider.credential(user.idToken);
+    await GoogleSignin.signIn();
+    const { idToken } = await GoogleSignin.getTokens();
+    if (!idToken) {
+      throw new Error('Google sign-in failed: idToken is missing.');
+    }
+    const googleCredential = GoogleAuthProvider.credential(idToken);
     const userCredential = await signInWithCredential(auth, googleCredential);
     const firebaseUser = userCredential.user;
 

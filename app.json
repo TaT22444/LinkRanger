@@ -15,19 +15,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        },
-        "GIDClientID": "823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com",
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4"
-            ]
-          }
-        ]
+        }
       }
     },
     "android": {
@@ -42,7 +35,12 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-google-signin/google-signin"
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4"
+        }
+      ]
     ],
     "extra": {
       "eas": {
