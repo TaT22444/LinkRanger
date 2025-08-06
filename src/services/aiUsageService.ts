@@ -3,6 +3,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  setDoc, // setDocを追加
   getDoc,
   getDocs,
   query,
@@ -204,14 +205,18 @@ export class AIUsageManager {
       });
     } catch (error) {
       // ドキュメントが存在しない場合は新規作成
-      await updateDoc(summaryRef, {
-        userId,
-        month,
-        totalRequests: 1,
-        totalTokens: tokensUsed,
-        totalCost: cost,
-        lastUpdated: serverTimestamp(),
-      });
+      if (error.code === 'not-found') {
+        await setDoc(summaryRef, {
+          userId,
+          month,
+          totalRequests: 1,
+          totalTokens: tokensUsed,
+          totalCost: cost,
+          lastUpdated: serverTimestamp(),
+        });
+      } else {
+        throw error;
+      }
     }
   }
 

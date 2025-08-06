@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
+  ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
@@ -54,23 +55,7 @@ export const TagFilter: React.FC<TagFilterProps> = ({
 
         {/* 右側：操作ボタン群 */}
         <View style={styles.actionButtons}>
-          {/* 新規タグ作成ボタン（常に+アイコン） */}
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={onAddTag}
-          >
-            <Feather name="plus" size={12} color="#FFF" />
-          </TouchableOpacity>
-
-          {/* クリアボタン（選択されたタグがある場合のみ表示） */}
-          {selectedTags.length > 0 && (
-            <TouchableOpacity
-              style={styles.clearButton}
-              onPress={onClearAll}
-            >
-              <Feather name="x" size={12} color="#FFF" />
-            </TouchableOpacity>
-          )}
+          
 
           {/* もっと見る/折りたたむボタン */}
           {hasMoreTags && (
@@ -93,7 +78,11 @@ export const TagFilter: React.FC<TagFilterProps> = ({
 
       {/* 折り返し表示のタグリスト */}
       {!showOnlyAddButton && (
-        <View style={styles.tagsContainer}>
+        <ScrollView
+          style={styles.tagsContainer}
+          contentContainerStyle={styles.tagsContentContainer}
+          showsVerticalScrollIndicator={false}
+        >
           {displayTags.map((tag) => (
             <TouchableOpacity
               key={tag}
@@ -113,7 +102,7 @@ export const TagFilter: React.FC<TagFilterProps> = ({
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -141,7 +130,6 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6, // 8から6に減らす
   },
   editButton: {
     backgroundColor: '#8A2BE2',
@@ -159,7 +147,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(139, 92, 246, 0.1)',
     paddingHorizontal: 10, // 12から10に減らす
-    paddingVertical: 5, // 6から5に減らす
+    paddingVertical: 12, // 6から5に減らす
     borderRadius: 14, // 16から14に減らす
     borderWidth: 1,
     borderColor: 'rgba(139, 92, 246, 0.3)',
@@ -171,10 +159,11 @@ const styles = StyleSheet.create({
     marginRight: 3, // 4から3に減らす
   },
   tagsContainer: {
+  },
+  tagsContentContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    gap: 6, // 8から6に減らす
+    gap: 6,
   },
   tagButton: {
     backgroundColor: '#2A2A2A',
@@ -183,7 +172,7 @@ const styles = StyleSheet.create({
     borderRadius: 14, // 16から14に減らす
     borderWidth: 1,
     borderColor: '#444',
-    marginBottom: 4, // 6から4に減らす
+    marginBottom: 4,
   },
   tagButtonSelected: {
     backgroundColor: '#8A2BE2',

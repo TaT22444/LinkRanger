@@ -489,7 +489,7 @@ export const TagDetailScreen: React.FC = () => {
   }, [user]);
 
   // Load AI usage from Firebase with caching
-  const loadAIUsage = useCallback(async () => {
+  const loadAIUsage = useCallback(async (forceRefresh = false) => {
     if (!user?.uid) return;
     
     const cacheKey = user.uid;
@@ -498,7 +498,7 @@ export const TagDetailScreen: React.FC = () => {
     
     // キャッシュチェック
     const cachedUsage = aiUsageCache.get(cacheKey);
-    if (cachedUsage && (now - cachedUsage.timestamp) < CACHE_DURATION) {
+    if (!forceRefresh && cachedUsage && (now - cachedUsage.timestamp) < CACHE_DURATION) {
       console.log('💾 AI使用量キャッシュヒット:', {
         userId: user.uid,
         cachedCount: cachedUsage.count,
@@ -516,7 +516,8 @@ export const TagDetailScreen: React.FC = () => {
       console.log('🌐 AI使用量をFirebaseから取得中...', {
         userId: user.uid,
         plan: user.subscription?.plan || 'free',
-        cacheExpired: cachedUsage ? true : false
+        cacheExpired: cachedUsage ? true : false,
+        forceRefresh,
       });
       
       const usageStats = await aiUsageManager.getUserUsageStats(user.uid);
@@ -1222,7 +1223,7 @@ ${analysisContext.map((link, index) =>
           });
           
           // Reload usage count from Firebase
-          await loadAIUsage();
+          await loadAIUsage(true);
         } catch (recordError) {
           console.error('❌ AI使用量記録エラー:', recordError);
           // フォールバック: ローカル状態のみ更新
@@ -1486,7 +1487,7 @@ ${analysisContext.map((link, index) =>
           });
           
           // Reload usage count from Firebase
-          await loadAIUsage();
+          await loadAIUsage(true);
         } catch (recordError) {
           console.error('❌ AI使用量記録エラー:', recordError);
           // フォールバック: ローカル状態のみ更新
@@ -1846,7 +1847,7 @@ ${analysisContext.map((link, index) =>
                         ? '制限なし' 
                         : (() => {
                             const limit = getAIUsageLimit();
-                            const remaining = limit - aiUsageCount;
+                            const remaining = Math.max(0, limit - aiUsageCount);
                             console.log('🔢 使用回数表示デバッグ:', {
                               aiUsageCount,
                               limit,
@@ -1854,7 +1855,7 @@ ${analysisContext.map((link, index) =>
                               canUseAI,
                               userPlan: user?.subscription?.plan || 'free'
                             });
-                            return `あと${aiUsageCount}回`;
+                            return `残り ${remaining} / ${limit} 回`;
                           })()
                       }
                     </Text>

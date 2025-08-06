@@ -1,4 +1,9 @@
 import { 
+  GoogleAuthProvider,
+  signInWithCredential
+} from 'firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signInAnonymously, 
@@ -83,6 +88,32 @@ export const loginAnonymously = async (): Promise<User> => {
     }
   } catch (error) {
     console.error('Anonymous login error:', error);
+    throw error;
+  }
+};
+
+// Googleログイン
+export const signInWithGoogle = async (): Promise<User> => {
+  try {
+    GoogleSignin.configure({
+      iosClientId: '823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com',
+    });
+    await GoogleSignin.hasPlayServices();
+    const { idToken } = await GoogleSignin.signIn();
+    const googleCredential = GoogleAuthProvider.credential(idToken);
+    const userCredential = await signInWithCredential(auth, googleCredential);
+    const firebaseUser = userCredential.user;
+
+    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+    if (userDoc.exists()) {
+      return userDoc.data() as User;
+    } else {
+      await createUserProfile(firebaseUser);
+      const newUserDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      return newUserDoc.data() as User;
+    }
+  } catch (error) {
+    console.error('Google sign-in error:', error);
     throw error;
   }
 };

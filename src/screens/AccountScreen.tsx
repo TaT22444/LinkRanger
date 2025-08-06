@@ -44,13 +44,11 @@ export const AccountScreen: React.FC = () => {
       if (!user?.uid) return;
       
       try {
-        // PlanServiceから制限値を取得
-        const limit = planLimits.aiUsageLimit;
+        const limit = planLimits.aiUsageLimit > 0 ? planLimits.aiUsageLimit : 1; // Ensure limit is not zero
         
-        // 実際のAI使用量をFirebaseから取得
         const aiUsageManager = AIUsageManager.getInstance();
         const usageStats = await aiUsageManager.getUserUsageStats(user.uid);
-        const used = usageStats.currentMonth.totalRequests;
+        const used = usageStats.currentMonth.totalRequests || 0;
         const remaining = Math.max(0, limit - used);
         
         console.log('🔍 AI使用状況取得:', {
@@ -64,15 +62,9 @@ export const AccountScreen: React.FC = () => {
         
         setAiUsage({ used, limit, remaining });
 
-        // AIタグ付与設定を取得（ダミー）
-        setAiTagSettings({
-          autoTagging: userPlan === 'pro', // Proプランのみ自動タグ付与がデフォルトでオン
-          manualTagging: true,
-        });
       } catch (error) {
         console.error('Failed to fetch AI usage:', error);
-        // エラー時はデフォルト値を設定
-        const limit = planLimits.aiUsageLimit;
+        const limit = planLimits.aiUsageLimit > 0 ? planLimits.aiUsageLimit : 1;
         setAiUsage({ used: 0, limit, remaining: limit });
       }
     };
@@ -184,58 +176,43 @@ export const AccountScreen: React.FC = () => {
 
       {/* AIタグ自動付与 */}
       <View style={styles.section}>
-        {/* <Text style={styles.sectionTitle}>AIタグ自動付与</Text> */}
-        
-        <View style={styles.aiUsageItem}>
-          <View style={styles.aiUsageHeader}>
-            <Text style={styles.aiUsageTitle}>
-              {isTestAccount ? 'AI機能（テストモード）' : 'AI解説機能使用状況'}
-            </Text>
-            <Text style={styles.aiUsageCount}>
-              {isTestAccount ? '無制限' : `${aiUsage.used} / ${aiUsage.limit}`}
-            </Text>
-          </View>
-          
-          {!isTestAccount && (
-            <View style={styles.aiProgressBar}>
-              <View 
-                style={[
-                  styles.aiProgressFill, 
-                  { 
-                    width: `${Math.min(100, (aiUsage.used / aiUsage.limit) * 100)}%`,
-                    backgroundColor: aiUsage.remaining <= 0 ? '#FF5252' : '#8A2BE2'
-                  }
-                ]} 
-              />
-            </View>
-          )}
-          
-          {/* プラン制限情報 */}
-          <View style={styles.planLimitsContainer}>
-            <View style={styles.limitItem}>
-              <Text style={styles.limitLabel}>タグ保存</Text>
-              <Text style={styles.limitValue}>
-                {planLimits.maxTags === -1 ? '無制限' : `${planLimits.maxTags.toLocaleString()}個まで`}
-              </Text>
-            </View>
-            <View style={styles.limitItem}>
-              <Text style={styles.limitLabel}>リンク保存</Text>
-              <Text style={styles.limitValue}>
-                {planLimits.maxLinks === -1 ? '無制限' : `${planLimits.maxLinks}個まで`}
-              </Text>
-            </View>
-          </View>
-          
-          {/* アップグレードボタン */}
-          {!isTestAccount && userPlan !== 'pro' && (
-            <TouchableOpacity style={styles.upgradeItem} onPress={handleUpgrade}>
-              <Feather name="star" size={18} color="#FFF" style={styles.itemIcon} />
-              <Text style={styles.upgradeItemText}>
-                {userPlan === 'free' ? 'プランをアップグレード' : 'プランをアップグレード'}
-              </Text>
-            </TouchableOpacity>
-          )}
+        {!isTestAccount && (
+          <Text style={styles.renewalDateText}>
+              毎月1日にリセット
+          </Text>
+        )}
+      
+        <View style={styles.aiUsageRow}>
+          <Text style={styles.aiUsageLabel}>AI解説機能</Text>
+          <Text style={styles.aiUsageValue}>
+            {isTestAccount ? '無制限' : `あと ${aiUsage.remaining} / ${aiUsage.limit}回`}
+          </Text>
         </View>
+
+        {/* プラン制限情報 */}
+        <View style={styles.planLimitsContainer}>
+          <View style={styles.limitItem}>
+            <Text style={styles.limitLabel}>タグ保存</Text>
+            <Text style={styles.limitValue}>
+              {planLimits.maxTags === -1 ? '無制限' : `${planLimits.maxTags.toLocaleString()}個まで`}
+            </Text>
+          </View>
+          <View style={styles.limitItem}>
+            <Text style={styles.limitLabel}>リンク保存</Text>
+            <Text style={styles.limitValue}>
+              {planLimits.maxLinks === -1 ? '無制限' : `${planLimits.maxLinks}個まで`}
+            </Text>
+          </View>
+        </View>
+        {/* アップグレードボタン */}
+        {!isTestAccount && userPlan !== 'pro' && (
+          <TouchableOpacity style={styles.upgradeItem} onPress={handleUpgrade}>
+            <Feather name="star" size={18} color="#FFF" style={styles.itemIcon} />
+            <Text style={styles.upgradeItemText}>
+              {userPlan === 'free' ? 'プランをアップグレード' : 'プランをアップグレード'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* アカウント */}
@@ -366,8 +343,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 16,
     marginTop: 16,
-    // marginBottom: 8,
-    paddingVertical: 8,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 4,
@@ -377,8 +354,6 @@ const styles = StyleSheet.create({
     color: '#AAA',
     fontSize: 13,
     fontWeight: 'bold',
-    marginLeft: 20,
-    marginTop: 8,
     marginBottom: 8,
     letterSpacing: 1,
   },
@@ -386,7 +361,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#222',
   },
@@ -397,23 +371,44 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
   },
-  aiUsageItem: {
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  },
-  aiUsageHeader: {
+  aiUsageRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
-  aiUsageTitle: {
+  aiUsageLabel: {
+    fontSize: 14,
+    color: '#E5E5EA',
+  },
+  aiUsageValue: {
+    fontSize: 14,
+    color: '#E5E5EA',
+    fontWeight: '600',
+  },
+  renewalDateText: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginBottom: 16,
+  },
+  planLimitsContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  limitItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  limitLabel: {
+    fontSize: 14,
+    color: '#AAA',
+  },
+  limitValue: {
+    fontSize: 14,
     color: '#FFF',
-    fontSize: 14,
-  },
-  aiUsageCount: {
-    color: '#8A2BE2',
-    fontSize: 14,
     fontWeight: '600',
   },
   upgradeItem: {
@@ -444,6 +439,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 16,
     gap: 8,
+    backgroundColor: '#fff',
   },
   aiPlanBadge: {
     flexDirection: 'row',
@@ -465,22 +461,6 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 8,
   },
-  aiUsageRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  aiUsageLabel: {
-    fontSize: 14,
-    color: '#CCC',
-  },
-  aiUsageValue: {
-    fontSize: 14,
-    color: '#FFF',
-    fontWeight: '600',
-  },
-
   aiProgressContainer: {
     marginBottom: 16,
   },
@@ -492,6 +472,7 @@ const styles = StyleSheet.create({
   },
   aiProgressFill: {
     height: '100%',
+    backgroundColor: '#8A2BE2',
     borderRadius: 2,
   },
   aiRemainingLabel: {
@@ -668,35 +649,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  toggleSwitch: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#444',
-    padding: 2,
-    justifyContent: 'center',
-  },
-  toggleSwitchActive: {
-    backgroundColor: '#8A2BE2',
-  },
-  toggleSwitchDisabled: {
-    backgroundColor: '#333',
-    opacity: 0.5,
-  },
-  toggleSwitchThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#FFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  toggleSwitchThumbActive: {
-    transform: [{ translateX: 20 }],
-  },
   planContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -712,27 +664,6 @@ const styles = StyleSheet.create({
   testBadgeText: {
     color: '#FFF',
     fontSize: 10,
-    fontWeight: '600',
-  },
-  planLimitsContainer: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-  },
-  limitItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  limitLabel: {
-    fontSize: 14,
-    color: '#AAA',
-  },
-  limitValue: {
-    fontSize: 14,
-    color: '#FFF',
     fontWeight: '600',
   },
 

@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Link, UserPlan } from '../types';
@@ -40,7 +39,6 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
   onDeleteTag,
   onDelete,
 }) => {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
 
   const handleTagsChange = async (newTags: string[]) => {
@@ -84,43 +82,6 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
         },
       ]
     );
-  };
-
-  const handleAIAnalysis = async () => {
-    if (isAnalyzing) return;
-
-    setIsAnalyzing(true);
-    
-    try {
-      if (onUpdateLink) {
-        await onUpdateLink(link.id, { status: 'processing' });
-      }
-
-      // TODO: 実際のAI分析API呼び出し
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const mockSummary = `${link.title}の要約:\n\n主要なポイントと詳細な解説が含まれています。実用的な情報と具体的な例が豊富で、参考価値の高いリソースです。`;
-
-      if (onUpdateLink) {
-        await onUpdateLink(link.id, {
-          status: 'completed',
-          summary: mockSummary,
-          aiAnalysis: {
-            sentiment: 'positive',
-            category: 'General',
-            keywords: ['参考', '解説', '実用'],
-            confidence: 0.9
-          }
-        });
-      }
-    } catch (error) {
-      console.error('AI analysis error:', error);
-      if (onUpdateLink) {
-        await onUpdateLink(link.id, { status: 'error' });
-      }
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   const formatDate = (date: Date) => {
@@ -217,20 +178,6 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
 
         {/* アクション */}
         <View style={styles.actionSection}>
-          {link.status !== 'processing' && !isAnalyzing && (
-            <TouchableOpacity style={styles.actionButton} onPress={handleAIAnalysis}>
-              <Feather name="zap" size={18} color="#8A2BE2" />
-              <Text style={styles.actionButtonText}>AI要約を生成</Text>
-            </TouchableOpacity>
-          )}
-          
-          {(link.status === 'processing' || isAnalyzing) && (
-            <View style={styles.processingContainer}>
-              <ActivityIndicator size="small" color="#8A2BE2" />
-              <Text style={styles.processingText}>AI解析中...</Text>
-            </View>
-          )}
-          
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
             <Feather name="trash-2" size={18} color="#FF6B6B" />
             <Text style={styles.deleteButtonText}>削除</Text>
@@ -367,7 +314,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  tag: {
+tag: {
     backgroundColor: '#2A2A2A',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -393,32 +340,6 @@ const styles = StyleSheet.create({
     borderTopColor: '#333',
     backgroundColor: '#1A1A1A',
   },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2A2A2A',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  actionButtonText: {
-    fontSize: 14,
-    color: '#8A2BE2',
-    marginLeft: 8,
-  },
-  processingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  processingText: {
-    fontSize: 14,
-    color: '#888',
-    marginLeft: 8,
-  },
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -438,4 +359,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-}); 
+});

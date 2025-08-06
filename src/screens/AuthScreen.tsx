@@ -8,18 +8,20 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ScrollView
+  ScrollView,
+  Dimensions,
+  Linking,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
 
 export const AuthScreen: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-  const { login, register, loginAnonymously, loading } = useAuth();
+  const [isLoginView, setIsLoginView] = useState(true);
+  const [view, setView] = useState<'options' | 'email'>('options');
+  const { login, register, loginAnonymously, loginWithGoogle, loading } = useAuth();
 
-  // 🚀 入力フィールドのref管理
-  const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
   const handleEmailAuth = async () => {
@@ -27,129 +29,115 @@ export const AuthScreen: React.FC = () => {
       Alert.alert('エラー', 'メールアドレスとパスワードを入力してください');
       return;
     }
-
     try {
-      if (isLogin) {
+      if (isLoginView) {
         await login(email, password);
       } else {
         await register(email, password);
       }
     } catch (error) {
-      Alert.alert('エラー', error instanceof Error ? error.message : '認証に失敗しました');
+      Alert.alert('認証エラー', error instanceof Error ? error.message : '予期せぬエラーが発生しました');
     }
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      Alert.alert('Googleログインエラー', 'Googleでのログインに失敗しました');
+    }
+  };
+  
   const handleAnonymousLogin = async () => {
     try {
       await loginAnonymously();
     } catch (error) {
-      Alert.alert('エラー', '匿名ログインに失敗しました');
+      Alert.alert('エラー', 'ゲストとしての開始に失敗しました');
     }
   };
 
-  // 🚀 Enter キー処理
-  const handleEmailSubmit = () => {
-    if (email.trim()) {
-      passwordRef.current?.focus();
-    }
-  };
+  const renderOptionsView = () => (
+    <View style={styles.form}>
+      <TouchableOpacity style={styles.optionButton} onPress={handleGoogleLogin} disabled={loading}>
+        <FontAwesome name="google" size={20} style={styles.icon} />
+        <Text style={styles.optionButtonText}>Googleで続行</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.optionButton} onPress={() => Alert.alert("近日公開！", "Appleでのログインは現在準備中です。")} disabled={loading}>
+        <FontAwesome name="apple" size={24} style={styles.icon} />
+        <Text style={styles.optionButtonText}>Appleで続行</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.optionButton} onPress={() => setView('email')} disabled={loading}>
+        <FontAwesome name="envelope" size={20} style={styles.icon} />
+        <Text style={styles.optionButtonText}>メールアドレスで続行</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.guestButton} onPress={handleAnonymousLogin} disabled={loading}>
+        <Text style={styles.guestButtonText}>ゲストとして続行</Text>
+      </TouchableOpacity>
+      <View style={styles.termsContainer}>
+        <Text style={styles.termsText}>
+          続行することにより、Winkの{' '}
+          <Text style={styles.termsLink} onPress={() => Linking.openURL('https://wink.app/terms')}>
+            利用規約
+          </Text>
+          に同意したことになります。
+        </Text>
+      </View>
+    </View>
+  );
 
-  const handlePasswordSubmit = () => {
-    if (password.trim() && email.trim()) {
-      handleEmailAuth();
-    }
-  };
+  const renderEmailView = () => (
+    <View style={styles.form}>
+      <View style={styles.formTitleContainer}>
+        <TouchableOpacity onPress={() => setView('options')} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
+        </TouchableOpacity>
+        <Text style={styles.formTitle}>
+          {isLoginView ? 'ログイン' : 'アカウント作成'}
+        </Text>
+      </View>
+      <TextInput
+        style={styles.input}
+        placeholder="メールアドレス"
+        placeholderTextColor="#666"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+        blurOnSubmit={false}
+      />
+      <TextInput
+        ref={passwordRef}
+        style={styles.input}
+        placeholder="パスワード"
+        placeholderTextColor="#666"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        returnKeyType="go"
+        onSubmitEditing={handleEmailAuth}
+      />
+      <TouchableOpacity style={styles.primaryButton} onPress={handleEmailAuth} disabled={loading}>
+        <Text style={styles.buttonText}>{loading ? '処理中...' : (isLoginView ? 'ログイン' : 'アカウント作成')}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => setIsLoginView(!isLoginView)}>
+        <Text style={styles.switchText}>
+          {isLoginView ? "アカウントをお持ちでないですか？ 作成する" : "すでにアカウントをお持ちですか？ ログイン"}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={0}
-    >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContainer}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-        contentInsetAdjustmentBehavior="automatic"
-      >
+    <KeyboardAvoidingView style={styles.container} keyboardVerticalOffset={-30} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.content}>
-          {/* アプリタイトル */}
           <View style={styles.titleSection}>
-            <Text style={styles.title}>LinkRanger</Text>
-            <Text style={styles.subtitle}>あなただけの知の羅針盤</Text>
+            <Text style={styles.title}>Wink</Text>
+            <Text style={styles.subtitle}>あなたの知の羅針盤</Text>
           </View>
-
-          {/* 認証フォーム */}
-          <View style={styles.form}>
-            <Text style={styles.formTitle}>
-              {isLogin ? 'ログイン' : 'アカウント作成'}
-            </Text>
-
-            <TextInput
-              ref={emailRef}
-              style={styles.input}
-              placeholder="メールアドレス"
-              placeholderTextColor="#666"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              returnKeyType="next"
-              onSubmitEditing={handleEmailSubmit}
-              blurOnSubmit={false}
-            />
-
-            <TextInput
-              ref={passwordRef}
-              style={styles.input}
-              placeholder="パスワード"
-              placeholderTextColor="#666"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete={isLogin ? "password" : "password-new"}
-              textContentType={isLogin ? "password" : "newPassword"}
-              returnKeyType="go"
-              onSubmitEditing={handlePasswordSubmit}
-            />
-
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton]}
-              onPress={handleEmailAuth}
-              disabled={loading}
-            >
-              <Text style={styles.buttonText}>
-                {loading ? '処理中...' : (isLogin ? 'ログイン' : 'アカウント作成')}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.switchButton}
-              onPress={() => setIsLogin(!isLogin)}
-            >
-              <Text style={styles.switchText}>
-                {isLogin ? 'アカウントを作成する' : 'ログインする'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* 匿名ログイン */}
-          <View style={styles.anonymousSection}>
-            <Text style={styles.orText}>または</Text>
-            <TouchableOpacity
-              style={[styles.button, styles.anonymousButton]}
-              onPress={handleAnonymousLogin}
-              disabled={loading}
-            >
-              <Text style={styles.anonymousButtonText}>ゲストとして始める</Text>
-            </TouchableOpacity>
-          </View>
+          {view === 'options' ? renderOptionsView() : renderEmailView()}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -162,47 +150,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   scrollContainer: {
-    backgroundColor: '#121212',
     flexGrow: 1,
-    paddingVertical: 40,
+    justifyContent: 'center',
     paddingHorizontal: 20,
   },
   content: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    // minHeight: '100%',
   },
   titleSection: {
     alignItems: 'center',
     marginBottom: 60,
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: 'bold',
     color: '#00FFFF',
     marginBottom: 8,
-    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
     color: '#888',
-    textAlign: 'center',
   },
   form: {
     width: '100%',
-    maxWidth: 300,
-    marginBottom: 40,
+    maxWidth: 320,
   },
   formTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#FFF',
     textAlign: 'center',
-    marginBottom: 30,
   },
   input: {
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#1E1E1E',
     borderRadius: 12,
     padding: 16,
     color: '#FFF',
@@ -211,56 +191,85 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
-  button: {
+  primaryButton: {
+    backgroundColor: '#8A2BE2',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  primaryButton: {
-    backgroundColor: '#8A2BE2',
-    shadowColor: '#8A2BE2',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    marginBottom: 20,
   },
   buttonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  switchButton: {
-    marginTop: 8,
-    padding: 8,
-  },
   switchText: {
     color: '#00FFFF',
     fontSize: 16,
     textAlign: 'center',
   },
-  anonymousSection: {
-    width: '100%',
-    maxWidth: 300,
+  optionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  orText: {
-    color: '#666',
-    fontSize: 16,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  anonymousButton: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#1E1E1E',
     borderWidth: 1,
-    borderColor: '#666',
+    borderColor: '#333',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginBottom: 8,
   },
-  anonymousButtonText: {
-    color: '#666',
+  optionButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '500',
+    marginLeft: 15,
   },
-}); 
+  icon: {
+    color: '#FFFFFF',
+    width: 24,
+    textAlign: 'center',
+  },
+  guestButton: {
+    marginTop: 8,
+    padding: 8,
+  },
+  guestButtonText: {
+    color: '#888',
+    fontSize: 16,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  formTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+  },
+  backButton: {
+    position: 'absolute',
+    left: 0,
+    zIndex: 1,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#333',
+    borderRadius: 12,
+  },
+  termsContainer: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  termsText: {
+    color: '#888',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  termsLink: {
+    color: '#00FFFF',
+    textDecorationLine: 'underline',
+  },
+});
+ 

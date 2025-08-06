@@ -1253,7 +1253,11 @@ export const HomeScreen: React.FC = () => {
                   aiUsageLimit={mockAiUsageLimit}
                 />
                 <TouchableOpacity style={styles.accountButton} onPress={handleAccountPress}>
-                  <Text style={styles.accountText}>{getUserInitial()}</Text>
+                  {user?.avatarIcon ? (
+                    <Text style={styles.avatarIcon}>{user.avatarIcon}</Text>
+                  ) : (
+                    <Text style={styles.accountText}>{getUserInitial()}</Text>
+                  )}
                 </TouchableOpacity>
               </>
             )}
@@ -1437,6 +1441,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 72,
     paddingBottom: 16,
+    marginBottom: 16,
     backgroundColor: '#121212',
     zIndex: 20,
   },
@@ -1458,7 +1463,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(139, 92, 246, 0.1)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.2)',
+    borderColor: 'rgba(81, 81, 82, 0.2)',
   },
   searchStatusText: {
     flex: 1,
@@ -1502,8 +1507,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 44,
     marginLeft: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.3)',
   },
   headerSearchInput: {
     flex: 1,
@@ -1528,6 +1531,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#CCC',
+  },
+  avatarIcon: {
+    fontSize: 24,
   },
   loadingContainer: {
     flex: 1,
