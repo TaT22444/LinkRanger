@@ -13,7 +13,7 @@ import {
   tagService,
   folderService, 
   userService 
-} from '../services/firestoreService';
+} from '../services';
 
 // 🚀 グローバルキャッシュシステム
 interface CacheEntry<T> {
@@ -107,12 +107,47 @@ export const useLinks = (
       const unsubscribe = linkService.subscribeToUserLinks(
         userId,
         (newLinks) => {
-          console.log('📥 useLinks: リアルタイム更新受信', {
-            userId,
-            linksCount: newLinks.length
+          setLinks(currentLinks => {
+            const previousCount = currentLinks.length;
+            const newCount = newLinks.length;
+            
+            console.log('📥 useLinks: リアルタイム更新受信', {
+              userId,
+              previousCount,
+              newCount,
+              hasNewLinks: newCount > previousCount,
+              timestamp: new Date().toISOString(),
+              firebaseIds: newLinks.map(l => l.id).slice(0, 5),
+              currentIds: currentLinks.map(l => l.id).slice(0, 5)
+            });
+            
+            // 🚀 オプティミスティック更新との重複を検知・解決
+            const mergedLinks = newLinks.map(firebaseLink => {
+              // ローカルのオプティミスティック更新されたリンクを探す
+              const localLink = currentLinks.find(local => local.id === firebaseLink.id);
+              
+              if (localLink && localLink.status === 'processing' && firebaseLink.status === 'processing') {
+                // ローカルのオプティミスティック更新を保持（より新しい状態の可能性）
+                console.log('🔄 useLinks: オプティミスティック更新を保持', {
+                  id: firebaseLink.id,
+                  localTitle: localLink.title,
+                  firebaseTitle: firebaseLink.title
+                });
+                return localLink;
+              }
+              
+              return firebaseLink;
+            });
+            
+            console.log('📊 useLinks: リアルタイム更新統合完了', {
+              previousCount,
+              firebaseCount: newLinks.length,
+              mergedCount: mergedLinks.length
+            });
+            
+            return mergedLinks;
           });
           
-          setLinks(newLinks);
           setLoading(false);
           setError(null);
           
@@ -181,13 +216,67 @@ export const useLinks = (
 
   const createLink = useCallback(async (linkData: Omit<Link, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
+      console.log('🚀 useLinks: createLink開始', {
+        url: linkData.url,
+        title: linkData.title,
+        currentLinksCount: links.length
+      });
+      
       const linkId = await linkService.createLink(linkData);
+      
+      console.log('✅ useLinks: createLink完了', {
+        linkId,
+        url: linkData.url,
+        title: linkData.title
+      });
+      
+      // 🚀 即座にローカル状態を更新（オプティミスティック更新）
+      const optimisticLink: Link = {
+        ...linkData,
+        id: linkId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        isRead: false,
+        isExpired: false,
+        notificationsSent: {
+          threeDays: false,
+          oneDay: false,
+          oneHour: false,
+        },
+      };
+      
+      console.log('🔄 useLinks: オプティミスティック更新実行', {
+        linkId: optimisticLink.id,
+        currentCount: links.length,
+        newCount: links.length + 1
+      });
+      
+      // ローカル状態を即座に更新
+      setLinks(prevLinks => {
+        // 既に存在するかチェック（重複防止）
+        const exists = prevLinks.some(link => link.id === linkId);
+        if (exists) {
+          console.log('⚠️ useLinks: リンクが既に存在するため、重複追加をスキップ', { linkId });
+          return prevLinks;
+        }
+        
+        const newLinks = [optimisticLink, ...prevLinks];
+        console.log('📝 useLinks: ローカル状態更新完了', {
+          previousCount: prevLinks.length,
+          newCount: newLinks.length,
+          addedLinkId: linkId
+        });
+        return newLinks;
+      });
+      
       return linkId;
     } catch (err) {
+      console.error('❌ useLinks: createLink エラー', err);
       setError(err instanceof Error ? err.message : 'Failed to create link');
       throw err;
     }
-  }, []);
+  }, [links]);
 
   const updateLink = useCallback(async (linkId: string, updates: Partial<Link>) => {
     try {

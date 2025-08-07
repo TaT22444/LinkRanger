@@ -16,28 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { UserPlan } from '../types';
-
-// AI使用量制限設定
-export const AI_LIMITS = {
-  free: {
-    monthly: 5,        // 月5回まで
-    daily: 2,          // 日2回まで
-    textLength: 3000,  // 3000文字まで
-    tokensPerRequest: 1000,
-  },
-  pro: {
-    monthly: 50,       // 月50回まで
-    daily: 10,         // 日10回まで
-    textLength: 10000, // 10000文字まで
-    tokensPerRequest: 3000,
-  },
-  premium: {
-    monthly: 200,      // 月200回まで
-    daily: 30,         // 日30回まで
-    textLength: 30000, // 30000文字まで
-    tokensPerRequest: 8000,
-  },
-} as const;
+import { PlanService } from './planService';
 
 // AI使用量記録型
 interface AIUsageRecord {
@@ -45,7 +24,6 @@ interface AIUsageRecord {
   userId: string;
   type: 'summary' | 'tags' | 'analysis';
   tokensUsed: number;
-  textLength: number;
   cost: number; // USD
   timestamp: Date;
   month: string; // YYYY-MM形式
@@ -76,27 +54,19 @@ export class AIUsageManager {
   async checkUsageLimit(
     userId: string, 
     plan: UserPlan, 
-    type: 'summary' | 'tags' | 'analysis',
-    textLength: number
+    type: 'summary' | 'tags' | 'analysis'
   ): Promise<{ allowed: boolean; reason?: string }> {
-    const limits = AI_LIMITS[plan];
-    
-    // テキスト長制限チェック
-    if (textLength > limits.textLength) {
-      return {
-        allowed: false,
-        reason: `テキストが長すぎます（最大${limits.textLength}文字）`
-      };
-    }
+    const monthlyLimit = PlanService.getAIUsageLimit({ subscription: { plan } } as any);
+    const dailyLimit = PlanService.getAIDailyLimit({ subscription: { plan } } as any);
 
     // 月次制限チェック
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
     const monthlyUsage = await this.getMonthlyUsage(userId, currentMonth);
     
-    if (monthlyUsage.totalRequests >= limits.monthly) {
+    if (monthlyUsage.totalRequests >= monthlyLimit) {
       return {
         allowed: false,
-        reason: `月間利用制限に達しました（${limits.monthly}回/月）`
+        reason: `月間利用制限に達しました（${monthlyLimit}回/月）`
       };
     }
 
@@ -104,10 +74,10 @@ export class AIUsageManager {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const dailyUsage = await this.getDailyUsage(userId, today);
     
-    if (dailyUsage >= limits.daily) {
+    if (dailyUsage >= dailyLimit) {
       return {
         allowed: false,
-        reason: `日間利用制限に達しました（${limits.daily}回/日）`
+        reason: `日間利用制限に達しました（${dailyLimit}回/日）`
       };
     }
 
@@ -119,7 +89,6 @@ export class AIUsageManager {
     userId: string,
     type: 'summary' | 'tags' | 'analysis',
     tokensUsed: number,
-    textLength: number,
     cost: number
   ): Promise<void> {
     const now = new Date();
@@ -131,7 +100,6 @@ export class AIUsageManager {
       userId,
       type,
       tokensUsed,
-      textLength,
       cost,
       timestamp: now,
       month,
@@ -205,7 +173,7 @@ export class AIUsageManager {
       });
     } catch (error) {
       // ドキュメントが存在しない場合は新規作成
-      if (error.code === 'not-found') {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'not-found') {
         await setDoc(summaryRef, {
           userId,
           month,
@@ -225,6 +193,7 @@ export class AIUsageManager {
     currentMonth: MonthlyUsage;
     todayUsage: number;
     recentUsage: AIUsageRecord[];
+    analysisUsage: number;
   }> {
     const currentMonth = new Date().toISOString().slice(0, 7);
     const today = new Date().toISOString().slice(0, 10);
@@ -235,11 +204,28 @@ export class AIUsageManager {
       this.getRecentUsage(userId, 10)
     ]);
 
+    // 月間のAI解説機能（analysis）の使用回数を正確に取得
+    const analysisUsage = await this.getMonthlyAnalysisUsage(userId, currentMonth);
+
     return {
       currentMonth: monthlyUsage,
       todayUsage: dailyUsage,
       recentUsage,
+      analysisUsage,
     };
+  }
+
+  // 月間のAI解説機能使用回数を取得
+  private async getMonthlyAnalysisUsage(userId: string, month: string): Promise<number> {
+    const q = query(
+      collection(db, 'aiUsage'),
+      where('userId', '==', userId),
+      where('type', '==', 'analysis'),
+      where('month', '==', month)
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.size;
   }
 
   // 最近の使用履歴を取得
@@ -264,20 +250,22 @@ export class AIUsageManager {
 
   // プラン制限情報を取得
   getPlanLimits(plan: UserPlan) {
-    return AI_LIMITS[plan];
+    const monthlyLimit = PlanService.getAIUsageLimit({ subscription: { plan } } as any);
+    const dailyLimit = PlanService.getAIDailyLimit({ subscription: { plan } } as any);
+    return { monthly: monthlyLimit, daily: dailyLimit };
   }
 
   // 使用量に基づく推奨アクション
   getUsageRecommendations(usage: MonthlyUsage, plan: UserPlan): string[] {
-    const limits = AI_LIMITS[plan];
-    const usagePercentage = (usage.totalRequests / limits.monthly) * 100;
+    const monthlyLimit = PlanService.getAIUsageLimit({ subscription: { plan } } as any);
+    const usagePercentage = (usage.totalRequests / monthlyLimit) * 100;
     const recommendations: string[] = [];
 
     if (usagePercentage > 80) {
       recommendations.push('月間利用制限の80%に達しています。');
-      if (plan === 'free') {
-        recommendations.push('Proプランへのアップグレードをご検討ください。');
-      }
+          if (plan === 'free') {
+      recommendations.push('Plusプランへのアップグレードをご検討ください。');
+    }
     }
 
     if (usage.totalCost > 10) {
@@ -285,7 +273,7 @@ export class AIUsageManager {
     }
 
     if (usagePercentage > 50 && plan === 'free') {
-      recommendations.push('より多くのAI機能をご利用いただくには、プレミアムプランがお得です。');
+      recommendations.push('より多くのAI機能をご利用いただくには、Proプランがお得です。');
     }
 
     return recommendations;

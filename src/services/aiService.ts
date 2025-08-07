@@ -14,6 +14,7 @@ const clearTagCacheFunction = httpsCallable(functions, 'clearTagCache');
 const generateEnhancedAITagsFunction = httpsCallable(functions, 'generateEnhancedAITags');
 const generateAIAnalysisFunction = httpsCallable(functions, 'generateAIAnalysis');
 const generateAnalysisSuggestionsFunction = httpsCallable(functions, 'generateAnalysisSuggestions');
+const evaluateThemeRelevanceFunction = httpsCallable(functions, 'evaluateThemeRelevance');
 
 interface AIResponse {
   tags: string[];
@@ -43,6 +44,7 @@ export interface AnalysisSuggestion {
   title: string;
   description: string;
   keywords: string[];
+  relatedLinkIndices?: number[]; // テーマ生成に寄与したリンクのインデックス
 }
 
 export interface AnalysisSuggestionsResponse {
@@ -60,6 +62,15 @@ export interface AnalysisSuggestionsResponse {
   };
 }
 
+export interface ThemeRelevanceResponse {
+  relevanceScore: number;
+  matchedConcepts: string[];
+  explanation: string;
+  fromCache: boolean;
+  tokensUsed: number;
+  cost: number;
+}
+
 interface AIUsageCheck {
   allowed: boolean;
   reason?: string;
@@ -74,7 +85,8 @@ export const aiService = {
     tagName: string,
     linkTitles: string[],
     userId: string,
-    userPlan: UserPlan
+    userPlan: UserPlan,
+    excludedThemes?: string[]
   ): Promise<AnalysisSuggestionsResponse> {
     try {
       const result = await generateAnalysisSuggestionsFunction({
@@ -82,6 +94,7 @@ export const aiService = {
         linkTitles,
         userId,
         userPlan,
+        excludedThemes: excludedThemes || [],
       });
 
       const data = result.data as AnalysisSuggestionsResponse;
@@ -95,17 +108,20 @@ export const aiService = {
           {
             title: `${tagName}とは`,
             description: '基本的な概念について',
-            keywords: ['基本', '概念']
+            keywords: ['基本', '概念'],
+            relatedLinkIndices: [0, 1]
           },
           {
             title: `${tagName}の活用法`,
             description: '実践的な使い方について',
-            keywords: ['活用', '実践']
+            keywords: ['活用', '実践'],
+            relatedLinkIndices: [1, 2]
           },
           {
             title: `${tagName}のコツ`,
             description: '効果的な方法について',
-            keywords: ['コツ', '効果的']
+            keywords: ['コツ', '効果的'],
+            relatedLinkIndices: [0, 2]
           }
         ],
         fromCache: false,
@@ -233,6 +249,56 @@ export const aiService = {
         fromCache: false,
         tokensUsed: 0,
         cost: 0,
+      };
+    }
+  },
+
+  /**
+   * テーマとリンクの関連性をGemini APIで動的に評価
+   */
+  async evaluateThemeRelevance(
+    theme: string,
+    linkTitle: string,
+    linkDescription: string,
+    userId: string,
+    userPlan: UserPlan
+  ): Promise<ThemeRelevanceResponse> {
+    try {
+      const result = await evaluateThemeRelevanceFunction({
+        theme,
+        linkTitle,
+        linkDescription,
+        userId,
+        userPlan,
+      });
+
+      const data = result.data as ThemeRelevanceResponse;
+      
+      return data;
+    } catch (error) {
+      console.error('Theme relevance evaluation error:', error);
+      // フォールバック: 基本的な文字列マッチング
+      const content = `${linkTitle} ${linkDescription}`.toLowerCase();
+      const themeLower = theme.toLowerCase();
+      const themeWords = themeLower.split(/\s+/).filter(word => word.length > 2);
+      
+      let relevanceScore = 0;
+      const matchedConcepts: string[] = [];
+      
+      themeWords.forEach(word => {
+        if (content.includes(word)) {
+          relevanceScore += 1;
+          matchedConcepts.push(word);
+        }
+      });
+      
+      return {
+        relevanceScore,
+        matchedConcepts,
+        explanation: 'フォールバック評価（AI API エラー）',
+        fromCache: false,
+        tokensUsed: 0,
+        cost: 0
       };
     }
   },

@@ -12,6 +12,7 @@ import { AccountScreen } from './src/screens/AccountScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { TagDetailScreen } from './src/screens/TagDetailScreen';
 import { Tag } from './src/types';
+import { GOOGLE_SIGN_IN_CONFIG } from './src/config/auth';
 
 type RootStackParamList = {
   Auth: undefined;
@@ -108,10 +109,7 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   useEffect(() => {
-    GoogleSignin.configure({
-      webClientId: '823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com',
-      iosClientId: '823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4.apps.googleusercontent.com',
-    });
+    GoogleSignin.configure(GOOGLE_SIGN_IN_CONFIG);
   }, []);
 
   return (

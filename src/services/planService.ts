@@ -5,6 +5,7 @@ interface PlanLimits {
   maxTags: number;
   maxLinks: number;
   aiUsageLimit: number;
+  aiDailyLimit: number;
   hasBasicAlerts: boolean;
   hasCustomReminders: boolean;
   hasAdvancedSearch: boolean;
@@ -18,16 +19,18 @@ export class PlanService {
     'free': {
       maxTags: 500,
       maxLinks: 15,
-      aiUsageLimit: 1,
+      aiUsageLimit: 3,
+      aiDailyLimit: 3,
       hasBasicAlerts: true,
       hasCustomReminders: false,
       hasAdvancedSearch: false,
       hasDataExport: false,
     },
-    'standard': {
+    'plus': {
       maxTags: 500,
       maxLinks: 50,
-      aiUsageLimit: 5,
+      aiUsageLimit: 50,
+      aiDailyLimit: 5,
       hasBasicAlerts: true,
       hasCustomReminders: true,
       hasAdvancedSearch: false,
@@ -37,28 +40,19 @@ export class PlanService {
       maxTags: 3000,
       maxLinks: 200,
       aiUsageLimit: 100,
+      aiDailyLimit: 100,
       hasBasicAlerts: true,
       hasCustomReminders: true,
       hasAdvancedSearch: true,
       hasDataExport: true,
     },
-    'premium': {
-      maxTags: -1, // 無制限
-      maxLinks: -1, // 無制限
-      aiUsageLimit: 200,
-      hasBasicAlerts: true,
-      hasCustomReminders: true,
-      hasAdvancedSearch: true,
-      hasDataExport: true,
-    }
   };
 
   // プラン価格の定義
   private static readonly PLAN_PRICING = {
     'free': { price: 0, currency: 'JPY', period: 'month' },
-    'standard': { price: 580, currency: 'JPY', period: 'month' },
+    'plus': { price: 580, currency: 'JPY', period: 'month' },
     'pro': { price: 1480, currency: 'JPY', period: 'month' },
-    'premium': { price: 2980, currency: 'JPY', period: 'month' }
   };
   
   // プラン取得（統一アクセスポイント）
@@ -84,7 +78,7 @@ export class PlanService {
   // 実効プラン（テストアカウントは特別扱い）
   static getEffectivePlan(user: User | null): UserPlan {
     if (this.isTestAccount(user)) {
-      return 'premium'; // テストアカウントは最高プランとして扱う
+      return 'pro'; // テストアカウントは最高プランとして扱う
     }
     return this.getUserPlan(user);
   }
@@ -118,6 +112,10 @@ export class PlanService {
 
   static getAIUsageLimit(user: User | null): number {
     return this.getPlanLimits(user).aiUsageLimit;
+  }
+
+  static getAIDailyLimit(user: User | null): number {
+    return this.getPlanLimits(user).aiDailyLimit;
   }
 
   // 制限チェック関数
@@ -164,9 +162,8 @@ export class PlanService {
     const plan = this.getUserPlan(user);
     const displayNames: Record<UserPlan, string> = {
       'free': 'Free',
-      'standard': 'Standard', 
+      'plus': 'Plus', 
       'pro': 'Pro',
-      'premium': 'Premium'
     };
     
     return displayNames[plan];
@@ -237,7 +234,7 @@ export class PlanService {
   }
 
   // 制限超過メッセージ取得
-  static getLimitExceededMessage(user: User | null, type: 'tags' | 'links' | 'ai'): string {
+  static getLimitExceededMessage(user: User | null, type: 'tags' | 'links' | 'ai' | 'ai_daily'): string {
     const plan = this.getUserPlan(user);
     const limits = this.getPlanLimits(user);
     
@@ -248,6 +245,8 @@ export class PlanService {
         return `リンクの上限（${limits.maxLinks}個）に達しました。上位プランにアップグレードしてください。`;
       case 'ai':
         return `今月のAI解説回数（${limits.aiUsageLimit}回）に達しました。来月まで待つか、上位プランにアップグレードしてください。`;
+      case 'ai_daily':
+        return `今日のAI解説回数（${limits.aiDailyLimit}回）に達しました。明日まで待つか、上位プランにアップグレードしてください。`;
       default:
         return 'プランの制限に達しました。';
     }
@@ -259,11 +258,10 @@ export class PlanService {
     
     switch (currentPlan) {
       case 'free':
-        return 'standard';
-      case 'standard':
+        return 'plus';
+      case 'plus':
         return 'pro';
       case 'pro':
-        return 'premium';
       default:
         return null;
     }

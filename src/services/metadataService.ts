@@ -60,13 +60,26 @@ export interface ContentType {
 // Cloud Functionsの強化されたメタデータ取得関数
 const fetchEnhancedMetadataFunction = httpsCallable(functions, 'fetchEnhancedMetadata');
 
+// 🚀 短時間キャッシュ（AddLinkModalとHomeScreenの重複を避けるため）
+const metadataCache = new Map<string, { data: LinkMetadata; timestamp: number }>();
+const CACHE_DURATION = 2 * 60 * 1000; // 2分間のキャッシュ
+
 export const metadataService = {
   /**
    * 基本メタデータ取得
    */
   async fetchMetadata(url: string, userId?: string): Promise<LinkMetadata> {
     try {
-      console.log('Fetching basic metadata for:', url);
+      // 🚀 キャッシュチェック
+      const cacheKey = `${url}-${userId || 'anonymous'}`;
+      const cachedEntry = metadataCache.get(cacheKey);
+      
+      if (cachedEntry && (Date.now() - cachedEntry.timestamp) < CACHE_DURATION) {
+        console.log('💾 metadataService: キャッシュヒット', { url: url.slice(0, 50) + '...' });
+        return cachedEntry.data;
+      }
+      
+      console.log('🌐 metadataService: 新規メタデータ取得', { url: url.slice(0, 50) + '...' });
       
       // 一時的にGoogle Maps特別処理を無効化して、通常のWebページとして処理
       // if (this.isGoogleMapsUrl(url)) {
@@ -77,7 +90,20 @@ export const metadataService = {
       const result = await fetchMetadataFunction({ url, userId });
       const metadata = result.data as LinkMetadata;
       
-      console.log('Basic metadata fetched:', metadata);
+      // 🚀 キャッシュに保存
+      metadataCache.set(cacheKey, { data: metadata, timestamp: Date.now() });
+      
+      // キャッシュサイズ制限（100エントリー）
+      if (metadataCache.size > 100) {
+        const oldestKey = metadataCache.keys().next().value;
+        if (oldestKey) {
+          metadataCache.delete(oldestKey);
+        }
+      }
+      
+      console.log('✅ metadataService: メタデータ取得・キャッシュ保存完了', { 
+        title: metadata.title?.slice(0, 50) + '...' 
+      });
       return metadata;
       
     } catch (error) {

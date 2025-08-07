@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Link, Tag } from '../types';
+import { formatDateTimeShort } from '../utils/dateFormatter';
 
 interface LinkCardProps {
   link: Link;
@@ -52,14 +53,6 @@ export const LinkCard: React.FC<LinkCardProps> = ({
     }
   };
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('ja-JP', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(date);
-  };
 
   const getDomainFromUrl = (url: string) => {
     try {
@@ -187,7 +180,7 @@ export const LinkCard: React.FC<LinkCardProps> = ({
           </View>
           
           <Text style={styles.date}>
-            {formatDate(link.createdAt)}
+            {formatDateTimeShort(link.createdAt)}
           </Text>
           
           {/* 期限切れまでの時間表示 */}

@@ -95,7 +95,7 @@ export const AIUsageDashboard: React.FC<AIUsageDashboardProps> = ({
         ];
       case 'free':
         return [
-          'Proプランで月200回まで利用可能です',
+          'Proプランで月100回まで利用可能です',
           'キャッシュ機能により効率的にAI機能を活用しています',
           '類似コンテンツは自動的にキャッシュから取得されます',
         ];
@@ -274,7 +274,7 @@ export const AIUsageDashboard: React.FC<AIUsageDashboardProps> = ({
                     <Text style={styles.upgradeTitle}>Proプランのご案内</Text>
                   </View>
                   <Text style={styles.upgradeDescription}>
-                    • 月200回のAI処理{'\n'}
+                    • 月100回のAI処理{'\n'}
                     • 高度なAI分析機能{'\n'}
                     • 優先サポート{'\n'}
                     • データエクスポート機能

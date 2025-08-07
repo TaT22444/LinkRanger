@@ -229,7 +229,16 @@ export const generateAIAnalysis = onCall({timeoutSeconds: 60, memory: "1GiB"}, a
     throw new HttpsError("invalid-argument", "タイトル、分析プロンプト、ユーザーIDは必須です");
   }
 
-  logger.info(`🔬 [AI Analysis Start] userId: ${userId}, title: ${title}`);
+  // テーマに説明文が含まれているかチェック
+  const hasDescription = title.includes("（") && title.includes("）");
+  const themeInfo = hasDescription ?
+    {theme: title.split("（")[0], description: title.match(/（(.+)）/)?.[1] || ""} :
+    {theme: title, description: ""};
+
+  logger.info(`🔬 [AI Analysis Start] userId: ${userId}, title: ${title}`, {
+    hasDescription,
+    themeInfo,
+  });
 
   try {
     const gemini = getGeminiClient();
@@ -250,7 +259,9 @@ export const generateAIAnalysis = onCall({timeoutSeconds: 60, memory: "1GiB"}, a
 - 統合的で簡潔な分析を心がけてください
 - 冗長な説明は避け、最も重要な情報のみを含めてください
 - 参考リンクは必ず最後に含めてください
-- マークダウン形式で見やすく整理してください`;
+- マークダウン形式で見やすく整理してください
+- テーマに説明文が含まれている場合は、その説明文の内容も考慮して解説してください
+- 例：「AI開発ツール Kiro（Kiroの機能・使い方・料金）」の場合、機能・使い方・料金の観点から解説してください`;
 
     logger.info(`🤖 [AI Analysis Prompt] length: ${prompt.length}`);
 
@@ -327,13 +338,15 @@ export const generateAnalysisSuggestions = onCall({timeoutSeconds: 30, memory: "
   if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
 
   try {
-    const {tagName, linkTitles, userId, userPlan} = request.data;
+    const {tagName, linkTitles, userId, userPlan, excludedThemes = []} = request.data;
 
     logger.info("🔍 AI分析候補生成開始:", {
       tagName,
       linkCount: linkTitles?.length || 0,
       userId: userId?.slice(0, 8) + "...",
       userPlan,
+      excludedThemesCount: excludedThemes?.length || 0,
+      excludedThemes: excludedThemes || [],
     });
 
     // 入力検証
@@ -357,10 +370,14 @@ export const generateAnalysisSuggestions = onCall({timeoutSeconds: 30, memory: "
     });
 
     // AI候補生成用プロンプト
+    const excludedThemesText = excludedThemes.length > 0 ?
+      `\n【既に生成済みのテーマ（これらは除外してください）】\n${excludedThemes.map((theme: string, index: number) => `${index + 1}. ${theme}`).join("\n")}` :
+      "";
+
     const prompt = `以下の「${tagName}」タグが付いたリンクタイトル一覧から、ユーザーが知りたそうな分析テーマを3-4個提案してください。
 
 【リンクタイトル一覧】
-${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).join("\n")}
+${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).join("\n")}${excludedThemesText}
 
 【出力形式】
 以下のJSON形式で出力してください：
@@ -370,17 +387,20 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
     {
       "title": "${tagName}とは",
       "description": "基本的な概念や定義について",
-      "keywords": ["基本", "概念", "定義"]
+      "keywords": ["基本", "概念", "定義"],
+      "relatedLinkIndices": [0, 2, 5]
     },
     {
       "title": "${tagName}の活用方法", 
       "description": "実践的な使い方やコツについて",
-      "keywords": ["活用", "実践", "方法"]
+      "keywords": ["活用", "実践", "方法"],
+      "relatedLinkIndices": [1, 3, 4]
     },
     {
       "title": "${tagName}のトレンド",
       "description": "最新動向や注目ポイントについて", 
-      "keywords": ["トレンド", "最新", "動向"]
+      "keywords": ["トレンド", "最新", "動向"],
+      "relatedLinkIndices": [2, 6, 7]
     }
   ]
 }
@@ -390,6 +410,13 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
 - 説明文は具体的で魅力的に（20文字以内）
 - リンクタイトルの内容に基づいて提案すること
 - ユーザーが実際に知りたそうなテーマを選ぶこと
+- 既に生成済みのテーマは絶対に提案しないこと
+- 🎯 必須: 各テーマに対してrelatedLinkIndicesを必ず含めること
+- 🎯 必須: リンクタイトルに含まれる具体的なキーワードや概念を反映したテーマを提案すること
+- 🎯 禁止: リンクタイトルから推測できない抽象的なテーマは提案しないこと
+- relatedLinkIndicesには、そのテーマ生成に最も関連性の高いリンクのインデックス（0から始まる）を配列で指定すること
+- 各テーマに対して2-4個の関連リンクインデックスを指定すること
+- インデックスは0から${linkTitles.length - 1}までの範囲で指定すること
 - JSON形式以外は出力しないこと`;
 
     logger.info("🤖 AI候補生成 API呼び出し:", {
@@ -413,11 +440,26 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
       const jsonMatch = suggestionsText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         suggestions = JSON.parse(jsonMatch[0]);
+
+        // 🎯 新機能: relatedLinkIndicesの状況を詳細にログ出力
+        logger.info("🔍 AI応答の詳細解析:", {
+          hasSuggestions: !!suggestions.suggestions,
+          suggestionsCount: suggestions.suggestions?.length || 0,
+          suggestionsWithRelatedIndices: suggestions.suggestions?.map((s: any, index: number) => ({
+            index,
+            title: s.title,
+            hasRelatedLinkIndices: !!s.relatedLinkIndices,
+            relatedLinkIndices: s.relatedLinkIndices || [],
+            relatedLinkCount: s.relatedLinkIndices?.length || 0,
+          })) || [],
+          rawResponse: suggestionsText.slice(0, 500) + "...",
+        });
       } else {
         throw new Error("JSON形式が見つかりません");
       }
     } catch (parseError) {
       logger.error("❌ JSON解析エラー:", parseError);
+      logger.error("❌ 生の応答テキスト:", suggestionsText);
       // フォールバック候補を生成
       suggestions = {
         suggestions: [
@@ -425,19 +467,54 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
             title: `${tagName}とは`,
             description: "基本的な概念について",
             keywords: ["基本", "概念"],
+            relatedLinkIndices: [0, 1],
           },
           {
             title: `${tagName}の活用法`,
             description: "実践的な使い方について",
             keywords: ["活用", "実践"],
+            relatedLinkIndices: [1, 2],
           },
           {
             title: `${tagName}のコツ`,
             description: "効果的な方法について",
             keywords: ["コツ", "効果的"],
+            relatedLinkIndices: [0, 2],
           },
         ],
       };
+    }
+
+    // 各テーマのrelatedLinkIndicesを検証・修正
+    if (suggestions.suggestions) {
+      suggestions.suggestions.forEach((suggestion: any, themeIndex: number) => {
+        // relatedLinkIndicesが存在しない場合は、デフォルト値を設定
+        if (!suggestion.relatedLinkIndices || !Array.isArray(suggestion.relatedLinkIndices)) {
+          // リンク数に応じてデフォルトインデックスを設定
+          const defaultIndices = [];
+          const maxLinks = Math.min(3, linkTitles.length);
+          for (let i = 0; i < maxLinks; i++) {
+            defaultIndices.push(i);
+          }
+          suggestion.relatedLinkIndices = defaultIndices;
+        }
+
+        // インデックスが有効範囲内かチェックし、無効な場合は修正
+        suggestion.relatedLinkIndices = suggestion.relatedLinkIndices
+          .filter((index: number) => index >= 0 && index < linkTitles.length)
+          .slice(0, 4); // 最大4個まで
+
+        // 空の場合はデフォルト値を設定
+        if (suggestion.relatedLinkIndices.length === 0) {
+          suggestion.relatedLinkIndices = [0];
+        }
+
+        logger.info(`📊 テーマ${themeIndex + 1}の関連リンク設定:`, {
+          theme: suggestion.title,
+          relatedLinkIndices: suggestion.relatedLinkIndices,
+          relatedLinkTitles: suggestion.relatedLinkIndices.map((index: number) => linkTitles[index]),
+        });
+      });
     }
 
     // コスト計算
@@ -1061,4 +1138,4 @@ async function recordAIUsage(userId: string, type: string, tokensUsed: number, t
 }
 
 // Export Stripe functions
-export * from './stripe';
+export * from "./stripe";

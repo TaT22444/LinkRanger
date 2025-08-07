@@ -9,6 +9,8 @@ import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Tag, Link } from '../types';
+import { CheckboxComponent } from './CheckboxComponent';
+import { formatDateShort } from '../utils/dateFormatter';
 
 interface TagGroupCardProps {
   tag: Tag;
@@ -42,12 +44,6 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const [showAllLinks, setShowAllLinks] = useState(false);
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('ja-JP', {
-      month: 'short',
-      day: 'numeric',
-    }).format(date);
-  };
 
   const getRecentLink = () => {
     if (links.length === 0) return null;
@@ -111,14 +107,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
           {/* 選択モード時のチェックボックス */}
           {isSelectionMode && (
             <View style={styles.selectionCheckbox}>
-              <View style={[
-                styles.checkbox,
-                isSelected && styles.checkboxSelected
-              ]}>
-                {isSelected && (
-                  <Feather name="check" size={12} color="#FFF" />
-                )}
-              </View>
+              <CheckboxComponent isSelected={isSelected} />
             </View>
           )}
           
@@ -178,14 +167,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
                   {/* 選択モード時のチェックボックス */}
                   {isSelectionMode && (
                     <View style={styles.linkSelectionCheckbox}>
-                      <View style={[
-                        styles.linkCheckbox,
-                        selectedLinkIds.has(link.id) && styles.linkCheckboxSelected
-                      ]}>
-                        {selectedLinkIds.has(link.id) && (
-                          <Feather name="check" size={12} color="#FFF" />
-                        )}
-                      </View>
+                      <CheckboxComponent isSelected={selectedLinkIds.has(link.id)} />
                     </View>
                   )}
                   
@@ -210,7 +192,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
                       )}
                       <View style={styles.linkMeta}>
                         <Text style={styles.linkDate}>
-                          {formatDate(link.createdAt)}
+                          {formatDateShort(link.createdAt)}
                         </Text>
                         <View style={[
                           styles.externalIconContainer,
@@ -413,38 +395,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkbox: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#545454',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxSelected: {
-    backgroundColor: '#8A2BE2',
-    borderColor: '#8A2BE2',
-  },
   linkSelectionCheckbox: {
     width: 20,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
-  },
-  linkCheckbox: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#545454',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  linkCheckboxSelected: {
-    backgroundColor: '#8A2BE2',
-    borderColor: '#8A2BE2',
   },
   emptyTagState: {
     alignItems: 'center',

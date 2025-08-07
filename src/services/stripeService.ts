@@ -39,8 +39,8 @@ export class StripeService {
 
   // プラン別の価格ID（Stripeダッシュボードで作成）
   private static readonly PRICE_IDS = {
-    standard: {
-      monthly: process.env.EXPO_PUBLIC_STRIPE_STANDARD_MONTHLY_PRICE_ID || 'price_standard_monthly',
+    plus: {
+      monthly: process.env.EXPO_PUBLIC_STRIPE_PLUS_MONTHLY_PRICE_ID || 'price_plus_monthly',
     },
     pro: {
       monthly: process.env.EXPO_PUBLIC_STRIPE_PRO_MONTHLY_PRICE_ID || 'price_pro_monthly',
@@ -50,8 +50,8 @@ export class StripeService {
   // 価格ID取得
   static getPriceId(plan: UserPlan, interval: 'monthly' = 'monthly'): string | null {
     switch (plan) {
-      case 'standard':
-        return this.PRICE_IDS.standard.monthly;
+      case 'plus':
+        return this.PRICE_IDS.plus.monthly;
       case 'pro':
         return this.PRICE_IDS.pro.monthly;
       default:
@@ -234,7 +234,7 @@ export const PLAN_PRICING = {
     currency: 'JPY',
     interval: 'month' as const,
   },
-  standard: {
+  plus: {
     price: 580,
     currency: 'JPY',
     interval: 'month' as const,

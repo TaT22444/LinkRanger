@@ -10,11 +10,9 @@ import {
   RefreshControl,
   Modal,
   ScrollView,
-  Linking,
   Animated,
   TextInput,
   TouchableWithoutFeedback,
-  Keyboard,
 } from 'react-native';
 import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
@@ -27,14 +25,13 @@ import { AddLinkModal } from '../components/AddLinkModal';
 import { FloatingActionButton } from '../components/FloatingActionButton';
 import { TagFilter } from '../components/TagFilter';
 import { ViewModeSelector } from '../components/ViewModeSelector';
-import { FolderCard } from '../components/FolderCard';
 import { TagGroupCard } from '../components/TagGroupCard';
 
 import { AddTagModal } from '../components/AddTagModal';
 import { SearchModal } from '../components/SearchModal';
 import { LinkDetailScreen } from './LinkDetailScreen';
-import { Link, UserPlan, LinkViewMode, Tag, Folder } from '../types';
-import { linkService, batchService } from '../services/firestoreService';
+import { Link, UserPlan, LinkViewMode } from '../types';
+import { linkService, batchService } from '../services';
 
 import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
@@ -42,87 +39,31 @@ import { PlanService } from '../services/planService';
 
 import { AIStatusMonitor } from '../components/AIStatusMonitor';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { TEST_CONFIG } from '../config/auth';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   
   // 🚀 最適化されたHooksの使用
-  console.log('🏠 HomeScreen: Hooksを初期化', {
-    userId: user?.uid,
-    hasUser: !!user,
-    timestamp: new Date().toISOString()
-  });
   
   const { links, loading, error, createLink, updateLink, deleteLink } = useLinks(user?.uid || null);
-  const { tags: userTags, createOrGetTag, deleteTag: deleteTagById, generateRecommendedTags } = useTags(user?.uid || null);
+  const { tags: userTags, createOrGetTag, deleteTag: deleteTagById } = useTags(user?.uid || null);
   
-  console.log('🏠 HomeScreen: Hooks初期化完了', {
-    linksCount: links.length,
-    tagsCount: userTags.length,
-    loading,
-    error: !!error
-  });
   
-  // タグの変更を監視（デバッグ用）
-  useEffect(() => {
-    console.log('🏷️ HomeScreen: userTags更新検知', {
-      tagsCount: userTags.length,
-      tagNames: userTags.map(tag => tag.name),
-      timestamp: new Date().toISOString()
-    });
-  }, [userTags]);
   
-  const [aiProcessingStatus, setAiProcessingStatus] = useState<{ [key: string]: number }>({
-    'demo-processing-1': 0.65 // デモ用の進捗バー
-  });
-  const [dismissedUntaggedIds, setDismissedUntaggedIds] = useState<Set<string>>(new Set());
+  const [aiProcessingStatus, setAiProcessingStatus] = useState<{ [key: string]: number }>({});
   
-  const dummyUntaggedLinks = useMemo(() => [
-    {
-      id: 'dummy-1',
-      userId: user?.uid || '',
-      url: 'https://example.com/article-1',
-      title: 'React Hooksの基礎知識',
-      description: 'React Hooksの使い方と基本的なパターンについて',
-      status: 'completed' as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      tagIds: [],
-      isBookmarked: false,
-      isArchived: false,
-      priority: 'medium' as const,
-      isRead: false,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      isExpired: false,
-      notificationsSent: { threeDays: false, oneDay: false, oneHour: false }
-    },
-    {
-      id: 'dummy-2',
-      userId: user?.uid || '',
-      url: 'https://example.com/article-2', 
-      title: 'TypeScriptでの型安全な開発',
-      description: 'TypeScriptを使った型安全なコードの書き方',
-      status: 'completed' as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      tagIds: [],
-      isBookmarked: false,
-      isArchived: false,
-      priority: 'high' as const,
-      isRead: false,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      isExpired: false,
-      notificationsSent: { threeDays: false, oneDay: false, oneHour: false }
-    },
-  ] as Link[], [user?.uid]);
 
   const { processingLinks, failedLinks, untaggedLinks } = useMemo(() => {
-    const processing = [...links, ...dummyUntaggedLinks].filter(link => aiProcessingStatus[link.id] !== undefined);
+    const processing = links.filter(link => aiProcessingStatus[link.id] !== undefined);
     const failed = links.filter(link => link.status === 'error' && link.error?.code === 'QUOTA_EXCEEDED');
-    const untagged = dummyUntaggedLinks.filter(link => !dismissedUntaggedIds.has(link.id) && aiProcessingStatus[link.id] === undefined);
+    const untagged = links.filter(link => 
+      (link.status === 'pending' || (link.tagIds && link.tagIds.length === 0)) && 
+      aiProcessingStatus[link.id] === undefined
+    );
     return { processingLinks: processing, failedLinks: failed, untaggedLinks: untagged };
-  }, [links, aiProcessingStatus, dummyUntaggedLinks, dismissedUntaggedIds]);
+  }, [links, aiProcessingStatus]);
   
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
@@ -134,13 +75,11 @@ export const HomeScreen: React.FC = () => {
   
   // インライン検索用の状態
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [isSearchMode, setIsSearchMode] = useState(false);
 
   // 表示モード関連の状態
   const [viewMode, setViewMode] = useState<LinkViewMode>('list');
   const [expandedTagIds, setExpandedTagIds] = useState<Set<string>>(new Set());
-  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   
   // 選択モード関連の状態
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -155,7 +94,7 @@ export const HomeScreen: React.FC = () => {
   const swipeTranslateX = useRef(new Animated.Value(0)).current;
   const lastScrollTime = useRef(0);
   const [isSwipeActive, setIsSwipeActive] = useState(false);
-  const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
+
 
   // Animated Header
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -167,16 +106,9 @@ export const HomeScreen: React.FC = () => {
 
   const listPaddingTop = isSearchMode ? dynamicHeaderHeight : 24;
 
-  // ダミーのユーザープラン（テスト用）
-  const userPlan: UserPlan = user?.email === 'test@02.com' ? 'pro' : 'free';
+  // テスト用ユーザープラン
+  const userPlan: UserPlan = user?.email === TEST_CONFIG.proUserEmail ? 'pro' : 'free';
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      Alert.alert('エラー', 'ログアウトに失敗しました');
-    }
-  };
 
   const handleAccountPress = () => {
     navigation.navigate('Account');
@@ -230,10 +162,30 @@ export const HomeScreen: React.FC = () => {
     
     try {
       const newLinkId = await createLink(fullLinkData);
-      Alert.alert('✅ 保存完了', 'リンクを保存しました。AIが追加のタグを生成します...');
       
-      // 新しく作成した関数を呼び出す
-      processAITagging(newLinkId, fullLinkData);
+      // 🚀 手動選択されたタグがある場合は自動AI処理をスキップするかユーザーに確認
+      const hasManualTags = (linkData.tagIds || []).length > 0;
+      
+      if (hasManualTags) {
+        Alert.alert('保存完了', `リンクを保存しました。\n手動選択タグ: ${linkData.tagIds?.length}個\nAI自動タグ付与も実行しますか？`, [
+          { text: 'スキップ', style: 'cancel' },
+          { 
+            text: 'AI実行', 
+            onPress: () => {
+              setTimeout(() => {
+                processAITagging(newLinkId, fullLinkData);
+              }, 500);
+            }
+          }
+        ]);
+      } else {
+        Alert.alert('✅ 保存完了', 'リンクを保存しました。AI自動タグ付与を開始します。');
+        
+        // タグが未選択の場合は自動的にAI処理を実行
+        setTimeout(() => {
+          processAITagging(newLinkId, fullLinkData);
+        }, 500);
+      }
 
     } catch (error) {
       Alert.alert('エラー', 'リンクの保存に失敗しました');
@@ -246,11 +198,15 @@ export const HomeScreen: React.FC = () => {
     setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.1 }));
 
     try {
-      console.log('[AI自動タグ付与] 開始: linkId', linkId, linkData);
       setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.3 }));
 
+      // 🚀 メタデータ取得（重複防止のため短時間のキャッシュを考慮）
+      console.log('🔄 processAITagging: メタデータ取得開始', { url: linkData.url });
       const metadata = await metadataService.fetchMetadata(linkData.url || '', user.uid);
-      console.log('[AI自動タグ付与] メタデータ取得', metadata);
+      console.log('📄 processAITagging: メタデータ取得完了', { 
+        title: metadata.title?.slice(0, 50) + '...',
+        hasDescription: !!metadata.description 
+      });
       setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.6 }));
 
       const aiResponse = await aiService.generateEnhancedTags(
@@ -258,7 +214,6 @@ export const HomeScreen: React.FC = () => {
         user.uid,
         userPlan
       );
-      console.log('[AI自動タグ付与] Gemini応答', aiResponse);
       setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.8 }));
 
       const finalTagIds: string[] = [...(linkData.tagIds || [])];
@@ -298,7 +253,6 @@ export const HomeScreen: React.FC = () => {
       };
 
       await updateLink(linkId, updateData);
-      console.log('[AI自動タグ付与] 完了: linkId', linkId, updateData);
       
       // ... (Alert表示のロジックは変更なし)
       const userTagCount = (linkData.tagIds || []).length;
@@ -316,7 +270,6 @@ export const HomeScreen: React.FC = () => {
       Alert.alert('🎉 自動AI解説完了', message);
 
     } catch (error: any) {
-      console.log('[AI自動タグ付与] 失敗: linkId', linkId, error);
       
       // エラーの種類を判定
       const isQuotaError = error.message?.includes('quota') || error.code === 'resource-exhausted';
@@ -348,31 +301,20 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleExecuteAI = (linkId: string) => {
-    const link = dummyUntaggedLinks.find(l => l.id === linkId);
+    const link = links.find(l => l.id === linkId);
     if (link) {
       processAITagging(linkId, link);
-      setDismissedUntaggedIds(prev => new Set([...prev, linkId]));
     }
   };
 
   const handleDismissUntagged = (linkId: string) => {
-    setDismissedUntaggedIds(prev => new Set([...prev, linkId]));
+    // 実装予定: 未タグ付けリンクを非表示にする処理
   };
 
-  const mockUserPlan = 'free' as UserPlan;
   const mockAiUsageCount = 8;
   const mockAiUsageLimit = 10;
   const canUseAI = mockAiUsageCount < mockAiUsageLimit;
 
-  const handleToggleBookmark = async (link: Link) => {
-    try {
-      await updateLink(link.id, {
-        isBookmarked: !link.isBookmarked,
-      });
-    } catch (error) {
-      Alert.alert('エラー', 'ブックマークの更新に失敗しました');
-    }
-  };
 
   const handleDeleteLink = async (link: Link) => {
     Alert.alert(
@@ -395,18 +337,6 @@ export const HomeScreen: React.FC = () => {
     );
   };
 
-  const handleOpenExternalLink = async (url: string) => {
-    try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert('エラー', 'このリンクを開くことができません');
-      }
-    } catch (error) {
-      Alert.alert('エラー', 'リンクを開く際にエラーが発生しました');
-    }
-  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -462,9 +392,6 @@ export const HomeScreen: React.FC = () => {
     setSelectedTagIds([]);
   };
 
-  const handleClearSearch = () => {
-    setSearchQuery('');
-  };
 
   const handleClearAll = () => {
     setSearchQuery('');
@@ -489,6 +416,7 @@ export const HomeScreen: React.FC = () => {
             setIsSwipeEnabled(true);
           }
         }, 150);
+
 
         if (isAnimating.current) return;
 
@@ -560,12 +488,9 @@ export const HomeScreen: React.FC = () => {
     }
     
     try {
-      console.log('🏷️ HomeScreen: タグ作成開始', { tagName, type, userId: user.uid });
       const tagId = await createOrGetTag(tagName, type);
-      console.log('✅ HomeScreen: タグ作成完了', { tagName, tagId, currentTagsCount: userTags.length });
       return tagId;
     } catch (error) {
-      console.error('❌ HomeScreen: タグ作成エラー', { tagName, error });
       Alert.alert('エラー', 'タグの作成に失敗しました');
       throw error;
     }
@@ -655,10 +580,6 @@ export const HomeScreen: React.FC = () => {
       } else if (viewMode === 'tag') {
         // タグモードでの表示用データを計算
         const tagGroups = groupedData.tagGroups || [];
-        const untaggedLinks = groupedData.untaggedLinks || [];
-        const totalTaggedLinks = tagGroups.reduce((total, group) => total + (group?.links.length || 0), 0);
-        const totalLinks = totalTaggedLinks + untaggedLinks.length;
-        
         return {
           label: 'タグ',
           count: tagGroups.length, // タグの総数を表示（リンク数ではなく）
@@ -685,10 +606,6 @@ export const HomeScreen: React.FC = () => {
                 <TouchableOpacity 
                   style={styles.tagActionButton}
                   onPress={() => {
-                    console.log('🔘 HomeScreen: +タグボタンが押されました', { 
-                      currentTagsCount: userTags.length, 
-                      userId: user?.uid 
-                    });
                     setShowAddTagModal(true);
                   }}
                 >
@@ -1129,7 +1046,7 @@ export const HomeScreen: React.FC = () => {
 
   const groupedData = useMemo(() => {
     if (viewMode === 'folder') {
-      const folderGroups: { folder: Folder; links: Link[] }[] = [];
+      const folderGroups: { folder: any; links: Link[] }[] = [];
       const unfolderLinks = filteredLinks.filter(link => !link.folderId);
       return { folderGroups, unfolderLinks };
     }
@@ -1354,9 +1271,8 @@ export const HomeScreen: React.FC = () => {
             onClose={() => setShowAddTagModal(false)}
             availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
             selectedTags={[]}
-            onTagsChange={(tagIds) => {
+            onTagsChange={() => {
               // タグ作成完了時の処理
-              console.log('AddTagModal: tags created with IDs:', tagIds);
               // モーダルを閉じる（タグ作成が完了したため）
               setShowAddTagModal(false);
               // 手動でリフレッシュを実行してタグリストを更新

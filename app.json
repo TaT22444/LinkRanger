@@ -8,6 +8,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
+    "owner": "tat22444",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -52,6 +53,9 @@
       "eas": {
         "projectId": "44836b1a-e184-475c-b67f-08f7fd1d68e1"
       }
+    },
+    "experiments": {
+      "tsconfigPaths": true
     }
   }
 }

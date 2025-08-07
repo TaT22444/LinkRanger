@@ -1,5 +1,5 @@
 // ユーザープラン型
-export type UserPlan = 'free' | 'standard' | 'pro' | 'premium';
+export type UserPlan = 'free' | 'plus' | 'pro';
 
 // リンク表示モード型
 export type LinkViewMode = 'list' | 'folder' | 'tag';

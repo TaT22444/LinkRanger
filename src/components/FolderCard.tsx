@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Folder, Link } from '../types';
+import { formatDateShort } from '../utils/dateFormatter';
 
 interface FolderCardProps {
   folder: Folder;
@@ -21,12 +22,6 @@ export const FolderCard: React.FC<FolderCardProps> = ({
   recentLinks,
   onPress,
 }) => {
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('ja-JP', {
-      month: 'short',
-      day: 'numeric',
-    }).format(date);
-  };
 
   const getLastUpdated = () => {
     if (recentLinks.length === 0) return folder.createdAt;
@@ -61,7 +56,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
 
       <View style={styles.footer}>
         <Text style={styles.lastUpdated}>
-          {formatDate(getLastUpdated())}
+          {formatDateShort(getLastUpdated())}
         </Text>
         {recentLinks.length > 0 && (
           <View style={styles.recentPreview}>

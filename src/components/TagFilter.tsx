@@ -7,6 +7,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { CheckboxComponent } from './CheckboxComponent';
 
 interface TagFilterProps {
   tags: string[];
@@ -81,6 +82,7 @@ export const TagFilter: React.FC<TagFilterProps> = ({
         <ScrollView
           style={styles.tagsContainer}
           contentContainerStyle={styles.tagsContentContainer}
+          contentInset={{ bottom: 120 }}
           showsVerticalScrollIndicator={false}
         >
           {displayTags.map((tag) => (

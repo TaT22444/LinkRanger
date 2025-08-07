@@ -56,7 +56,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
   // プラン詳細を動的に生成
   const generatePlanOptions = (): PlanOption[] => {
-    const planTypes: UserPlan[] = ['free', 'standard', 'pro'];
+    const planTypes: UserPlan[] = ['free', 'plus', 'pro'];
     
     return planTypes.map((planType): PlanOption => {
       const details = PlanService.getPlanDetails(planType);
@@ -96,7 +96,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         );
       }
       
-      if (planType === 'standard') {
+      if (planType === 'plus') {
         features.push(
           {
             title: 'Freeプランの全機能',
@@ -130,7 +130,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       if (planType === 'pro') {
         features.push(
           {
-            title: 'Standardプランの全機能',
+            title: 'Plusプランの全機能',
             description: 'これまでの機能はそのまま利用可能',
             icon: 'check',
           },
@@ -171,8 +171,8 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         price: pricing.price === 0 ? '¥0' : `¥${pricing.price.toLocaleString()}`,
         period: pricing.price === 0 ? '無料' : '月額',
         description: planType === 'free' ? '基本機能をお試し' :
-                    planType === 'standard' ? 'Freeプランに加えて、より多くのリンクとAI解説' :
-                    'Standardプランに加えて、大量データと高度機能',
+                    planType === 'plus' ? 'Freeプランに加えて、より多くのリンクとAI解説' :
+                    'Plusプランに加えて、大量データと高度機能',
         features,
         recommended: planType === 'pro',
       };
