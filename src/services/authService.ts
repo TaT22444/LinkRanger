@@ -1,8 +1,11 @@
 import { 
   GoogleAuthProvider,
-  signInWithCredential
+  OAuthProvider,
+  signInWithCredential,
+  signInWithPopup
 } from 'firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { Platform } from 'react-native';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
@@ -195,6 +198,60 @@ export const signInWithGoogle = async (): Promise<User> => {
     }
     
     throw new Error(`Googleログインに失敗しました: ${error.message || '不明なエラー'}`);
+  }
+};
+
+// Appleログイン（iOS限定）
+export const signInWithApple = async (): Promise<User> => {
+  try {
+    console.log('🍎 Appleログイン開始');
+    
+    // iOS以外では利用不可
+    if (Platform.OS !== 'ios') {
+      throw new Error('Appleログインは現在iOS端末でのみ利用可能です');
+    }
+
+    // Firebase OAuthプロバイダーを作成
+    const provider = new OAuthProvider('apple.com');
+    provider.addScope('email');
+    provider.addScope('name');
+    
+    // Web環境では直接signInWithPopupを使用
+    // React Nativeでは直接Firebase Authを使用（expo-apple-authenticationなしの場合）
+    
+    try {
+      // React NativeでAppleログインを実装する場合、
+      // ネイティブのApple Authentication APIまたは
+      // expo-apple-authenticationパッケージが必要です
+      
+      // 現在は基本実装として、将来の拡張を考慮
+      console.log('⚠️ Appleログインは現在開発中です');
+      throw new Error('Appleログイン機能は現在準備中です。今後のアップデートで対応予定です。');
+      
+    } catch (appleError) {
+      console.error('Apple認証エラー:', appleError);
+      throw appleError;
+    }
+
+  } catch (error: any) {
+    console.error('❌ Appleログインエラー:', error);
+    
+    if (error.code) {
+      switch (error.code) {
+        case 'auth/api-key-not-valid':
+          throw new Error('Firebase APIキーが無効です。設定を確認してください。');
+        case 'auth/network-request-failed':
+          throw new Error('ネットワークエラーが発生しました。インターネット接続を確認してください。');
+        case 'auth/cancelled-popup-request':
+          throw new Error('Appleログインがキャンセルされました。');
+        case 'auth/popup-closed-by-user':
+          throw new Error('Appleログインがユーザーによってキャンセルされました。');
+        default:
+          throw new Error(`Appleログインエラー: ${error.message || error.code}`);
+      }
+    }
+    
+    throw error;
   }
 };
 

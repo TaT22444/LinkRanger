@@ -20,7 +20,7 @@ export const AuthScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoginView, setIsLoginView] = useState(true);
   const [view, setView] = useState<'options' | 'email'>('options');
-  const { login, register, loginAnonymously, loginWithGoogle, loading } = useAuth();
+  const { login, register, loginAnonymously, loginWithGoogle, loginWithApple, loading } = useAuth();
 
   const passwordRef = useRef<TextInput>(null);
 
@@ -47,6 +47,14 @@ export const AuthScreen: React.FC = () => {
       Alert.alert('Googleログインエラー', 'Googleでのログインに失敗しました');
     }
   };
+
+  const handleAppleLogin = async () => {
+    try {
+      await loginWithApple();
+    } catch (error) {
+      Alert.alert('Appleログインエラー', error instanceof Error ? error.message : 'Appleでのログインに失敗しました');
+    }
+  };
   
   const handleAnonymousLogin = async () => {
     try {
@@ -62,7 +70,7 @@ export const AuthScreen: React.FC = () => {
         <FontAwesome name="google" size={20} style={styles.icon} />
         <Text style={styles.optionButtonText}>Googleで続行</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.optionButton} onPress={() => Alert.alert("近日公開！", "Appleでのログインは現在準備中です。")} disabled={loading}>
+      <TouchableOpacity style={styles.optionButton} onPress={handleAppleLogin} disabled={loading}>
         <FontAwesome name="apple" size={24} style={styles.icon} />
         <Text style={styles.optionButtonText}>Appleで続行</Text>
       </TouchableOpacity>
@@ -75,7 +83,7 @@ export const AuthScreen: React.FC = () => {
       </TouchableOpacity>
       <View style={styles.termsContainer}>
         <Text style={styles.termsText}>
-          続行することにより、Winkの{' '}
+          続行することにより.Winkの{' '}
           <Text style={styles.termsLink} onPress={() => Linking.openURL('https://wink.app/terms')}>
             利用規約
           </Text>
@@ -134,8 +142,8 @@ export const AuthScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.content}>
           <View style={styles.titleSection}>
-            <Text style={styles.title}>Wink</Text>
-            <Text style={styles.subtitle}>あなたの知の羅針盤</Text>
+            <Text style={styles.title}>.Wink</Text>
+            {/* <Text style={styles.subtitle}>あなたの知の羅針盤</Text> */}
           </View>
           {view === 'options' ? renderOptionsView() : renderEmailView()}
         </View>
@@ -159,13 +167,13 @@ const styles = StyleSheet.create({
   },
   titleSection: {
     alignItems: 'center',
-    marginBottom: 60,
+    marginBottom: 40,
   },
   title: {
-    fontSize: 36,
+    fontSize: 40,
     fontWeight: 'bold',
     color: '#00FFFF',
-    marginBottom: 8,
+    marginRight: 10,
   },
   subtitle: {
     fontSize: 16,

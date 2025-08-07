@@ -192,7 +192,7 @@ export const AIStatusMonitor: React.FC<AIStatusMonitorProps> = ({
             }
           ]}
         >
-          <Text style={styles.aiText}>Wink</Text>
+          <Text style={styles.aiText}>.Wink</Text>
           {/* <MaterialIcons name="auto-awesome" size={16} color="rgb(164, 164, 164)" /> */}
         </Animated.View>
       </TouchableOpacity>

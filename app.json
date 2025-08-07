@@ -1,23 +1,23 @@
 {
   "expo": {
-    "name": "Wink",
+    "name": ".Wink",
     "scheme": "wink",
-    "slug": "Wink",
+    "slug": ".Wink",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/wink_logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "owner": "tat22444",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/wink_logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "9",
+      "buildNumber": "10",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -30,6 +30,9 @@
           "NSAllowsArbitraryLoads": true
         },
         "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。"
+      },
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
       }
     },
     "android": {

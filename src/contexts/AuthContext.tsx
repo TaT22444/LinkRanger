@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, AuthState } from '../types';
-import { onAuthStateChange, updateUserProfile as updateProfile, signInWithGoogle } from '../services/authService';
+import { onAuthStateChange, updateUserProfile as updateProfile, signInWithGoogle, signInWithApple } from '../services/authService';
 import { auth } from '../config/firebase';
 import {
   signInWithEmailAndPassword,
@@ -16,6 +16,7 @@ interface AuthContextType extends AuthState {
   register: (email: string, password: string) => Promise<void>;
   loginAnonymously: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (profile: { 
     displayName?: string; 
@@ -128,6 +129,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const loginWithApple = async () => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      await signInWithApple();
+    } catch (error: any) {
+      setState(prev => ({ 
+        ...prev, 
+        error: error.message || 'Appleログインに失敗しました',
+        loading: false, 
+      }));
+      throw error;
+    }
+  };
+
   const logout = async () => {
     try {
     setState(prev => ({ ...prev, loading: true, error: null }));
@@ -185,6 +200,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     register,
     loginAnonymously,
     loginWithGoogle,
+    loginWithApple,
         logout,
         updateUserProfile,
       }}
