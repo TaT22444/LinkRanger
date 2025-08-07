@@ -5,12 +5,12 @@
     "slug": "Wink",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/wink_logo.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "owner": "tat22444",
     "splash": {
-      "image": "./assets/wink_logo.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },

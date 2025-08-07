@@ -211,26 +211,55 @@ export const signInWithApple = async (): Promise<User> => {
       throw new Error('Appleログインは現在iOS端末でのみ利用可能です');
     }
 
+    // expo-apple-authenticationを動的インポート
+    const AppleAuthentication = await import('expo-apple-authentication');
+    
+    // Apple認証が利用可能かチェック
+    const isAvailable = await AppleAuthentication.isAvailableAsync();
+    if (!isAvailable) {
+      throw new Error('このデバイスではApple認証が利用できません');
+    }
+
+    console.log('🔐 Apple認証開始...');
+    
+    // Apple認証を実行
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+
+    console.log('✅ Apple認証完了:', credential.user);
+
+    // identityTokenが必要
+    if (!credential.identityToken) {
+      throw new Error('Apple認証でidentityTokenが取得できませんでした');
+    }
+
     // Firebase OAuthプロバイダーを作成
     const provider = new OAuthProvider('apple.com');
-    provider.addScope('email');
-    provider.addScope('name');
     
-    // Web環境では直接signInWithPopupを使用
-    // React Nativeでは直接Firebase Authを使用（expo-apple-authenticationなしの場合）
-    
-    try {
-      // React NativeでAppleログインを実装する場合、
-      // ネイティブのApple Authentication APIまたは
-      // expo-apple-authenticationパッケージが必要です
-      
-      // 現在は基本実装として、将来の拡張を考慮
-      console.log('⚠️ Appleログインは現在開発中です');
-      throw new Error('Appleログイン機能は現在準備中です。今後のアップデートで対応予定です。');
-      
-    } catch (appleError) {
-      console.error('Apple認証エラー:', appleError);
-      throw appleError;
+    // Firebase認証
+    const oauthCredential = provider.credential({
+      idToken: credential.identityToken,
+    });
+
+    const userCredential = await signInWithCredential(auth, oauthCredential);
+    const firebaseUser = userCredential.user;
+    console.log('✅ Firebase認証完了:', firebaseUser.uid);
+
+    // ユーザードキュメント確認・作成
+    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+    if (userDoc.exists()) {
+      console.log('✅ 既存ユーザー情報取得');
+      return userDoc.data() as User;
+    } else {
+      console.log('📝 新規ユーザープロフィール作成中...');
+      await createUserProfile(firebaseUser);
+      const newUserDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      console.log('✅ 新規ユーザープロフィール作成完了');
+      return newUserDoc.data() as User;
     }
 
   } catch (error: any) {
@@ -238,14 +267,14 @@ export const signInWithApple = async (): Promise<User> => {
     
     if (error.code) {
       switch (error.code) {
+        case 'ERR_REQUEST_CANCELED':
+          throw new Error('Appleログインがキャンセルされました');
+        case 'auth/invalid-credential':
+          throw new Error('Apple認証の資格情報が無効です');
+        case 'auth/account-exists-with-different-credential':
+          throw new Error('このメールアドレスは既に別の方法で登録されています');
         case 'auth/api-key-not-valid':
-          throw new Error('Firebase APIキーが無効です。設定を確認してください。');
-        case 'auth/network-request-failed':
-          throw new Error('ネットワークエラーが発生しました。インターネット接続を確認してください。');
-        case 'auth/cancelled-popup-request':
-          throw new Error('Appleログインがキャンセルされました。');
-        case 'auth/popup-closed-by-user':
-          throw new Error('Appleログインがユーザーによってキャンセルされました。');
+          throw new Error('Firebase APIキーが無効です');
         default:
           throw new Error(`Appleログインエラー: ${error.message || error.code}`);
       }
