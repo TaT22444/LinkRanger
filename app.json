@@ -3,7 +3,7 @@
     "name": "Wink",
     "scheme": "wink",
     "slug": "Wink",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,6 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
+      "buildNumber": "9",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -27,7 +28,8 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。"
       }
     },
     "android": {

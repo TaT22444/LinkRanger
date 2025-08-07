@@ -93,9 +93,7 @@ export const AccountScreen: React.FC = () => {
     setShowUpgradeModal(true);
   };
 
-  const handleChangePassword = () => {
-    navigation.navigate('ChangePassword');
-  };
+
 
   const handleEditProfile = () => {
     navigation.navigate('EditProfile');
@@ -222,10 +220,7 @@ export const AccountScreen: React.FC = () => {
           <Feather name="award" size={18} color="#8A2BE2" style={styles.itemIcon} />
           <Text style={styles.itemText}>プラン</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem} onPress={handleChangePassword}>
-          <Feather name="lock" size={18} color="#8A2BE2" style={styles.itemIcon} />
-          <Text style={styles.itemText}>パスワード変更</Text>
-        </TouchableOpacity>
+
         <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
           <Feather name="log-out" size={18} color="#8A2BE2" style={styles.itemIcon} />
           <Text style={styles.itemText}>ログアウト</Text>

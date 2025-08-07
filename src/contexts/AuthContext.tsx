@@ -43,21 +43,30 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChange((user) => {
-      setState({
-        user: user ? {
-          ...user,
-          // Firestoreのusernameフィールドを優先的に使用
-          username: user.username || user.email || null,
-          avatarId: user.avatarId,
-          avatarIcon: user.avatarIcon,
-        } : null,
-        loading: false,
-        error: null,
+    try {
+      const unsubscribe = onAuthStateChange((user) => {
+        setState({
+          user: user ? {
+            ...user,
+            // Firestoreのusernameフィールドを優先的に使用
+            username: user.username || user.email || null,
+            avatarId: user.avatarId,
+            avatarIcon: user.avatarIcon,
+          } : null,
+          loading: false,
+          error: null,
+        });
       });
-    });
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (error) {
+      console.error('❌ AuthContext初期化エラー:', error);
+      setState({
+        user: null,
+        loading: false,
+        error: '認証初期化エラー',
+      });
+    }
   }, []);
 
   const login = async (email: string, password: string) => {

@@ -2353,7 +2353,7 @@ ${analysisContext.map((link, index) =>
                         {loadingSuggestions ? (
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
-                          <Feather name="zap" size={20} color="#FFFFFF" />
+                          <Feather name="zap" size={16} color="#FFFFFF" />
                         )}
                       </View>
                       <View style={styles.newGenerateButtonTextContainer}>
@@ -2367,11 +2367,6 @@ ${analysisContext.map((link, index) =>
                           }
                         </Text>
                       </View>
-                      <Feather 
-                        name="chevron-right" 
-                        size={20} 
-                        color={tagLinks.length === 0 || loadingSuggestions ? "#666" : "#FFFFFF"} 
-                      />
                     </View>
                   </TouchableOpacity>
                 )}
@@ -2546,7 +2541,7 @@ ${analysisContext.map((link, index) =>
         <TouchableWithoutFeedback onPress={() => setShowOptionsMenu(false)}>
           <View style={styles.optionsOverlay}>
             <View style={styles.optionsMenu}>
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={styles.optionItem}
                 onPress={() => {
                   setShowOptionsMenu(false);
@@ -2555,12 +2550,12 @@ ${analysisContext.map((link, index) =>
               >
                 <Feather name="git-merge" size={20} color="#FFF" />
                 <Text style={styles.optionText}>タグを統合</Text>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
               
               <View style={styles.optionSeparator} />
               
               {/* AI分析確認設定 */}
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={styles.optionItem}
                 onPress={() => {
                   setShowOptionsMenu(false);
@@ -2596,7 +2591,7 @@ ${analysisContext.map((link, index) =>
                 <Text style={styles.optionText}>
                   AI解説確認{showAIAnalysisAlert ? '無効化' : '有効化'}
                 </Text>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
               
               <View style={styles.optionSeparator} />
               
@@ -2616,7 +2611,7 @@ ${analysisContext.map((link, index) =>
       </Modal>
 
       {/* Merge Modal */}
-      <Modal
+      {/* <Modal
         visible={showMergeModal}
         transparent={true}
         animationType="fade"
@@ -2660,7 +2655,7 @@ ${analysisContext.map((link, index) =>
             </View>
           </View>
         </View>
-      </Modal>
+      </Modal> */}
 
 
 
@@ -3487,8 +3482,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   newGenerateButtonIcon: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
@@ -3499,7 +3494,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   newGenerateButtonTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
@@ -4121,6 +4116,7 @@ const styles = StyleSheet.create({
     padding: 4,
     backgroundColor: '#333',
     borderRadius: 4,
+    zIndex: 1000,
   },
   resultText: {
     paddingTop: 8,
@@ -4129,10 +4125,11 @@ const styles = StyleSheet.create({
   // Links Section Header - Simple and clean
   linksSectionHeader: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 32,
+    paddingBottom: 16,
     borderTopWidth: 1,
     borderTopColor: '#333',
-    marginTop: 8,
+    marginTop: 16,
   },
   linksSectionTitle: {
     fontSize: 16,

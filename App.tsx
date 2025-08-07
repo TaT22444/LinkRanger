@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'rea
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StripeProvider } from '@stripe/stripe-react-native';
+
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -95,7 +95,14 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      onStateChange={(state) => {
+        console.log('Navigation state changed:', state);
+      }}
+      onReady={() => {
+        console.log('Navigation ready');
+      }}
+    >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!user ? (
           <Stack.Screen name="Auth" component={AuthScreen} />
@@ -109,15 +116,18 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   useEffect(() => {
-    GoogleSignin.configure(GOOGLE_SIGN_IN_CONFIG);
+    try {
+      GoogleSignin.configure(GOOGLE_SIGN_IN_CONFIG);
+      console.log('✅ Google Sign-In設定完了');
+    } catch (error) {
+      console.error('❌ Google Sign-In設定エラー:', error);
+    }
   }, []);
 
   return (
     <GestureHandlerRootView style={styles.container}>
       <AuthProvider>
-        <StripeProvider publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_dummy'}>
-          <AppContent />
-        </StripeProvider>
+        <AppContent />
       </AuthProvider>
     </GestureHandlerRootView>
   );

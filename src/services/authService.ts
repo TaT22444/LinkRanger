@@ -51,21 +51,44 @@ export const registerWithEmail = async (email: string, password: string): Promis
 // ログイン（メールアドレス）
 export const loginWithEmail = async (email: string, password: string): Promise<User> => {
   try {
+    console.log('📧 メールログイン開始:', email);
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const firebaseUser = userCredential.user;
+    console.log('✅ Firebase認証完了:', firebaseUser.uid);
     
     // Firestoreからユーザー情報を取得
     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
     if (userDoc.exists()) {
+      console.log('✅ 既存ユーザー情報取得');
       return userDoc.data() as User;
     } else {
+      console.log('📝 ユーザープロフィール作成中...');
       // ドキュメントが存在しない場合は作成（既存ユーザーでプロフィールが無い場合）
       await createUserProfile(firebaseUser);
       const newUserDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      console.log('✅ ユーザープロフィール作成完了');
       return newUserDoc.data() as User;
     }
-  } catch (error) {
-    console.error('Login error:', error);
+  } catch (error: any) {
+    console.error('❌ メールログインエラー:', error);
+    
+    if (error.code) {
+      switch (error.code) {
+        case 'auth/api-key-not-valid':
+          throw new Error('Firebase APIキーが無効です。設定を確認してください。');
+        case 'auth/user-not-found':
+          throw new Error('このメールアドレスは登録されていません。');
+        case 'auth/wrong-password':
+          throw new Error('パスワードが正しくありません。');
+        case 'auth/too-many-requests':
+          throw new Error('リクエストが多すぎます。しばらく待ってから再試行してください。');
+        case 'auth/network-request-failed':
+          throw new Error('ネットワークエラーが発生しました。インターネット接続を確認してください。');
+        default:
+          throw new Error(`ログインエラー: ${error.message || error.code}`);
+      }
+    }
+    
     throw error;
   }
 };
@@ -73,21 +96,39 @@ export const loginWithEmail = async (email: string, password: string): Promise<U
 // 匿名ログイン
 export const loginAnonymously = async (): Promise<User> => {
   try {
+    console.log('👤 匿名ログイン開始');
     const userCredential = await signInAnonymously(auth);
     const firebaseUser = userCredential.user;
+    console.log('✅ Firebase匿名認証完了:', firebaseUser.uid);
     
     // デフォルトプラットフォームタグ付きでユーザープロフィールを作成
+    console.log('📝 匿名ユーザープロフィール作成中...');
     await createUserProfile(firebaseUser);
     
     // 作成されたユーザー情報を取得して返す
     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
     if (userDoc.exists()) {
+      console.log('✅ 匿名ユーザープロフィール作成完了');
       return userDoc.data() as User;
     } else {
-      throw new Error('Failed to retrieve created anonymous user profile');
+      throw new Error('匿名ユーザープロフィールの取得に失敗しました');
     }
-  } catch (error) {
-    console.error('Anonymous login error:', error);
+  } catch (error: any) {
+    console.error('❌ 匿名ログインエラー:', error);
+    
+    if (error.code) {
+      switch (error.code) {
+        case 'auth/api-key-not-valid':
+          throw new Error('Firebase APIキーが無効です。設定を確認してください。');
+        case 'auth/network-request-failed':
+          throw new Error('ネットワークエラーが発生しました。インターネット接続を確認してください。');
+        case 'auth/too-many-requests':
+          throw new Error('リクエストが多すぎます。しばらく待ってから再試行してください。');
+        default:
+          throw new Error(`匿名ログインエラー: ${error.message || error.code}`);
+      }
+    }
+    
     throw error;
   }
 };
@@ -95,27 +136,65 @@ export const loginAnonymously = async (): Promise<User> => {
 // Googleログイン
 export const signInWithGoogle = async (): Promise<User> => {
   try {
-    await GoogleSignin.hasPlayServices();
+    console.log('🔍 Googleログイン開始');
+    
+    // Play Services確認（Android用だが、念のため）
+    try {
+      await GoogleSignin.hasPlayServices();
+      console.log('✅ Play Services確認完了');
+    } catch (playServicesError) {
+      console.log('ℹ️ Play Services確認スキップ（iOSなので正常）');
+    }
+    
+    // Googleサインイン
+    console.log('🔍 Googleサインイン実行中...');
     await GoogleSignin.signIn();
+    console.log('✅ Googleサインイン完了');
+    
+    // トークン取得
     const { idToken } = await GoogleSignin.getTokens();
     if (!idToken) {
-      throw new Error('Google sign-in failed: idToken is missing.');
+      throw new Error('GoogleサインインでIDトークンが取得できませんでした');
     }
+    console.log('✅ IDトークン取得完了');
+    
+    // Firebase認証
     const googleCredential = GoogleAuthProvider.credential(idToken);
     const userCredential = await signInWithCredential(auth, googleCredential);
     const firebaseUser = userCredential.user;
+    console.log('✅ Firebase認証完了:', firebaseUser.uid);
 
+    // ユーザードキュメント確認・作成
     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
     if (userDoc.exists()) {
+      console.log('✅ 既存ユーザー情報取得');
       return userDoc.data() as User;
     } else {
+      console.log('📝 新規ユーザープロフィール作成中...');
       await createUserProfile(firebaseUser);
       const newUserDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      console.log('✅ 新規ユーザープロフィール作成完了');
       return newUserDoc.data() as User;
     }
-  } catch (error) {
-    console.error('Google sign-in error:', error);
-    throw error;
+  } catch (error: any) {
+    console.error('❌ Googleログインエラー:', error);
+    
+    // エラーの詳細な分析
+    if (error.code) {
+      console.error('エラーコード:', error.code);
+      switch (error.code) {
+        case 'auth/api-key-not-valid':
+          throw new Error('Firebase APIキーが無効です。設定を確認してください。');
+        case 'auth/network-request-failed':
+          throw new Error('ネットワークエラーが発生しました。インターネット接続を確認してください。');
+        case 'auth/too-many-requests':
+          throw new Error('リクエストが多すぎます。しばらく待ってから再試行してください。');
+        default:
+          throw new Error(`Googleログインエラー: ${error.message || error.code}`);
+      }
+    }
+    
+    throw new Error(`Googleログインに失敗しました: ${error.message || '不明なエラー'}`);
   }
 };
 

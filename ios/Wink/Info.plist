@@ -44,7 +44,7 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>9</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>LSMinimumSystemVersion</key>
@@ -82,5 +82,7 @@
     <string>Light</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
+    <key>NSCameraUsageDescription</key>
+    <string>このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しているため、この説明が必要です。</string>
   </dict>
 </plist>

@@ -7,7 +7,21 @@
     "preview": {
       "distribution": "internal"
     },
-    "production": {}
+    "production": {},
+    "testflight": {
+      "distribution": "store",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCy0GMV6rjbI5kuHlsikcjtmRAvh0fCoBw",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "linkranger-b096e.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "linkranger-b096e",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "linkranger-b096e.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823369241471",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:823369241471:ios:fbe4aabdbcff92f509c04a"
+      }
+    }
   },
   "cli": {
     "version": ">= 7.6.0"

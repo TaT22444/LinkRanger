@@ -13,7 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
-import { useStripePayment } from '../services/stripeService';
+import { useApplePay } from '../services/applePayService';
 import { useAuth } from '../contexts/AuthContext';
 
 interface UpgradeModalProps {
@@ -50,7 +50,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   sourceContext = 'general',
 }) => {
   const { user } = useAuth();
-  const { handleSubscription } = useStripePayment();
+  const { handleSubscription } = useApplePay();
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingPlan, setProcessingPlan] = useState<UserPlan | null>(null);
 
@@ -198,32 +198,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
       console.log('🔄 支払い処理開始:', { planName, userId: user.uid });
 
-      const result = await handleSubscription(planName, user.uid);
-
-      if (result.success) {
-        Alert.alert(
-          '🎉 アップグレード完了',
-          `${planName.charAt(0).toUpperCase() + planName.slice(1)}プランへのアップグレードが完了しました！\n\n新しい機能をお楽しみください。`,
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                onClose();
-                // アプリを再起動してプラン情報を更新
-                // または、ユーザー情報を再取得する
-              }
-            }
-          ]
-        );
-      } else if (result.canceled) {
-        console.log('💳 支払いがキャンセルされました');
-      }
-
+      await handleSubscription(planName, user.uid);
+      
+      // Apple課金機能は一時的に無効化されているため、常にエラーが発生
+      // 成功時の処理は後で実装
     } catch (error) {
       console.error('❌ 支払い処理エラー:', error);
       Alert.alert(
-        'エラー',
-        '支払い処理中にエラーが発生しました。しばらく時間をおいて再度お試しください。',
+        '機能準備中',
+        'Apple課金機能は現在準備中です。\n\n基本機能（リンク管理、タグ管理、AI解説）は引き続きご利用いただけます。',
         [{ text: 'OK' }]
       );
     } finally {
