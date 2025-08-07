@@ -2,7 +2,7 @@
   "expo": {
     "name": ".Wink",
     "scheme": "wink",
-    "slug": ".Wink",
+    "slug": "Wink",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/wink_logo.png",
