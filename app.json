@@ -3,6 +3,15 @@
     "name": ".Wink",
     "scheme": "wink",
     "slug": "Wink",
+    "linking": {
+      "prefixes": ["wink://", "https://wink.app"],
+      "config": {
+        "screens": {
+          "Home": "home",
+          "ShareLink": "share"
+        }
+      }
+    },
     "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -17,7 +26,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "11",
+      "buildNumber": "14",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -29,11 +38,22 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
-        "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。"
+        "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "wink.share",
+            "CFBundleURLSchemes": ["wink"]
+          }
+        ]
       },
       "entitlements": {
         "com.apple.developer.applesignin": ["Default"]
       }
+    },
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#8A2BE2",
+      "iosDisplayInForeground": true
     },
     "android": {
       "adaptiveIcon": {
@@ -51,6 +71,14 @@
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#8A2BE2",
+          "defaultChannel": "default"
         }
       ]
     ],

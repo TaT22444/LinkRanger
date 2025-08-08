@@ -154,7 +154,7 @@ export const userService = {
     return null;
   },
 
-  async updateUserStats(uid: string, stats: Partial<User['stats']>): Promise<void> {
+    async updateUserStats(uid: string, stats: Partial<User['stats']>) : Promise<void> {
     if (!stats) return;
     const userRef = doc(db, COLLECTIONS.USERS, uid);
     const key = Object.keys(stats)[0];
@@ -162,6 +162,43 @@ export const userService = {
     await updateDoc(userRef, {
       [`stats.${key}`]: increment(value),
     });
+  },
+
+  async deleteAllUserData(userId: string): Promise<void> {
+    const batch = writeBatch(db);
+
+    // Delete user document
+    const userRef = doc(db, COLLECTIONS.USERS, userId);
+    batch.delete(userRef);
+
+    // Delete links
+    const linksQuery = query(collection(db, COLLECTIONS.LINKS), where('userId', '==', userId));
+    const linksSnapshot = await getDocs(linksQuery);
+    linksSnapshot.forEach(doc => batch.delete(doc.ref));
+
+    // Delete tags
+    const tagsQuery = query(collection(db, COLLECTIONS.TAGS), where('userId', '==', userId));
+    const tagsSnapshot = await getDocs(tagsQuery);
+    tagsSnapshot.forEach(doc => batch.delete(doc.ref));
+
+    // Delete folders
+    const foldersQuery = query(collection(db, COLLECTIONS.FOLDERS), where('userId', '==', userId));
+    const foldersSnapshot = await getDocs(foldersQuery);
+    foldersSnapshot.forEach(doc => batch.delete(doc.ref));
+
+    // Delete search history
+    const searchHistoryQuery = query(collection(db, COLLECTIONS.SEARCH_HISTORY), where('userId', '==', userId));
+    const searchHistorySnapshot = await getDocs(searchHistoryQuery);
+    searchHistorySnapshot.forEach(doc => batch.delete(doc.ref));
+
+    // Delete app settings
+    const settingsRef = doc(db, COLLECTIONS.APP_SETTINGS, userId);
+    batch.delete(settingsRef);
+
+    // Delete saved analyses
+    await savedAnalysisService.deleteAllUserAnalyses(userId);
+
+    await batch.commit();
   },
 };
 

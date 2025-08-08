@@ -2,7 +2,8 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   signInWithCredential,
-  signInWithPopup
+  signInWithPopup,
+  deleteUser,
 } from 'firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Platform } from 'react-native';
@@ -21,6 +22,24 @@ import { auth, db } from '../config/firebase';
 import { User } from '../types';
 import { userService } from './firestoreService';
 import { UserPlan } from '../types';
+
+export const deleteUserAccount = async (): Promise<void> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('ユーザーが見つかりません');
+    }
+
+    // Firestoreのデータを削除
+    await userService.deleteAllUserData(user.uid);
+
+    // Firebase Authからユーザーを削除
+    await deleteUser(user);
+  } catch (error) {
+    console.error('アカウント削除エラー:', error);
+    throw error;
+  }
+};
 
 interface UpdateUserProfileParams {
   displayName?: string;
@@ -215,12 +234,16 @@ export const signInWithApple = async (): Promise<User> => {
     const AppleAuthentication = await import('expo-apple-authentication');
     
     // Apple認証が利用可能かチェック
+    console.log('🔍 Apple認証可用性チェック...');
     const isAvailable = await AppleAuthentication.isAvailableAsync();
+    console.log('Apple認証可用性:', isAvailable);
+    
     if (!isAvailable) {
-      throw new Error('このデバイスではApple認証が利用できません');
+      throw new Error('このデバイスではApple認証が利用できません（iOS 13以上が必要）');
     }
 
     console.log('🔐 Apple認証開始...');
+    console.log('要求スコープ:', ['FULL_NAME', 'EMAIL']);
     
     // Apple認証を実行
     const credential = await AppleAuthentication.signInAsync({
@@ -230,17 +253,30 @@ export const signInWithApple = async (): Promise<User> => {
       ],
     });
 
-    console.log('✅ Apple認証完了:', credential.user);
+    console.log('✅ Apple認証完了');
+    console.log('受信データ:', {
+      user: credential.user,
+      email: credential.email,
+      fullName: credential.fullName,
+      authorizationCode: credential.authorizationCode ? '受信済み' : '未受信',
+      identityToken: credential.identityToken ? '受信済み' : '未受信',
+      realUserStatus: credential.realUserStatus,
+    });
 
     // identityTokenが必要
     if (!credential.identityToken) {
-      throw new Error('Apple認証でidentityTokenが取得できませんでした');
+      console.error('❌ identityTokenが取得できませんでした');
+      console.error('認証レスポンス詳細:', credential);
+      throw new Error('Apple認証でidentityTokenが取得できませんでした。Apple Developer Console設定を確認してください。');
     }
 
+    console.log('🔥 Firebase認証準備中...');
+    
     // Firebase OAuthプロバイダーを作成
     const provider = new OAuthProvider('apple.com');
     
     // Firebase認証
+    console.log('🔥 Firebase認証実行中...');
     const oauthCredential = provider.credential({
       idToken: credential.identityToken,
     });
@@ -263,24 +299,43 @@ export const signInWithApple = async (): Promise<User> => {
     }
 
   } catch (error: any) {
-    console.error('❌ Appleログインエラー:', error);
+    console.error('❌ Appleログインエラー詳細:', error);
+    console.error('エラーオブジェクト:', JSON.stringify(error, null, 2));
     
+    // expo-apple-authenticationのエラーコードを確認
     if (error.code) {
+      console.error('🔍 エラーコード分析:', error.code);
       switch (error.code) {
         case 'ERR_REQUEST_CANCELED':
+        case 'ERR_CANCELED':
           throw new Error('Appleログインがキャンセルされました');
+        case 'ERR_INVALID_RESPONSE':
+          throw new Error('Apple認証サーバーから無効な応答を受信しました。Apple Developer Console設定を確認してください。');
+        case 'ERR_REQUEST_FAILED':
+          throw new Error('Apple認証リクエストが失敗しました。Bundle IDとCapability設定を確認してください。');
+        case 'ERR_REQUEST_NOT_HANDLED':
+          throw new Error('Apple認証リクエストが処理されませんでした。アプリのentitlementsを確認してください。');
+        case 'ERR_REQUEST_NOT_INTERACTIVE':
+          throw new Error('Apple認証で対話的認証が利用できません。');
         case 'auth/invalid-credential':
-          throw new Error('Apple認証の資格情報が無効です');
+          throw new Error('Firebase: Apple認証の資格情報が無効です。Firebase Console設定を確認してください。');
         case 'auth/account-exists-with-different-credential':
           throw new Error('このメールアドレスは既に別の方法で登録されています');
         case 'auth/api-key-not-valid':
           throw new Error('Firebase APIキーが無効です');
         default:
-          throw new Error(`Appleログインエラー: ${error.message || error.code}`);
+          throw new Error(`Appleログインエラー [${error.code}]: ${error.message || '詳細不明'}`);
       }
     }
     
-    throw error;
+    // メッセージベースの分析
+    if (error.message) {
+      if (error.message.includes('authorization attempt failed')) {
+        throw new Error('Apple認証が失敗しました。以下を確認してください：\n1. Apple Developer ConsoleでSign in with Apple Capabilityが有効\n2. Bundle ID設定が正しい\n3. アプリがTestFlightまたはApp Store経由でインストールされている');
+      }
+    }
+    
+    throw new Error(`Appleログイン予期しないエラー: ${error.message || '不明なエラー'}`);
   }
 };
 

@@ -19,8 +19,8 @@ export class PlanService {
     'free': {
       maxTags: 500,
       maxLinks: 15,
-      aiUsageLimit: 3,
-      aiDailyLimit: 3,
+      aiUsageLimit: 5,
+      aiDailyLimit: 5,
       hasBasicAlerts: true,
       hasCustomReminders: false,
       hasAdvancedSearch: false,
@@ -29,8 +29,8 @@ export class PlanService {
     'plus': {
       maxTags: 500,
       maxLinks: 50,
-      aiUsageLimit: 50,
-      aiDailyLimit: 5,
+      aiUsageLimit: 80,
+      aiDailyLimit: 10,
       hasBasicAlerts: true,
       hasCustomReminders: true,
       hasAdvancedSearch: false,
@@ -39,8 +39,8 @@ export class PlanService {
     'pro': {
       maxTags: 3000,
       maxLinks: 200,
-      aiUsageLimit: 100,
-      aiDailyLimit: 100,
+      aiUsageLimit: 150,
+      aiDailyLimit: 50,
       hasBasicAlerts: true,
       hasCustomReminders: true,
       hasAdvancedSearch: true,
@@ -210,7 +210,7 @@ export class PlanService {
     }
     
     // AI使用制限
-    features.push(`AI解説機能 月に${limits.aiUsageLimit}回`);
+    features.push(`AI解説機能 月に${limits.aiUsageLimit}回（1日${limits.aiDailyLimit}回まで）`);
     
     // 基本機能
     if (limits.hasBasicAlerts) {

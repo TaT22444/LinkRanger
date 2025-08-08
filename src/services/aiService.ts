@@ -14,6 +14,7 @@ const clearTagCacheFunction = httpsCallable(functions, 'clearTagCache');
 const generateEnhancedAITagsFunction = httpsCallable(functions, 'generateEnhancedAITags');
 const generateAIAnalysisFunction = httpsCallable(functions, 'generateAIAnalysis');
 const generateAnalysisSuggestionsFunction = httpsCallable(functions, 'generateAnalysisSuggestions');
+const selectRelevantLinksFunction = httpsCallable(functions, 'selectRelevantLinks');
 const evaluateThemeRelevanceFunction = httpsCallable(functions, 'evaluateThemeRelevance');
 
 interface AIResponse {
@@ -69,6 +70,28 @@ export interface ThemeRelevanceResponse {
   fromCache: boolean;
   tokensUsed: number;
   cost: number;
+}
+
+export interface SelectedLink {
+  index: number;
+  title: string;
+  relevanceScore: number;
+  reasoning: string;
+}
+
+export interface LinkSelectionResponse {
+  selectedLinks: SelectedLink[];
+  fromCache: boolean;
+  tokensUsed: number;
+  cost: number;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    inputCost: number;
+    outputCost: number;
+    model: string;
+    hasActualUsage?: boolean;
+  };
 }
 
 interface AIUsageCheck {
@@ -246,6 +269,51 @@ export const aiService = {
       // エラー時は空の分析結果を返す
       return {
         analysis: '分析に失敗しました。しばらく時間をおいてから再度お試しください。',
+        fromCache: false,
+        tokensUsed: 0,
+        cost: 0,
+      };
+    }
+  },
+
+  /**
+   * AIによるリンク選択
+   */
+  async selectRelevantLinks(
+    theme: string,
+    themeDescription: string,
+    linkTitles: string[],
+    maxLinks: number,
+    userId: string,
+    userPlan: UserPlan
+  ): Promise<LinkSelectionResponse> {
+    try {
+      const result = await selectRelevantLinksFunction({
+        theme,
+        themeDescription,
+        linkTitles,
+        maxLinks,
+        userId,
+        userPlan,
+      });
+
+      const data = result.data as LinkSelectionResponse;
+      
+      return data;
+    } catch (error) {
+      console.error('AI link selection error:', error);
+      // フォールバック: 最初のN個のリンクを選択
+      const selectedLinks: SelectedLink[] = linkTitles
+        .slice(0, maxLinks)
+        .map((title, index) => ({
+          index,
+          title,
+          relevanceScore: 0.5,
+          reasoning: 'フォールバック選択（AI API エラー）',
+        }));
+      
+      return {
+        selectedLinks,
         fromCache: false,
         tokensUsed: 0,
         cost: 0,

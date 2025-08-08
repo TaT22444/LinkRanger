@@ -84,8 +84,8 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           {
             title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
             description: sourceContext === 'ai_limit' ? 
-              '保存したリンクの内容をAIが解説' : 
-              '保存したリンクの内容をAIが解説',
+              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）` : 
+              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）`,
             icon: 'cpu',
           },
           {
@@ -113,8 +113,8 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           {
             title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
             description: sourceContext === 'ai_limit' ? 
-              '保存したリンクの内容をAIが解説' : 
-              '保存したリンクの内容をAIが解説',
+              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）` : 
+              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）`,
             icon: 'cpu',
           },
           {
@@ -151,16 +151,9 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           {
             title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
             description: sourceContext === 'ai_limit' ? 
-              '保存したリンクの内容をAIが解説' : 
-              '保存したリンクの内容をAIが解説',
+              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）` : 
+              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）`,
             icon: 'cpu',
-          },
-          {
-            title: '高度なAIモデル',
-            description: sourceContext === 'ai_limit' ? 
-              'より詳細で正確な解説を生成' : 
-              'より詳細なデータ分析',
-            icon: 'search',
           }
         );
       }

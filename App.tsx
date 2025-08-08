@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'rea
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as Linking from 'expo-linking';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -13,6 +14,8 @@ import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { TagDetailScreen } from './src/screens/TagDetailScreen';
 import { Tag } from './src/types';
 import { GOOGLE_SIGN_IN_CONFIG } from './src/config/auth';
+import { notificationService } from './src/services/notificationService';
+import { shareLinkService } from './src/services/shareLinkService';
 
 type RootStackParamList = {
   Auth: undefined;
@@ -85,6 +88,23 @@ const MainNavigator: React.FC = () => {
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
 
+  // Deep Linkingハンドリング
+  useEffect(() => {
+    if (!user) return;
+
+    const cleanup = shareLinkService.setupDeepLinkListener(async (sharedData) => {
+      console.log('🔗 共有リンク受信:', sharedData);
+      
+      try {
+        await shareLinkService.handleSharedLink(sharedData, user);
+      } catch (error) {
+        console.error('❌ 共有リンク処理エラー:', error);
+      }
+    });
+
+    return cleanup;
+  }, [user]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -96,6 +116,18 @@ const AppContent: React.FC = () => {
 
   return (
     <NavigationContainer
+      linking={{
+        prefixes: ['wink://', 'https://wink.app'],
+        config: {
+          screens: {
+            Main: {
+              screens: {
+                Home: 'home'
+              }
+            }
+          }
+        }
+      }}
       onStateChange={(state) => {
         console.log('Navigation state changed:', state);
       }}
@@ -116,12 +148,21 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   useEffect(() => {
-    try {
-      GoogleSignin.configure(GOOGLE_SIGN_IN_CONFIG);
-      console.log('✅ Google Sign-In設定完了');
-    } catch (error) {
-      console.error('❌ Google Sign-In設定エラー:', error);
-    }
+    const initializeApp = async () => {
+      try {
+        // Google Sign-In設定
+        GoogleSignin.configure(GOOGLE_SIGN_IN_CONFIG);
+        console.log('✅ Google Sign-In設定完了');
+        
+        // 通知サービス初期化
+        await notificationService.initializeNotifications();
+        console.log('✅ 通知サービス初期化完了');
+      } catch (error) {
+        console.error('❌ アプリ初期化エラー:', error);
+      }
+    };
+    
+    initializeApp();
   }, []);
 
   return (

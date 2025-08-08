@@ -18,6 +18,8 @@ PODS:
   - EXJSONUtils (0.15.0)
   - EXManifests (0.16.6):
     - ExpoModulesCore
+  - EXNotifications (0.31.4):
+    - ExpoModulesCore
   - Expo (53.0.13):
     - DoubleConversion
     - ExpoModulesCore
@@ -284,6 +286,8 @@ PODS:
     - ExpoModulesCore
     - GoogleSignIn (~> 8.0)
     - React-Core
+  - ExpoAppleAuthentication (7.2.4):
+    - ExpoModulesCore
   - ExpoAsset (11.1.5):
     - ExpoModulesCore
   - ExpoCrypto (14.1.5):
@@ -2028,6 +2032,8 @@ PODS:
   - RNGoogleSignin (15.0.0):
     - GoogleSignIn (~> 8.0)
     - React-Core
+  - RNIap (13.0.4):
+    - React-Core
   - RNScreens (4.11.1):
     - DoubleConversion
     - glog
@@ -2056,42 +2062,6 @@ PODS:
   - RNSVG (15.12.1):
     - React-Core
   - SocketRocket (0.7.1)
-  - Stripe (24.16.2):
-    - StripeApplePay (= 24.16.2)
-    - StripeCore (= 24.16.2)
-    - StripePayments (= 24.16.2)
-    - StripePaymentsUI (= 24.16.2)
-    - StripeUICore (= 24.16.2)
-  - stripe-react-native (0.50.1):
-    - React-Core
-    - Stripe (~> 24.16.1)
-    - StripeApplePay (~> 24.16.1)
-    - StripeFinancialConnections (~> 24.16.1)
-    - StripePayments (~> 24.16.1)
-    - StripePaymentSheet (~> 24.16.1)
-    - StripePaymentsUI (~> 24.16.1)
-  - StripeApplePay (24.16.2):
-    - StripeCore (= 24.16.2)
-  - StripeCore (24.16.2)
-  - StripeFinancialConnections (24.16.2):
-    - StripeCore (= 24.16.2)
-    - StripeUICore (= 24.16.2)
-  - StripePayments (24.16.2):
-    - StripeCore (= 24.16.2)
-    - StripePayments/Stripe3DS2 (= 24.16.2)
-  - StripePayments/Stripe3DS2 (24.16.2):
-    - StripeCore (= 24.16.2)
-  - StripePaymentSheet (24.16.2):
-    - StripeApplePay (= 24.16.2)
-    - StripeCore (= 24.16.2)
-    - StripePayments (= 24.16.2)
-    - StripePaymentsUI (= 24.16.2)
-  - StripePaymentsUI (24.16.2):
-    - StripeCore (= 24.16.2)
-    - StripePayments (= 24.16.2)
-    - StripeUICore (= 24.16.2)
-  - StripeUICore (24.16.2):
-    - StripeCore (= 24.16.2)
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -2101,12 +2071,14 @@ DEPENDENCIES:
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
   - EXManifests (from `../node_modules/expo-manifests/ios`)
+  - EXNotifications (from `../node_modules/expo-notifications/ios`)
   - Expo (from `../node_modules/expo`)
   - expo-dev-client (from `../node_modules/expo-dev-client/ios`)
   - expo-dev-launcher (from `../node_modules/expo-dev-launcher`)
   - expo-dev-menu (from `../node_modules/expo-dev-menu`)
   - expo-dev-menu-interface (from `../node_modules/expo-dev-menu-interface/ios`)
   - "ExpoAdapterGoogleSignIn (from `../node_modules/@react-native-google-signin/google-signin/expo/ios`)"
+  - ExpoAppleAuthentication (from `../node_modules/expo-apple-authentication/ios`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoCrypto (from `../node_modules/expo-crypto/ios`)
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
@@ -2189,9 +2161,9 @@ DEPENDENCIES:
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
+  - RNIap (from `../node_modules/react-native-iap`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
-  - "stripe-react-native (from `../node_modules/@stripe/stripe-react-native`)"
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 SPEC REPOS:
@@ -2204,14 +2176,6 @@ SPEC REPOS:
     - GTMSessionFetcher
     - PromisesObjC
     - SocketRocket
-    - Stripe
-    - StripeApplePay
-    - StripeCore
-    - StripeFinancialConnections
-    - StripePayments
-    - StripePaymentSheet
-    - StripePaymentsUI
-    - StripeUICore
 
 EXTERNAL SOURCES:
   boost:
@@ -2226,6 +2190,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-json-utils/ios"
   EXManifests:
     :path: "../node_modules/expo-manifests/ios"
+  EXNotifications:
+    :path: "../node_modules/expo-notifications/ios"
   Expo:
     :path: "../node_modules/expo"
   expo-dev-client:
@@ -2238,6 +2204,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-dev-menu-interface/ios"
   ExpoAdapterGoogleSignIn:
     :path: "../node_modules/@react-native-google-signin/google-signin/expo/ios"
+  ExpoAppleAuthentication:
+    :path: "../node_modules/expo-apple-authentication/ios"
   ExpoAsset:
     :path: "../node_modules/expo-asset/ios"
   ExpoCrypto:
@@ -2399,12 +2367,12 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-gesture-handler"
   RNGoogleSignin:
     :path: "../node_modules/@react-native-google-signin/google-signin"
+  RNIap:
+    :path: "../node_modules/react-native-iap"
   RNScreens:
     :path: "../node_modules/react-native-screens"
   RNSVG:
     :path: "../node_modules/react-native-svg"
-  stripe-react-native:
-    :path: "../node_modules/@stripe/stripe-react-native"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
@@ -2417,12 +2385,14 @@ SPEC CHECKSUMS:
   EXConstants: 98bcf0f22b820f9b28f9fee55ff2daededadd2f8
   EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
   EXManifests: 691a779b04e4f2c96da46fb9bef4f86174fefcb5
+  EXNotifications: be5e949edf1d60b70e77178b81aa505298fadd07
   Expo: 37871d3899ef838808481997857e8726d5c81471
   expo-dev-client: 9b1e78baf0dd87b005f035d180bbb07c05917fad
   expo-dev-launcher: a0979bd787f020f9783641c74c50984ad53cbad6
   expo-dev-menu: 1367e9de83d353901706442429fb56f1b3cc3164
   expo-dev-menu-interface: 609c35ae8b97479cdd4c9e23c8cf6adc44beea0e
   ExpoAdapterGoogleSignIn: cde973fe0134b1c0204502eeae5ec701cc379a57
+  ExpoAppleAuthentication: 4d2e0c88a4463229760f1fbb9a937a810efb6863
   ExpoAsset: 3bc9adb7dbbf27ae82c18ca97eb988a3ae7e73b1
   ExpoCrypto: a9f1d75baeea6ef8b03c1660621585196c382e85
   ExpoFileSystem: c36eb8155eb2381c83dda7dc210e3eec332368b6
@@ -2508,18 +2478,10 @@ SPEC CHECKSUMS:
   RNCAsyncStorage: b6410dead2732b5c72a7fdb1ecb5651bbcf4674b
   RNGestureHandler: 5594938ba75e71a47c19c90b300011b7777bce48
   RNGoogleSignin: 0354d0a70bc32e081824f625faf26efcad12574e
+  RNIap: 868250beda0ced499d39f53eaa88e8c2951cfe27
   RNScreens: 62fdbbc4c984150b34c36f095c6ba2510ca9b6a5
   RNSVG: 3544def7b3ddc43c7ba69dade91bacf99f10ec46
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
-  Stripe: ae1b368097280ad027c1ec4a817a0a78bb74a6ee
-  stripe-react-native: 8d4b909b2baf833f0a79b7410125859c64c1d205
-  StripeApplePay: 66dc43ec1284904a2cf4c5a0906f86296d23afbd
-  StripeCore: f3a62397cecaf4da1827bcf07de7312ec1f3b96e
-  StripeFinancialConnections: ca4584ba0e08649787d7672b9ca4bb3c972e3d43
-  StripePayments: b3e7817d821ceedd469008d17d94a1494ff1b624
-  StripePaymentSheet: f4f5b71cef665f05a185c29b2d4b59e7dd8c117d
-  StripePaymentsUI: d489e73bf790da1c74e642021475b1a09a4a4500
-  StripeUICore: 723e5024c83acb5ba5e71335e110a471b182a74d
   Yoga: a6cb833e04fb8c59a012b49fb1d040fcb0cbb633
 
 PODFILE CHECKSUM: b3f7592ead352a10d8ca21529e1b8dd4279f7f80

@@ -221,7 +221,7 @@ export const generateEnhancedAITags = onCall({timeoutSeconds: 60, memory: "1GiB"
 });
 
 // 新機能: AI分析（文章による詳細分析）
-export const generateAIAnalysis = onCall({timeoutSeconds: 60, memory: "1GiB"}, async (request) => {
+export const generateAIAnalysis = onCall({timeoutSeconds: 120, memory: "1GiB"}, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
 
   const {title, analysisPrompt, userId} = request.data;
@@ -329,6 +329,20 @@ export const generateAIAnalysis = onCall({timeoutSeconds: 60, memory: "1GiB"}, a
     };
   } catch (error) {
     logger.error(`🤖 [AI Analysis Error] userId: ${userId}`, error);
+
+    // タイムアウトエラーの詳細ログ
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCode = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+
+    if (errorCode === "DEADLINE_EXCEEDED" || errorMessage.includes("timeout") || errorMessage.includes("DEADLINE_EXCEEDED")) {
+      logger.error("⏰ [Timeout Error] AI分析がタイムアウトしました:", {
+        userId,
+        promptLength: analysisPrompt?.length || 0,
+        error: errorMessage,
+      });
+      throw new HttpsError("deadline-exceeded", "AI分析の処理時間が長すぎます。リンク数を減らすか、しばらく時間をおいてからお試しください。");
+    }
+
     throw new HttpsError("internal", `AI分析に失敗しました: ${error}`);
   }
 });
@@ -414,8 +428,10 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
 - 🎯 必須: 各テーマに対してrelatedLinkIndicesを必ず含めること
 - 🎯 必須: リンクタイトルに含まれる具体的なキーワードや概念を反映したテーマを提案すること
 - 🎯 禁止: リンクタイトルから推測できない抽象的なテーマは提案しないこと
-- relatedLinkIndicesには、そのテーマ生成に最も関連性の高いリンクのインデックス（0から始まる）を配列で指定すること
-- 各テーマに対して2-4個の関連リンクインデックスを指定すること
+- relatedLinkIndicesには、そのテーマと内容が**直接的に関連する**リンクのインデックス（0から始まる）のみを配列で指定すること
+- 🚨 重要: テーマに含まれるキーワード（例: "MCP", "AI", "開発"など）がリンクタイトルに明確に含まれている場合のみインデックスを指定すること
+- 🚨 関連性が低いリンクを含めるより、関連性の高いリンクを選ぶこと
+- 各テーマに対して1-3個の**厳選された**関連リンクインデックスを指定すること
 - インデックスは0から${linkTitles.length - 1}までの範囲で指定すること
 - JSON形式以外は出力しないこと`;
 
@@ -553,6 +569,7 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
     throw new HttpsError("internal", "AI候補生成中にエラーが発生しました");
   }
 });
+
 
 export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");

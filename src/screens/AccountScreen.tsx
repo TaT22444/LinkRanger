@@ -8,6 +8,7 @@ import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { AIUsageManager } from '../services/aiUsageService';
+import { deleteUserAccount } from '../services/authService';
 
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -21,6 +22,43 @@ export const AccountScreen: React.FC = () => {
 
   // Freeプランかどうか
   const isFree = userPlan === 'free';
+
+  // 1ヶ月後のリセット日を計算
+  const renewalDate = useMemo(() => {
+    if (!user) return null;
+    
+    // プラン開始日があればそれを使用、なければアカウント作成日を使用
+    const baseDate = user.subscription?.startDate || user.createdAt;
+    if (!baseDate) return null;
+    
+    const startDate = baseDate instanceof Date ? baseDate : new Date(baseDate);
+    const nextRenewal = new Date(startDate);
+    
+    // 現在の日付と比較して、次のリセット日を計算
+    const now = new Date();
+    nextRenewal.setMonth(startDate.getMonth() + 1);
+    
+    // 既に過ぎている場合は、さらに1ヶ月後にする
+    while (nextRenewal <= now) {
+      nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+    }
+    
+    return nextRenewal;
+  }, [user]);
+
+  // リセット日テキストの生成
+  const renewalDateText = useMemo(() => {
+    if (isTestAccount) return '';
+    if (!renewalDate) return '毎月1日にリセット';
+    
+    const options: Intl.DateTimeFormatOptions = { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    };
+    const formattedDate = renewalDate.toLocaleDateString('ja-JP', options);
+    return `${formattedDate}にリセット`;
+  }, [renewalDate, isTestAccount]);
 
   // AI使用状況の状態
   const [aiUsage, setAiUsage] = useState({
@@ -57,7 +95,8 @@ export const AccountScreen: React.FC = () => {
           limit,
           used,
           remaining,
-          monthlyStats: usageStats.currentMonth
+          monthlyStats: usageStats.currentMonth,
+          renewalDate: renewalDate?.toISOString()
         });
         
         setAiUsage({ used, limit, remaining });
@@ -70,7 +109,7 @@ export const AccountScreen: React.FC = () => {
     };
 
     fetchAIUsage();
-  }, [user?.uid, userPlan, planLimits.aiUsageLimit]);
+  }, [user?.uid, userPlan, planLimits.aiUsageLimit, renewalDate]);
 
   // AIタグ付与設定を切り替える
   const toggleAutoTagging = async (enabled: boolean) => {
@@ -105,16 +144,32 @@ export const AccountScreen: React.FC = () => {
     navigation.navigate('TagManagement');
   };
   const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      Alert.alert('エラー', 'ログアウトに失敗しました');
-    }
+    Alert.alert(
+      'ログアウト',
+      '本当にログアウトしますか？',
+      [
+        {
+          text: 'キャンセル',
+          style: 'cancel',
+        },
+        {
+          text: 'ログアウト',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+            } catch (error) {
+              Alert.alert('エラー', 'ログアウトに失敗しました');
+            }
+          },
+        },
+      ]
+    );
   };
   const handleDeleteAccount = () => {
     Alert.alert(
       'アカウント削除',
-      'アカウントを削除すると、すべてのデータが完全に削除され、復元できません。本当に削除しますか？',
+      'アカウントを削除すると、すべてのデータが完全に削除され、復元できません。本当によろしいですか？',
       [
         {
           text: 'キャンセル',
@@ -123,9 +178,13 @@ export const AccountScreen: React.FC = () => {
         {
           text: '削除',
           style: 'destructive',
-          onPress: () => {
-            // TODO: アカウント削除の実装
-            Alert.alert('注意', 'この機能は現在実装中です');
+          onPress: async () => {
+            try {
+              await deleteUserAccount();
+              Alert.alert('成功', 'アカウントが削除されました');
+            } catch (error) {
+              Alert.alert('エラー', 'アカウントの削除に失敗しました');
+            }
           },
         },
       ]
@@ -174,9 +233,9 @@ export const AccountScreen: React.FC = () => {
 
       {/* AIタグ自動付与 */}
       <View style={styles.section}>
-        {!isTestAccount && (
+        {!isTestAccount && renewalDateText && (
           <Text style={styles.renewalDateText}>
-              毎月1日にリセット
+            {renewalDateText}
           </Text>
         )}
       
@@ -662,4 +721,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-}); 
+});

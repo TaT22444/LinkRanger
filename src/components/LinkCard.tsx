@@ -11,6 +11,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Link, Tag } from '../types';
 import { formatDateTimeShort } from '../utils/dateFormatter';
+import { notificationService } from '../services/notificationService';
 
 interface LinkCardProps {
   link: Link;
@@ -40,6 +41,9 @@ export const LinkCard: React.FC<LinkCardProps> = ({
     try {
       const supported = await Linking.canOpenURL(link.url);
       if (supported) {
+        // 3日間未アクセス通知システム：リンクアクセス時の処理
+        await notificationService.handleLinkAccess(link);
+        
         // 外部リンクを開く前に既読マーク
         if (onMarkAsRead && !link.isRead) {
           onMarkAsRead();
@@ -73,30 +77,7 @@ export const LinkCard: React.FC<LinkCardProps> = ({
     return patterns.some(pattern => pattern.test(link.url));
   };
 
-  const getTimeUntilExpiry = () => {
-    if (link.isRead) return null; // 既読の場合は表示しない
-    
-    const now = new Date();
-    const expiresAt = new Date(link.expiresAt);
-    const timeDiff = expiresAt.getTime() - now.getTime();
-    
-    if (timeDiff <= 0) return '期限切れ';
-    
-    const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    
-    if (days > 0) {
-      return `あと${days}日`;
-    } else if (hours > 0) {
-      return `あと${hours}時間`;
-    } else {
-      const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
-      return `あと${minutes}分`;
-    }
-  };
-
-  const expiryText = getTimeUntilExpiry();
-  const isNearExpiry = expiryText && (expiryText.includes('時間') || expiryText.includes('分'));
+  // 期限切れ表示機能を削除（3日間未アクセス通知機能に置き換え）
 
   return (
     <TouchableOpacity
@@ -183,16 +164,6 @@ export const LinkCard: React.FC<LinkCardProps> = ({
             {formatDateTimeShort(link.createdAt)}
           </Text>
           
-          {/* 期限切れまでの時間表示 */}
-          {expiryText && (
-            <Text style={[
-              styles.expiryText,
-              isNearExpiry && styles.expiryTextUrgent,
-              link.isRead && styles.expiryTextRead
-            ]}>
-              {expiryText}
-            </Text>
-          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -289,19 +260,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 140, 0, 0.6)', // 控えめなオレンジ色の枠線
     borderWidth: 1, // 1pxの控えめな枠線  
     backgroundColor: 'rgba(255, 140, 0, 0.1)', // 非常に薄いオレンジ背景
-  },
-  expiryText: {
-    fontSize: 9,
-    color: '#666',
-    marginTop: 4,
-  },
-  expiryTextUrgent: {
-    color: '#FF0000',
-    fontWeight: 'bold',
-  },
-  expiryTextRead: {
-    textDecorationLine: 'line-through',
-    color: '#666',
   },
   selectionCheckbox: {
     marginRight: 12,

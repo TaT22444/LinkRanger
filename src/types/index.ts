@@ -71,7 +71,6 @@ export interface Link {
   status: LinkStatus;
   createdAt: Date;
   updatedAt: Date;
-  lastAccessedAt?: Date;
   
   // 分類・整理
   tagIds: string[]; // タグIDの配列（ユーザー固有のタグID）
@@ -114,14 +113,15 @@ export interface Link {
   priority: 'low' | 'medium' | 'high';
   notes?: string; // ユーザーメモ
   
-  // 期限切れ機能
+  // 通知機能（3日間未アクセス通知）
   isRead: boolean; // 既読状態
-  expiresAt: Date; // 期限切れ日時（作成から7日後）
-  isExpired: boolean; // 期限切れ状態（表示制御用）
-  notificationsSent: {
-    threeDays: boolean; // 3日後通知送信済み
-    oneDay: boolean; // 1日前通知送信済み
-    oneHour: boolean; // 1時間前通知送信済み
+  lastAccessedAt?: Date; // 最終アクセス時刻
+  
+  // 非推奨：期限切れ機能（通知機能に移行済み）
+  expiresAt?: Date; // 期限切れ日時（非推奨）
+  isExpired?: boolean; // 期限切れ状態（非推奨）
+  notificationsSent?: {
+    unused3Days: boolean; // 3日間未アクセス通知送信済み
   };
 }
 

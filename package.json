@@ -25,6 +25,7 @@
     "expo-auth-session": "~6.2.1",
     "expo-crypto": "~14.1.5",
     "expo-dev-client": "^5.2.4",
+    "expo-notifications": "~0.31.4",
     "expo-status-bar": "~2.2.3",
     "firebase": "^11.10.0",
     "firebase-admin": "^13.4.0",

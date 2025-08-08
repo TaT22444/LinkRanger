@@ -979,16 +979,18 @@ export const TagDetailScreen: React.FC = () => {
     );
   }, [updateUserSettings]);
 
-  // Smart link selection for suggested analysis - クリティカル回答に最適化
+  // Smart link selection for suggested analysis - キーワードベース選択に戻しました
   const selectLinksForSuggestedAnalysis = useCallback((links: Link[], suggestion: AnalysisSuggestion): Link[] => {
-    console.log('🔍 クリティカル回答用リンク選択開始:', {
+    console.log('🔍 キーワードベースリンク選択開始:', {
       totalLinks: links.length,
+      linkTitles: links.map(l => l.title),
       suggestionTitle: suggestion.title,
       keywords: suggestion.keywords,
-      relatedLinkIndices: suggestion.relatedLinkIndices
+      relatedLinkIndices: suggestion.relatedLinkIndices,
+      suggestionDetails: suggestion
     });
 
-    // 🎯 新機能: テーマ生成時に記録された関連リンクを優先的に参照
+    // 🎯 優先リンク処理: テーマ生成時に記録された関連リンクを優先的に参照
     let priorityLinks: Link[] = [];
     if (suggestion.relatedLinkIndices && suggestion.relatedLinkIndices.length > 0) {
       priorityLinks = suggestion.relatedLinkIndices
@@ -1001,105 +1003,124 @@ export const TagDetailScreen: React.FC = () => {
         priorityLinkTitles: priorityLinks.map(l => l.title.slice(0, 30) + '...')
       });
       
-      // 優先リンクが十分にある場合は、それらを直接返す
-      if (priorityLinks.length >= 2) {
-        console.log('✅ 優先リンクが十分にあるため、それらを選択:', {
-          selectedCount: Math.min(priorityLinks.length, 3),
-          selectedTitles: priorityLinks.slice(0, 3).map(l => l.title.slice(0, 30) + '...')
+      // 優先リンクの関連性を再確認
+      if (priorityLinks.length >= 1) {
+        const themeKeywords = suggestion.title.toLowerCase().split(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠]+/).filter(k => k.length > 1);
+        const relevantPriorityLinks = priorityLinks.filter(link => {
+          const content = `${link.title} ${link.description || ''}`.toLowerCase();
+          return themeKeywords.some(keyword => content.includes(keyword));
         });
-        return priorityLinks.slice(0, 3);
+        
+        console.log('🔍 優先リンクの関連性チェック:', {
+          themeKeywords,
+          totalPriorityLinks: priorityLinks.length,
+          relevantPriorityLinks: relevantPriorityLinks.length,
+          relevantTitles: relevantPriorityLinks.map(l => l.title.slice(0, 30) + '...')
+        });
+        
+        if (relevantPriorityLinks.length >= 2) {
+          console.log('✅ 関連性の高い優先リンクを選択:', {
+            selectedCount: Math.min(relevantPriorityLinks.length, 3),
+            selectedTitles: relevantPriorityLinks.slice(0, 3).map(l => l.title.slice(0, 30) + '...')
+          });
+          return relevantPriorityLinks.slice(0, 3);
+        } else if (relevantPriorityLinks.length === 1) {
+          console.log('⚠️ 関連性のある優先リンクは1つのみ、スコアリングと組み合わせます');
+          priorityLinks = relevantPriorityLinks;
+        } else {
+          console.log('⚠️ 優先リンクに関連性が見つからず、通常のスコアリングを使用');
+          priorityLinks = [];
+        }
       }
     }
 
-    // テーマとの関連度を厳密に評価
+    // テーマとの関連度をスコアリング
     const scoredLinks = links.map(link => {
       let score = 0;
       const content = `${link.title} ${link.description || ''}`.toLowerCase();
       const suggestionLower = suggestion.title.toLowerCase();
       
-      // 🎯 新機能: 優先リンクの場合は大幅ボーナス
+      // 優先リンクボーナス
       const isPriorityLink = priorityLinks.some(priorityLink => priorityLink.id === link.id);
       if (isPriorityLink) {
-        score += 100; // 優先リンクは大幅ボーナス
+        score += 30;
         console.log('🎯 優先リンクボーナス適用:', {
           linkTitle: link.title.slice(0, 30) + '...',
-          bonusScore: 100
+          bonusScore: 30
         });
       }
       
-      // 🎯 クリティカル回答に必要な厳格な評価基準
-      
-      // 1. テーマタイトルとの完全一致（最重要）
+      // 1. テーマタイトルとの完全一致
       if (content.includes(suggestionLower)) {
-        score += 50; // 完全一致は高スコア
+        score += 50;
+        console.log('🎯 テーマ完全一致:', {
+          suggestionLower,
+          linkTitle: link.title.slice(0, 50) + '...',
+          addedScore: 50
+        });
       }
       
-      // 2. テーマタイトルの主要単語との完全一致（改善版）
-      const themeWords = suggestionLower.split(/\s+/).filter(word => word.length > 2);
+      // 2. テーマの主要単語との一致
+      const excludeWords = ['とは', 'について', 'の', 'と', 'は', 'が', 'を', 'に', 'で', 'から', '?', '？', '!', '！'];
+      const themeWords = suggestionLower
+        .split(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠]+/)
+        .filter(word => word.length > 1 && !excludeWords.includes(word));
+      
       let themeWordMatches = 0;
       themeWords.forEach(word => {
         if (content.includes(word)) {
           themeWordMatches++;
-          score += 20; // 主要単語マッチ
+          score += 20;
+          console.log('✅ テーマ単語マッチ:', {
+            word,
+            linkTitle: link.title.slice(0, 50) + '...',
+            addedScore: 20
+          });
         }
       });
       
-      // 🎯 追加: テーマの主要キーワードとの部分一致も評価
-      const mainKeywords = ['kiro', 'ai', '開発', 'ツール', 'エディタ', 'ide'];
-      let mainKeywordMatches = 0;
-      mainKeywords.forEach(keyword => {
-        if (content.includes(keyword)) {
-          mainKeywordMatches++;
-          score += 15; // 主要キーワードマッチ
-        }
-      });
-      
-      // 3. キーワードとの完全一致（重要度に応じて重み付け）
+      // 3. suggestionのキーワードとの一致
       let keywordMatches = 0;
       suggestion.keywords.forEach((keyword, index) => {
         const keywordLower = keyword.toLowerCase();
         if (content.includes(keywordLower)) {
           keywordMatches++;
-          // 最初のキーワードほど重要
-          score += 25 - (index * 3);
+          const keywordScore = 25 - (index * 3);
+          score += keywordScore;
+          console.log('🎯 キーワードマッチ:', {
+            keyword,
+            linkTitle: link.title.slice(0, 40) + '...',
+            keywordScore,
+            index
+          });
         }
       });
       
-      // 4. クリティカル回答に適したコンテンツ品質評価
+      // 4. コンテンツ品質評価
       let qualityScore = 0;
+      if (link.title.length > 15) qualityScore += 5;
+      if (link.description && link.description.length > 50) qualityScore += 8;
       
-      // タイトルの詳細さ
-      if (link.title.length > 15) {
-        qualityScore += 5;
-      }
-      
-      // 説明文の充実度
-      if (link.description && link.description.length > 50) {
-        qualityScore += 8;
-      }
-      
-      // 新しさ（最新の情報ほど価値が高い）
+      // 新しさ評価
       const daysSinceCreated = (Date.now() - link.createdAt.getTime()) / (1000 * 60 * 60 * 24);
       if (daysSinceCreated < 30) {
-        qualityScore += 5; // 1ヶ月以内
+        qualityScore += 5;
       } else if (daysSinceCreated < 90) {
-        qualityScore += 3; // 3ヶ月以内
+        qualityScore += 3;
       }
       
       score += qualityScore;
       
-      // 5. テーマ関連性の改善された評価
-      const relevanceScore = themeWordMatches + mainKeywordMatches + keywordMatches;
+      // 5. 関連性評価
+      const relevanceScore = themeWordMatches + keywordMatches;
       if (relevanceScore === 0) {
-        // テーマと全く関連しない場合は大幅減点
-        score = Math.max(0, score - 30);
+        score = Math.max(0, score - 30); // 関連性が全くない場合は減点
       }
       
       return { 
         link, 
         score,
         themeWordMatches,
-        mainKeywordMatches,
         keywordMatches,
         qualityScore,
         relevanceScore,
@@ -1110,82 +1131,70 @@ export const TagDetailScreen: React.FC = () => {
     // スコアでソート
     const sortedLinks = scoredLinks.sort((a, b) => b.score - a.score);
     
-    // 🎯 クリティカル回答に適した改善された閾値
+    // 関連性のあるリンクを選択
     const minRelevanceScore = 1; // 最低1つの関連要素があればOK
-    const minTotalScore = 20; // 最低スコアを緩和
+    const minTotalScore = 20; // 最低スコア
     
     const relevantLinks = sortedLinks.filter(item => 
       item.relevanceScore >= minRelevanceScore && item.score >= minTotalScore
     );
     
-    console.log('📊 クリティカル回答用リンク評価結果:', {
+    console.log('📊 キーワードベースリンク評価結果:', {
       allLinks: sortedLinks.map(item => ({
         title: item.link.title.slice(0, 30) + '...',
         score: Math.round(item.score),
         relevanceScore: item.relevanceScore,
         themeWords: item.themeWordMatches,
-        mainKeywords: item.mainKeywordMatches,
         keywords: item.keywordMatches,
         isPriorityLink: item.isPriorityLink
       })),
       relevantLinksCount: relevantLinks.length,
       minRelevanceScore,
-      minTotalScore,
-      topScores: sortedLinks.slice(0, 3).map(item => Math.round(item.score)),
-      topLinksDetail: sortedLinks.slice(0, 5).map(item => ({
-        title: item.link.title,
-        score: Math.round(item.score),
-        relevanceScore: item.relevanceScore,
-        themeWords: item.themeWordMatches,
-        mainKeywords: item.mainKeywordMatches,
-        keywords: item.keywordMatches,
-        isPriorityLink: item.isPriorityLink
-      }))
+      minTotalScore
     });
     
-    // 🎯 クリティカル回答に最適化された選択戦略
+    // 選択戦略
     let selected: Link[] = [];
     
     if (relevantLinks.length >= 3) {
-      // 3個以上ある場合は最上位3個を選択（厳格にテーマ関連）
       selected = relevantLinks.slice(0, 3).map(item => item.link);
     } else if (relevantLinks.length > 0) {
-      // 1-2個の場合はそれらを選択（追加はしない）
       selected = relevantLinks.map(item => item.link);
     } else {
-      // 関連性のあるリンクが0個の場合は、スコア上位1個までを選択（厳格制限）
+      // 第一フォールバック: minTotalScoreを満たすリンク
       const fallbackLinks = sortedLinks
         .filter(item => item.score >= minTotalScore)
-        .slice(0, 1);
-      selected = fallbackLinks.map(item => item.link);
+        .slice(0, 2);
+      
+      if (fallbackLinks.length > 0) {
+        selected = fallbackLinks.map(item => item.link);
+        console.log('🔄 第一フォールバック: スコア制限で選択', {
+          selectedCount: selected.length,
+          minScore: minTotalScore,
+          selectedScores: fallbackLinks.map(item => item.score)
+        });
+      } else {
+        // 第二フォールバック: スコアに関係なく上位2つを強制選択
+        selected = sortedLinks.slice(0, 2).map(item => item.link);
+        console.log('🆘 第二フォールバック: 強制選択', {
+          selectedCount: selected.length,
+          reason: 'no_links_met_score_criteria',
+          selectedScores: sortedLinks.slice(0, 2).map(item => item.score),
+          allScores: sortedLinks.map(item => ({ title: item.link.title.slice(0, 20), score: item.score }))
+        });
+      }
     }
     
-    // 最大3つまでの厳格な制限（1つでも2つでも構わない）
     selected = selected.slice(0, 3);
     
-    // 選択されたリンクが少ない場合の警告ログ
-    if (selected.length < 3) {
-      console.log('⚠️ クリティカル回答用リンク選択結果:', {
-        selectedCount: selected.length,
-        reason: relevantLinks.length === 0 ? '関連性のあるリンクが存在しない' : 
-                relevantLinks.length < 3 ? '関連性のあるリンクが不足' : '正常',
-        recommendation: selected.length === 0 ? '分析を中止することを推奨' : 
-                      selected.length === 1 ? '1つのリンクのみで分析実行' :
-                      '2つのリンクで分析実行'
-      });
-    }
-    
-    console.log('✅ クリティカル回答用選択されたリンク:', {
+    console.log('✅ キーワードベース選択されたリンク:', {
       count: selected.length,
       titles: selected.map(link => link.title.slice(0, 40) + '...'),
       scores: sortedLinks
         .filter(item => selected.includes(item.link))
         .map(item => Math.round(item.score)),
-      strategy: relevantLinks.length >= 3 ? 'top_three_critical' : 
-                relevantLinks.length > 0 ? 'relevant_only' : 'fallback_limited',
-      priorityLinksUsed: selected.some(link => 
-        priorityLinks.some(priorityLink => priorityLink.id === link.id)
-      )
+      strategy: relevantLinks.length >= 3 ? 'top_three' : 
+                relevantLinks.length > 0 ? 'relevant_only' : 'fallback_limited'
     });
     
     return selected;
@@ -1205,6 +1214,9 @@ export const TagDetailScreen: React.FC = () => {
     if (suggestedTheme) {
       const placeholder = createAnalyzingPlaceholder(suggestedTheme);
       setAnalysisHistory(prev => [placeholder, ...prev]);
+      // プレースホルダー追加時に解説結果リストを開き、プレースホルダーを展開
+      setShowAllSavedAnalyses(true);
+      setExpandedAnalysisId('analyzing-placeholder');
     }
     
     console.log('🤖 AI分析実行開始:', {
@@ -1219,8 +1231,22 @@ export const TagDetailScreen: React.FC = () => {
       if (!user?.uid || selectedLinks.length === 0) {
         console.log('❌ AI分析中止: 条件不足', {
           hasUser: !!user?.uid,
-          linkCount: selectedLinks.length
+          linkCount: selectedLinks.length,
+          suggestedTheme: suggestedTheme
         });
+        
+        // UI状態をリセット
+        setAiAnalyzing(false);
+        setCurrentAnalyzingTheme(null);
+        
+        // 分析プレースホルダーをクリア
+        setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
+        
+        // エラーメッセージを表示
+        Alert.alert(
+          'AI分析エラー', 
+          `分析対象のリンクが選択されませんでした。\n\nテーマ: ${suggestedTheme || '不明'}\n利用可能リンク数: ${tagLinks.length}\n選択されたリンク数: ${selectedLinks.length}`
+        );
         return;
       }
 
@@ -1321,7 +1347,13 @@ export const TagDetailScreen: React.FC = () => {
         const linksWithContent = await Promise.all(
           selectedLinks.map(async (link) => {
             try {
-              const metadata = await metadataService.fetchMetadata(link.url, user.uid);
+              // メタデータ取得にタイムアウトを追加（30秒）
+              const metadataPromise = metadataService.fetchMetadata(link.url, user.uid);
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error(`メタデータ取得タイムアウト: ${link.url}`)), 30000);
+              });
+              
+              const metadata = await Promise.race([metadataPromise, timeoutPromise]);
               return {
                 ...link,
                 enhancedMetadata: metadata
@@ -1433,11 +1465,19 @@ ${analysisContext.map((link, index) =>
         } else {
           try {
             const aiUsageManager = AIUsageManager.getInstance();
-            const usageCheck = await aiUsageManager.checkUsageLimit(
+            
+            // Firebase制限チェックにタイムアウトを追加（10秒）
+            const usageCheckPromise = aiUsageManager.checkUsageLimit(
               user.uid,
               userPlan,
               'analysis'
             );
+            
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Firebase制限チェックタイムアウト（10秒）')), 10000);
+            });
+            
+            const usageCheck = await Promise.race([usageCheckPromise, timeoutPromise]) as any;
             
             if (!usageCheck.allowed) {
               console.log('❌ AI分析中止: Firebase詳細制限チェック失敗', {
@@ -1475,8 +1515,34 @@ ${analysisContext.map((link, index) =>
               textLength: analysisPrompt.length
             });
           } catch (limitCheckError) {
-            console.warn('⚠️ Firebase詳細制限チェックエラー（続行）:', limitCheckError);
-            // Firebase制限チェックに失敗した場合も続行（ローカル制限チェックは既に通過済み）
+            console.error('❌ Firebase詳細制限チェックエラー:', limitCheckError);
+            
+            // タイムアウトエラーやその他の重大エラーの場合は分析を中止
+            if (limitCheckError instanceof Error && limitCheckError.message.includes('タイムアウト')) {
+              console.log('❌ AI分析中止: Firebase制限チェックタイムアウト');
+              
+              // 分析プレースホルダーをクリア
+              setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
+              
+              // カウントを戻す
+              setAiUsageCount(prev => {
+                const correctedCount = Math.max(0, (prev ?? 0) - 1);
+                console.log('🔄 Firebase制限チェックタイムアウト時に使用量を元に戻す:', {
+                  previous: prev,
+                  correctedCount
+                });
+                return correctedCount;
+              });
+              
+              Alert.alert(
+                'AI分析の実行に失敗しました',
+                'ネットワークエラーまたはサーバーエラーが発生しました。しばらく時間をおいてから再度お試しください。'
+              );
+              return;
+            }
+            
+            // その他のエラーの場合は警告のみ出して続行
+            console.warn('⚠️ Firebase詳細制限チェック失敗（続行）:', limitCheckError);
           }
         }
         // 実際のプロンプト詳細分析
@@ -1592,6 +1658,8 @@ ${analysisContext.map((link, index) =>
           
           // 分析完了時に自動的に結果を展開（正しいID形式で設定）
           setExpandedAnalysisId(`current-${newAnalysis.id}`);
+          // 解説結果リストを自動的に開く
+          setShowAllSavedAnalyses(true);
           
           return updatedHistory;
         });
@@ -1880,6 +1948,8 @@ ${analysisContext.map((link, index) =>
           
           // 分析完了時に自動的に結果を展開（正しいID形式で設定）
           setExpandedAnalysisId(`current-${newAnalysis.id}`);
+          // 解説結果リストを自動的に開く
+          setShowAllSavedAnalyses(true);
           
           return updatedHistory;
         });
@@ -1960,7 +2030,17 @@ ${analysisContext.map((link, index) =>
       setAiSuggestions([]);
       
       const errorMessage = error instanceof Error ? error.message : 'AI分析に失敗しました';
-      Alert.alert('エラー', `${errorMessage}\n\nしばらく時間をおいてから再度お試しください。`);
+      
+      // タイムアウトエラーの場合は専用メッセージを表示
+      if (errorMessage.includes('timeout') || errorMessage.includes('DEADLINE_EXCEEDED') || errorMessage.includes('処理時間が長すぎます')) {
+        Alert.alert(
+          'タイムアウトエラー', 
+          '処理に時間がかかりすぎました。\n\n解決方法：\n• 選択するリンクの数を減らす\n• しばらく時間をおいてから再試行\n• ネットワーク環境の確認',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('エラー', `${errorMessage}\n\nしばらく時間をおいてから再度お試しください。`);
+      }
     } finally {
       setAiAnalyzing(false);
       setCurrentAnalyzingTheme(null);
@@ -1987,8 +2067,72 @@ ${analysisContext.map((link, index) =>
       return;
     }
 
-    // 🚀 確認アラートの表示判定
-    const executeAnalysis = () => {
+    // 🔍 既存分析のチェック機能（更新確認プロセス）
+    const checkExistingAnalysis = () => {
+      const expectedTitle = `${suggestedTheme}について（3件分析）`; // 通常のタイトル形式
+      const existingAnalysis = savedAnalyses?.find(analysis => 
+        analysis.title === expectedTitle || 
+        analysis.title.startsWith(`${suggestedTheme}について（`) ||
+        analysis.title.includes(suggestedTheme)
+      );
+
+      if (existingAnalysis) {
+        const createdAtString = existingAnalysis.createdAt instanceof Date 
+          ? existingAnalysis.createdAt.toLocaleString() 
+          : existingAnalysis.createdAt?.toDate?.()?.toLocaleString() || '不明';
+
+        console.log('💡 既存の分析結果を発見 - 更新確認を表示:', {
+          existingTitle: existingAnalysis.title,
+          existingId: existingAnalysis.id,
+          theme: suggestedTheme,
+          createdAt: createdAtString
+        });
+
+        // 更新確認アラートを表示
+        Alert.alert(
+          '既存の分析結果があります',
+          `「${suggestedTheme}」のテーマで既に分析結果があります。\n\n作成日時: ${createdAtString}\n\nリンクの内容が更新されている可能性があります。分析を更新しますか？`,
+          [
+            {
+              text: '既存結果を表示（消費なし）',
+              style: 'cancel',
+              onPress: () => {
+                console.log('✅ 既存分析結果を表示選択（カウント増加なし）');
+                
+                // 既存の分析アイテムを直接開く（新しいアイテムは作らない）
+                setShowAllSavedAnalyses(true);
+                setExpandedAnalysisId(existingAnalysis.id);
+                
+                console.log('💡 既存結果アイテムを開きました - AI使用回数は消費されていません:', {
+                  openedAnalysisId: existingAnalysis.id,
+                  analysisTitle: existingAnalysis.title
+                });
+              }
+            },
+            {
+              text: '分析を更新（1回消費）',
+              style: 'default',
+              onPress: () => {
+                console.log('🔄 分析更新を選択 - 新規分析を実行（AI使用回数消費）');
+                // 新規分析を実行（executeAnalysisの残りの処理を実行）
+                proceedWithNewAnalysis();
+              }
+            }
+          ],
+          { 
+            cancelable: false,
+            userInterfaceStyle: 'dark'
+          }
+        );
+        
+        return true; // 確認プロセスを実行したため、通常の処理は停止
+      }
+      
+      return false; // 新規分析が必要
+    };
+
+    // 🆕 新規分析実行関数
+    const proceedWithNewAnalysis = () => {
       // 既存のタイマーをクリア
       if (analysisTimer) {
         clearTimeout(analysisTimer);
@@ -1997,18 +2141,36 @@ ${analysisContext.map((link, index) =>
 
       // 前の分析結果をクリア
       setAnalysisHistory([]);
+      
+      // テーマ選択時に解説結果リストを即座に開く
+      setShowAllSavedAnalyses(true);
 
       // AIが提案されたテーマに基づいて適切なリンクを選択
       // 🚀 修正: 実際に生成されたsuggestionを使用してキーワードも活用
       const actualSuggestion = aiSuggestions.find(s => s.title === suggestedTheme);
-      const suggestion = actualSuggestion || { title: suggestedTheme, keywords: [], description: '' };
+      
+      // 🔧 フォールバック: suggestionが見つからない場合はテーマからキーワードを生成
+      const suggestion = actualSuggestion || { 
+        title: suggestedTheme, 
+        keywords: suggestedTheme.split(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠]+/).filter(k => k.length > 1),
+        description: '' 
+      };
       
       console.log('🎯 リンク選択用suggestion:', {
         theme: suggestedTheme,
         hasActualSuggestion: !!actualSuggestion,
         keywords: suggestion.keywords,
         description: suggestion.description,
-        keywordCount: suggestion.keywords.length
+        keywordCount: suggestion.keywords.length,
+        availableSuggestions: aiSuggestions.map(s => s.title)
+      });
+      
+      console.log('📋 リンク選択前の状況:', {
+        theme: suggestedTheme,
+        totalTagLinks: tagLinks.length,
+        tagLinkTitles: tagLinks.map(l => l.title),
+        suggestionKeywords: suggestion.keywords,
+        suggestionTitle: suggestion.title
       });
       
       const selectedLinks = selectLinksForSuggestedAnalysis(tagLinks, suggestion);
@@ -2016,7 +2178,8 @@ ${analysisContext.map((link, index) =>
       console.log('🔗 選択されたリンク:', {
         theme: suggestedTheme,
         linkCount: selectedLinks.length,
-        linkTitles: selectedLinks.map(l => l.title)
+        linkTitles: selectedLinks.map(l => l.title),
+        selectionSuccess: selectedLinks.length > 0
       });
 
       // AI分析実行（テーマと説明文の両方を渡す）
@@ -2024,6 +2187,18 @@ ${analysisContext.map((link, index) =>
         ? `${suggestedTheme}（${suggestion.description}）`
         : suggestedTheme;
       executeAIAnalysis(selectedLinks, 'suggested', themeWithDescription);
+    };
+
+    // 🚀 確認アラートの表示判定
+    const executeAnalysis = () => {
+      // 既存分析をチェック
+      if (checkExistingAnalysis()) {
+        console.log('📋 既存分析の確認プロセスを開始');
+        return; // 確認プロセスを実行したので、通常の処理は停止
+      }
+
+      // 既存分析がない場合は、直接新規分析を実行
+      proceedWithNewAnalysis();
     };
 
     if (showAIAnalysisAlert) {
@@ -2301,7 +2476,7 @@ ${analysisContext.map((link, index) =>
                       styles.usageBadgeText,
                       isTestAccount && styles.usageBadgeTextTest
                     ]}>
-                                              {isTestAccount 
+                        {isTestAccount 
                           ? '制限なし' 
                           : (() => {
                               const limit = getAIUsageLimit();
@@ -2358,7 +2533,7 @@ ${analysisContext.map((link, index) =>
                       </View>
                       <View style={styles.newGenerateButtonTextContainer}>
                         <Text style={styles.newGenerateButtonTitle}>
-                          {loadingSuggestions ? 'テーマ生成中...' : '分析テーマを生成'}
+                          {loadingSuggestions ? 'テーマ生成中...' : 'テーマを生成'}
                         </Text>
                         <Text style={styles.newGenerateButtonSubtitle}>
                           {tagLinks.length === 0 ? 
@@ -2593,6 +2768,21 @@ ${analysisContext.map((link, index) =>
                 </Text>
               </TouchableOpacity> */}
               
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setShowOptionsMenu(false);
+                  Alert.alert(
+                    'AI解説機能とは？',
+                    'AI解説機能は、保存されたリンクの内容を分析し、指定されたテーマに基づいて包括的な解説を生成する機能です。\n\n主な特徴：\n• 指定のタグが付与された複数のリンクから関連情報を自動収集\n• AIによる解説生成\n\nGoogle Gemini AIを使用して、知識のインプットをお助けします。',
+                    [{ text: 'OK', style: 'default' }]
+                  );
+                }}
+              >
+                <Feather name="help-circle" size={20} color="#FFF" />
+                <Text style={styles.optionText}>AI解説機能とは？</Text>
+              </TouchableOpacity>
+              
               <View style={styles.optionSeparator} />
               
               <TouchableOpacity
@@ -2750,16 +2940,28 @@ ${analysisContext.map((link, index) =>
             >
               <Feather name="x" size={22} color="#999" />
             </TouchableOpacity>
-            <Text style={styles.themeModalTitle}>分析テーマを選択</Text>
+            <Text style={styles.themeModalTitle}>解説テーマを選択</Text>
             <TouchableOpacity
-              style={styles.themeModalRegenerateButton}
+              style={[
+                styles.themeModalRegenerateButton,
+                (loadingSuggestions || themeGenerationAttempts >= 3) && styles.themeModalRegenerateButtonDisabled
+              ]}
               onPress={() => {
                 generateSuggestionsInternal();
               }}
-              disabled={loadingSuggestions}
+              disabled={loadingSuggestions || themeGenerationAttempts >= 3}
             >
-              <Feather name="refresh-cw" size={16} color="#8A2BE2" />
-              <Text style={styles.themeModalRegenerateText}>再生成</Text>
+              <Feather 
+                name="refresh-cw" 
+                size={16} 
+                color={themeGenerationAttempts >= 3 ? "#666" : "#8A2BE2"} 
+              />
+              <Text style={[
+                styles.themeModalRegenerateText,
+                themeGenerationAttempts >= 3 && styles.themeModalRegenerateTextDisabled
+              ]}>
+                {themeGenerationAttempts >= 3 ? '生成済み' : '再生成'}
+              </Text>
             </TouchableOpacity>
 
           </View>
@@ -2768,8 +2970,16 @@ ${analysisContext.map((link, index) =>
         <ScrollView style={styles.themeModalScroll} showsVerticalScrollIndicator={false}>
           <View style={styles.themeModalInfo}>
             <Text style={styles.themeModalInfoText}>
-              {tagLinks.length}件のリンクから生成されたテーマです。選択したテーマでAI分析を開始します。
+              {tagLinks.length}件のリンクから生成されたテーマです。選択したテーマでAI解説を開始します。
             </Text>
+            {themeGenerationAttempts >= 3 && (
+              <View style={styles.themeModalLimitInfo}>
+                <Feather name="info" size={14} color="#666" />
+                <Text style={styles.themeModalLimitText}>
+                  このタグから生成できる新しいテーマが出尽くしました。新しいリンクを追加すると、さらにテーマを生成できます。
+                </Text>
+              </View>
+            )}
           </View>
           
           {loadingSuggestions ? (
@@ -4181,6 +4391,12 @@ const styles = StyleSheet.create({
     color: '#8A2BE2',
     fontWeight: '600',
   },
+  themeModalRegenerateButtonDisabled: {
+    opacity: 0.5,
+  },
+  themeModalRegenerateTextDisabled: {
+    color: '#666',
+  },
   themeModalScroll: {
     flex: 1,
   },
@@ -4193,6 +4409,21 @@ const styles = StyleSheet.create({
     color: '#999',
     lineHeight: 18,
     textAlign: 'center',
+  },
+  themeModalLimitInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 12,
+    padding: 10,
+    backgroundColor: 'rgba(102, 102, 102, 0.1)',
+    borderRadius: 8,
+  },
+  themeModalLimitText: {
+    fontSize: 12,
+    color: '#666',
+    lineHeight: 16,
+    marginLeft: 6,
+    flex: 1,
   },
   themeModalItem: {
     marginHorizontal: 16,

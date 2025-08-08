@@ -36,6 +36,7 @@ import { linkService, batchService } from '../services';
 import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
 import { PlanService } from '../services/planService';
+import { notificationService } from '../services/notificationService';
 
 import { AIStatusMonitor } from '../components/AIStatusMonitor';
 import { UpgradeModal } from '../components/UpgradeModal';
@@ -162,6 +163,10 @@ export const HomeScreen: React.FC = () => {
     
     try {
       const newLinkId = await createLink(fullLinkData);
+      
+      // 新しく作成されたリンクの通知をスケジュール
+      const newLink = { ...fullLinkData, id: newLinkId } as Link;
+      await notificationService.scheduleUnusedLinkNotification(newLink);
       
       // 🚀 手動選択されたタグがある場合は自動AI処理をスキップするかユーザーに確認
       const hasManualTags = (linkData.tagIds || []).length > 0;
