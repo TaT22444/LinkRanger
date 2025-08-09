@@ -420,15 +420,15 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         if (aiResponse.fromCache) successMessage += '💾 キャッシュから取得';
         else successMessage += `🔥 新規AI分析 (トークン: ${aiResponse.tokensUsed})`;
         
-        Alert.alert('🎉 Gemini AI生成完了', successMessage);
+        // Alert.alert('🎉 Gemini AI生成完了', successMessage); // アラート削除
       } else {
-        Alert.alert(
-          '💡 情報', 
-          `AIが${aiResponse.tags.length}個のタグを生成しましたが、すべて既に選択済みでした。
+        // Alert.alert(
+        //   '💡 情報', 
+        //   `AIが${aiResponse.tags.length}個のタグを生成しましたが、すべて既に選択済みでした。
 
-` +
-          `生成されたタグ: ${aiResponse.tags.join(', ')}`
-        );
+// ` +
+//           `生成されたタグ: ${aiResponse.tags.join(', ')}`
+//         ); // アラート削除
       }
       
     } catch (error) {

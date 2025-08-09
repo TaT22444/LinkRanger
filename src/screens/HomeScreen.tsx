@@ -272,7 +272,7 @@ export const HomeScreen: React.FC = () => {
       } else {
         message += `🔥 新規AI解説 (トークン: ${aiResponse.tokensUsed})`;
       }
-      Alert.alert('🎉 自動AI解説完了', message);
+      // Alert.alert('🎉 自動AI解説完了', message); // アラート削除
 
     } catch (error: any) {
       

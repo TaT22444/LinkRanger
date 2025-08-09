@@ -59,22 +59,39 @@ export class AIUsageManager {
     const monthlyLimit = PlanService.getAIUsageLimit({ subscription: { plan } } as any);
     const dailyLimit = PlanService.getAIDailyLimit({ subscription: { plan } } as any);
 
-    // 月次制限チェック
+    // 月次制限チェック（特定のtype用）
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-    const monthlyUsage = await this.getMonthlyUsage(userId, currentMonth);
+    let currentUsageCount = 0;
     
-    if (monthlyUsage.totalRequests >= monthlyLimit) {
+    // typeに応じて適切な使用回数を取得
+    if (type === 'analysis') {
+      currentUsageCount = await this.getMonthlyAnalysisUsage(userId, currentMonth);
+    } else {
+      // 他のtypeについては従来通り総使用量を使用
+      const monthlyUsage = await this.getMonthlyUsage(userId, currentMonth);
+      currentUsageCount = monthlyUsage.totalRequests;
+    }
+    
+    if (currentUsageCount >= monthlyLimit) {
       return {
         allowed: false,
         reason: `月間利用制限に達しました（${monthlyLimit}回/月）`
       };
     }
 
-    // 日次制限チェック
+    // 日次制限チェック（特定のtype用）
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const dailyUsage = await this.getDailyUsage(userId, today);
+    let currentDailyUsage = 0;
     
-    if (dailyUsage >= dailyLimit) {
+    // typeに応じて適切な日次使用回数を取得
+    if (type === 'analysis') {
+      currentDailyUsage = await this.getDailyAnalysisUsage(userId, today);
+    } else {
+      // 他のtypeについては従来通り総使用量を使用
+      currentDailyUsage = await this.getDailyUsage(userId, today);
+    }
+    
+    if (currentDailyUsage >= dailyLimit) {
       return {
         allowed: false,
         reason: `日間利用制限に達しました（${dailyLimit}回/日）`
@@ -222,6 +239,19 @@ export class AIUsageManager {
       where('userId', '==', userId),
       where('type', '==', 'analysis'),
       where('month', '==', month)
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.size;
+  }
+
+  // 日次のAI解説機能使用回数を取得
+  private async getDailyAnalysisUsage(userId: string, day: string): Promise<number> {
+    const q = query(
+      collection(db, 'aiUsage'),
+      where('userId', '==', userId),
+      where('type', '==', 'analysis'),
+      where('day', '==', day)
     );
 
     const snapshot = await getDocs(q);
