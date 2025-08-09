@@ -693,7 +693,19 @@ export const TagDetailScreen: React.FC = () => {
       });
       return true;
     }
-    return aiUsageCount < getAIUsageLimit();
+    
+    const limit = getAIUsageLimit();
+    const canUse = aiUsageCount < limit;
+    
+    console.log('🔍 canUseAI計算:', {
+      aiUsageCount,
+      limit,
+      canUse,
+      userPlan: user?.subscription?.plan || 'free',
+      isTestAccount
+    });
+    
+    return canUse;
   }, [isTestAccount, aiUsageCount, getAIUsageLimit, user?.uid, user?.email, user?.isTestAccount, user?.role]);
 
   // Load AI usage from Firebase on mount
@@ -1706,16 +1718,26 @@ ${analysisContext.map((link, index) =>
             limit: getAIUsageLimit()
           });
           
-          // バックグラウンドでFirebaseと同期
-          loadAIUsage().catch(error => {
+          // 使用状況を即座に再読み込みして、ボタン状態を更新
+          try {
+            await loadAIUsage(true);
+            console.log('✅ AI使用量同期完了 - ボタン状態更新（成功）');
+          } catch (error) {
             console.error('❌ バックグラウンド同期エラー:', error);
-          });
+          }
           
           console.log('🔄 使用量表示更新完了（オプティミスティック）');
         } catch (recordError) {
           console.error('❌ AI使用量記録エラー:', recordError);
           // フォールバック: ローカル状態のみ更新
           setAiUsageCount(prev => prev + 1);
+          // エラー時でも使用状況をFirebaseから取得して同期
+          try {
+            await loadAIUsage(true);
+            console.log('✅ AI使用量同期完了 - エラー時フォールバック（成功時）');
+          } catch (syncError) {
+            console.error('❌ エラー時同期失敗（成功時）:', syncError);
+          }
         }
         
         // Hide theme list after analysis completion
@@ -1986,14 +2008,24 @@ ${analysisContext.map((link, index) =>
             limit: getAIUsageLimit()
           });
           
-          // バックグラウンドでFirebaseと同期
-          loadAIUsage(true).catch(error => {
+          // 使用状況を即座に再読み込みして、ボタン状態を更新
+          try {
+            await loadAIUsage(true);
+            console.log('✅ AI使用量同期完了 - ボタン状態更新');
+          } catch (error) {
             console.error('❌ バックグラウンド同期エラー（情報不足）:', error);
-          });
+          }
         } catch (recordError) {
           console.error('❌ AI使用量記録エラー:', recordError);
           // フォールバック: ローカル状態のみ更新
           setAiUsageCount(prev => prev + 1);
+          // エラー時でも使用状況をFirebaseから取得して同期
+          try {
+            await loadAIUsage(true);
+            console.log('✅ AI使用量同期完了 - エラー時フォールバック（情報不足時）');
+          } catch (syncError) {
+            console.error('❌ エラー時同期失敗（情報不足時）:', syncError);
+          }
         }
         
         // Hide theme list after analysis completion
@@ -2079,7 +2111,11 @@ ${analysisContext.map((link, index) =>
       if (existingAnalysis) {
         const createdAtString = existingAnalysis.createdAt instanceof Date 
           ? existingAnalysis.createdAt.toLocaleString() 
-          : existingAnalysis.createdAt?.toDate?.()?.toLocaleString() || '不明';
+          : (existingAnalysis.createdAt && typeof existingAnalysis.createdAt === 'object' && 'seconds' in existingAnalysis.createdAt 
+            ? new Date((existingAnalysis.createdAt as any).seconds * 1000).toLocaleString()
+            : (existingAnalysis.createdAt && typeof existingAnalysis.createdAt === 'object' && 'toDate' in existingAnalysis.createdAt
+              ? (existingAnalysis.createdAt as any).toDate().toLocaleString()
+              : '不明'));
 
         console.log('💡 既存の分析結果を発見 - 更新確認を表示:', {
           existingTitle: existingAnalysis.title,
@@ -2221,13 +2257,7 @@ ${analysisContext.map((link, index) =>
     executeAIAnalysis
   ]);
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('ja-JP', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    }).format(date);
-  };
+
 
   // Markdown content renderer for better formatting
   const renderMarkdownContent = (content: string) => {
@@ -2385,12 +2415,7 @@ ${analysisContext.map((link, index) =>
   }, [user?.uid, tag.id, savedAnalysesCache, expandedAnalysisId]);
 
   // 🚀 カスタム確認アラートの表示
-  const showCustomAnalysisAlert = useCallback((theme: string, onConfirm: () => void) => {
-    setAlertTheme(theme);
-    setAlertCallback(() => onConfirm);
-    setDontShowAgain(false);
-    setShowCustomAlert(true);
-  }, []);
+
 
   // 🚀 カスタムアラートの確認処理
   const handleCustomAlertConfirm = useCallback(() => {
@@ -2477,7 +2502,7 @@ ${analysisContext.map((link, index) =>
                       isTestAccount && styles.usageBadgeTextTest
                     ]}>
                         {isTestAccount 
-                          ? '制限なし' 
+                          ? '無制限' 
                           : (() => {
                               const limit = getAIUsageLimit();
                               const currentUsage = aiUsageCount ?? 0; // undefinedの場合は0を使用
@@ -2490,7 +2515,7 @@ ${analysisContext.map((link, index) =>
                                 canUseAI,
                                 userPlan: user?.subscription?.plan || 'free'
                               });
-                              return `残り ${remaining} / ${limit} 回`;
+                              return `${currentUsage} / ${limit} 回`;
                             })()
                         }
                     </Text>

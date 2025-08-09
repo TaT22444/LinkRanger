@@ -27,23 +27,61 @@ export const AccountScreen: React.FC = () => {
   const renewalDate = useMemo(() => {
     if (!user) return null;
     
-    // プラン開始日があればそれを使用、なければアカウント作成日を使用
-    const baseDate = user.subscription?.startDate || user.createdAt;
-    if (!baseDate) return null;
-    
-    const startDate = baseDate instanceof Date ? baseDate : new Date(baseDate);
-    const nextRenewal = new Date(startDate);
-    
-    // 現在の日付と比較して、次のリセット日を計算
-    const now = new Date();
-    nextRenewal.setMonth(startDate.getMonth() + 1);
-    
-    // 既に過ぎている場合は、さらに1ヶ月後にする
-    while (nextRenewal <= now) {
-      nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+    try {
+      // プラン開始日があればそれを使用、なければアカウント作成日を使用
+      let baseDate = user.subscription?.startDate || user.createdAt;
+      if (!baseDate) return null;
+      
+      // Firebase Timestampの処理
+      let startDate: Date;
+      if (baseDate && typeof baseDate === 'object' && 'seconds' in baseDate) {
+        // Firebase Timestamp
+        startDate = new Date((baseDate as any).seconds * 1000);
+      } else if (baseDate && typeof baseDate === 'object' && 'toDate' in baseDate) {
+        // Firebase Timestamp with toDate method
+        startDate = (baseDate as any).toDate();
+      } else if (baseDate instanceof Date) {
+        startDate = new Date(baseDate);
+      } else if (typeof baseDate === 'string') {
+        startDate = new Date(baseDate);
+      } else {
+        console.warn('Unsupported date format:', baseDate);
+        return null;
+      }
+      
+      if (isNaN(startDate.getTime())) {
+        console.warn('Invalid date:', baseDate);
+        return null;
+      }
+      
+      // 現在の日付を取得
+      const now = new Date();
+      
+      // 次のリセット日を計算（startDateの同じ日付の次の月）
+      const nextRenewal = new Date(startDate);
+      nextRenewal.setMonth(startDate.getMonth() + 1);
+      
+      // 月末の調整（例：1/31 -> 2/28）
+      if (nextRenewal.getDate() !== startDate.getDate()) {
+        nextRenewal.setDate(0); // 前月の最後の日
+      }
+      
+      // 既に過ぎている場合は、さらに1ヶ月後にする
+      while (nextRenewal <= now) {
+        const targetDay = startDate.getDate();
+        nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+        
+        // 月末の調整
+        if (nextRenewal.getDate() !== targetDay) {
+          nextRenewal.setDate(0);
+        }
+      }
+      
+      return nextRenewal;
+    } catch (error) {
+      console.error('リセット日計算エラー:', error);
+      return null;
     }
-    
-    return nextRenewal;
   }, [user]);
 
   // リセット日テキストの生成
@@ -82,11 +120,19 @@ export const AccountScreen: React.FC = () => {
       if (!user?.uid) return;
       
       try {
-        const limit = planLimits.aiUsageLimit > 0 ? planLimits.aiUsageLimit : 1; // Ensure limit is not zero
+        // テストアカウントの場合は特別扱い
+        if (isTestAccount) {
+          setAiUsage({ used: 0, limit: 999999, remaining: 999999 });
+          return;
+        }
+        
+        const limit = planLimits.aiUsageLimit > 0 ? planLimits.aiUsageLimit : 1;
         
         const aiUsageManager = AIUsageManager.getInstance();
         const usageStats = await aiUsageManager.getUserUsageStats(user.uid);
-        const used = usageStats.currentMonth.totalRequests || 0;
+        
+        // AI解説機能（analysis）の使用回数を取得
+        const used = usageStats.analysisUsage || 0;
         const remaining = Math.max(0, limit - used);
         
         console.log('🔍 AI使用状況取得:', {
@@ -95,6 +141,7 @@ export const AccountScreen: React.FC = () => {
           limit,
           used,
           remaining,
+          analysisUsage: usageStats.analysisUsage,
           monthlyStats: usageStats.currentMonth,
           renewalDate: renewalDate?.toISOString()
         });
@@ -109,7 +156,7 @@ export const AccountScreen: React.FC = () => {
     };
 
     fetchAIUsage();
-  }, [user?.uid, userPlan, planLimits.aiUsageLimit, renewalDate]);
+  }, [user?.uid, userPlan, planLimits.aiUsageLimit, renewalDate, isTestAccount]);
 
   // AIタグ付与設定を切り替える
   const toggleAutoTagging = async (enabled: boolean) => {
@@ -242,7 +289,7 @@ export const AccountScreen: React.FC = () => {
         <View style={styles.aiUsageRow}>
           <Text style={styles.aiUsageLabel}>AI解説機能</Text>
           <Text style={styles.aiUsageValue}>
-            {isTestAccount ? '無制限' : `あと ${aiUsage.remaining} / ${aiUsage.limit}回`}
+            {isTestAccount ? '無制限' : `${aiUsage.used} / ${aiUsage.limit}回`}
           </Text>
         </View>
 

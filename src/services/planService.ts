@@ -58,7 +58,44 @@ export class PlanService {
   // プラン取得（統一アクセスポイント）
   static getUserPlan(user: User | null): UserPlan {
     if (!user) return 'free';
-    return user.subscription?.plan || 'free';
+    
+    const subscription = user.subscription;
+    if (!subscription) return 'free';
+    
+    // ダウングレードされたプランがある場合の処理
+    if (subscription.downgradeTo) {
+      const now = new Date();
+      const downgradeDate = this.getDateFromFirebaseTimestamp(subscription.downgradeEffectiveDate);
+      
+      // ダウングレード有効日が過ぎていれば、ダウングレード先のプランを返す
+      if (downgradeDate && now >= downgradeDate) {
+        return subscription.downgradeTo;
+      }
+      // まだダウングレード有効日前なら、現在のプランを継続
+    }
+    
+    return subscription.plan || 'free';
+  }
+  
+  // Firebase Timestampを Dateに変換するヘルパー
+  private static getDateFromFirebaseTimestamp(timestamp: any): Date | null {
+    if (!timestamp) return null;
+    
+    try {
+      if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
+        return new Date(timestamp.seconds * 1000);
+      } else if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp) {
+        return timestamp.toDate();
+      } else if (timestamp instanceof Date) {
+        return timestamp;
+      } else if (typeof timestamp === 'string') {
+        return new Date(timestamp);
+      }
+      return null;
+    } catch (error) {
+      console.error('Timestamp conversion error:', error);
+      return null;
+    }
   }
 
   // テストアカウント判定

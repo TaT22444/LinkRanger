@@ -17,6 +17,8 @@ export interface UserSubscription {
   startDate: Date;
   endDate?: Date; // pro/premiumの場合の有効期限
   isActive: boolean;
+  downgradeTo?: UserPlan; // ダウングレード先のプラン
+  downgradeEffectiveDate?: Date; // ダウングレード有効日
   features: {
     maxLinks: number; // -1 = unlimited
     autoAISummary: boolean; // 自動AI要約
