@@ -164,9 +164,9 @@ export const HomeScreen: React.FC = () => {
     try {
       const newLinkId = await createLink(fullLinkData);
       
-      // 新しく作成されたリンクの通知をスケジュール
-      const newLink = { ...fullLinkData, id: newLinkId } as Link;
-      await notificationService.scheduleUnusedLinkNotification(newLink);
+      // 通知は3日間未読だった場合のみ発行するため、リンク作成時の即座通知は削除
+      // const newLink = { ...fullLinkData, id: newLinkId } as Link;
+      // await notificationService.scheduleUnusedLinkNotification(newLink);
       
       // 🚀 手動選択されたタグがある場合は自動AI処理をスキップするかユーザーに確認
       const hasManualTags = (linkData.tagIds || []).length > 0;
@@ -1126,7 +1126,7 @@ export const HomeScreen: React.FC = () => {
                 <View style={styles.searchInputContainer}>
                   <TextInput
                     style={styles.headerSearchInput}
-                    placeholder="リンクを検索..."
+                    placeholder="リンクやタグを検索..."
                     placeholderTextColor="#666"
                     value={searchQuery}
                     onChangeText={handleSearchTextChange}

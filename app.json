@@ -26,7 +26,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "17",
+      "buildNumber": "18",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -48,7 +48,10 @@
       },
       "entitlements": {
         "com.apple.developer.applesignin": ["Default"]
-      }
+      },
+      "backgroundModes": [
+        "background-fetch"
+      ]
     },
     "notification": {
       "icon": "./assets/icon.png",
@@ -80,7 +83,9 @@
           "color": "#8A2BE2",
           "defaultChannel": "default"
         }
-      ]
+      ],
+      "expo-background-fetch",
+      "expo-task-manager"
     ],
     "extra": {
       "eas": {

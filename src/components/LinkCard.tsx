@@ -142,8 +142,6 @@ export const LinkCard: React.FC<LinkCardProps> = ({
         <View style={styles.rightSection}>
           {/* アクションボタン列 */}
           <View style={styles.actionsRow}>
-            {/* ピン留めボタン */}
-            {/* ピン留めボタン */}
             <TouchableOpacity
               style={[
                 styles.actionButton,
@@ -180,7 +178,8 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     minHeight: 70,
   },
   leftSection: {

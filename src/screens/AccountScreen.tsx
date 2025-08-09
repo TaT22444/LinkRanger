@@ -9,11 +9,19 @@ import { PlanService } from '../services/planService';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { AIUsageManager } from '../services/aiUsageService';
 import { deleteUserAccount } from '../services/authService';
+import * as Application from 'expo-application';
 
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user, logout } = useAuth();
   const userEmail = user?.email || 'No Email';
+  const [appVersion, setAppVersion] = useState('');
+
+  useEffect(() => {
+    const version = Application.nativeApplicationVersion;
+    const buildVersion = Application.nativeBuildVersion;
+    setAppVersion(`${version} (${buildVersion})`);
+  }, []);
   
   // PlanServiceを使用してプラン情報を取得（useMemoで最適化）
   const userPlan = useMemo(() => PlanService.getUserPlan(user), [user]);
@@ -289,7 +297,7 @@ export const AccountScreen: React.FC = () => {
         <View style={styles.aiUsageRow}>
           <Text style={styles.aiUsageLabel}>AI解説機能</Text>
           <Text style={styles.aiUsageValue}>
-            {isTestAccount ? '無制限' : `${aiUsage.used} / ${aiUsage.limit}回`}
+            {isTestAccount ? '無制限' : `${aiUsage.remaining} / ${aiUsage.limit}回`}
           </Text>
         </View>
 
@@ -350,7 +358,7 @@ export const AccountScreen: React.FC = () => {
         </TouchableOpacity>
         <View style={[styles.menuItem, { borderBottomWidth: 0 }]}> 
           <Feather name="info" size={18} color="#8A2BE2" style={styles.itemIcon} />
-          <Text style={styles.itemText}>アプリバージョン: 1.0.0</Text>
+          <Text style={styles.itemText}>アプリバージョン: {appVersion}</Text>
         </View>
       </View>
       

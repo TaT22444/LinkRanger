@@ -129,16 +129,7 @@ export const TagDetailScreen: React.FC = () => {
     // 分析プレースホルダーをクリア
     setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
     
-    // 使用量を元に戻す（中断時はカウントしない）
-    setAiUsageCount(prev => {
-      const correctedCount = Math.max(0, (prev ?? 0) - 1);
-      console.log('🔄 AI分析中断時に使用量を元に戻す:', {
-        previous: prev,
-        correctedCount,
-        reason: '分析が中断されたため、カウントを戻しました'
-      });
-      return correctedCount;
-    });
+    // 中断時は使用量記録を行わない（Firebaseへの記録も行われないため）
     
     // 確認アラートを閉じる
     setShowExitConfirmAlert(false);
@@ -1278,17 +1269,6 @@ export const TagDetailScreen: React.FC = () => {
         // 分析プレースホルダーをクリア
         setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
         
-        // 制限チェック失敗時はカウントを戻す
-        setAiUsageCount(prev => {
-          const correctedCount = Math.max(0, (prev ?? 0) - 1);
-          console.log('🔄 制限チェック失敗時に使用量を元に戻す:', {
-            previous: prev,
-            correctedCount,
-            reason: '制限に達していたため、カウントを戻しました'
-          });
-          return correctedCount;
-        });
-        
         // 使用量を再読み込み（表示を更新）
         await loadAIUsage();
         
@@ -1311,16 +1291,6 @@ export const TagDetailScreen: React.FC = () => {
         // 分析プレースホルダーをクリア
         setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
         
-        // canUseAIチェック失敗時はカウントを戻す
-        setAiUsageCount(prev => {
-          const correctedCount = Math.max(0, (prev ?? 0) - 1);
-          console.log('🔄 canUseAIチェック失敗時に使用量を元に戻す:', {
-            previous: prev,
-            correctedCount,
-            reason: '使用制限に達していたため、カウントを戻しました'
-          });
-          return correctedCount;
-        });
         
         Alert.alert(
           'AI分析を実行できません',
@@ -1329,16 +1299,7 @@ export const TagDetailScreen: React.FC = () => {
         return;
       }
 
-      // 連続実行防止のため、一時的に使用量を増加（成功時に確定、失敗時に戻す）
-      setAiUsageCount(prev => {
-        const newCount = (prev ?? 0) + 1;
-        console.log('🚀 AI分析開始 - 一時的に使用量増加（成功時に確定）:', {
-          previous: prev,
-          newCount,
-          limit: getAIUsageLimit()
-        });
-        return newCount;
-      });
+      // 🔧 修正: オプティミスティック更新を削除し、実際の成功後のみカウントを更新
       
       // コスト追跡用の変数
       let totalCost = 0;
@@ -1501,17 +1462,6 @@ ${analysisContext.map((link, index) =>
               // 分析プレースホルダーをクリア
               setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
               
-              // Firebase制限チェック失敗時はカウントを戻す
-              setAiUsageCount(prev => {
-                const correctedCount = Math.max(0, (prev ?? 0) - 1);
-                console.log('🔄 Firebase制限チェック失敗時に使用量を元に戻す:', {
-                  previous: prev,
-                  correctedCount,
-                  reason: 'Firebase制限チェックに失敗したため、カウントを戻しました'
-                });
-                return correctedCount;
-              });
-              
               // 使用量を再読み込み（表示を更新）
               await loadAIUsage();
               
@@ -1536,15 +1486,6 @@ ${analysisContext.map((link, index) =>
               // 分析プレースホルダーをクリア
               setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
               
-              // カウントを戻す
-              setAiUsageCount(prev => {
-                const correctedCount = Math.max(0, (prev ?? 0) - 1);
-                console.log('🔄 Firebase制限チェックタイムアウト時に使用量を元に戻す:', {
-                  previous: prev,
-                  correctedCount
-                });
-                return correctedCount;
-              });
               
               Alert.alert(
                 'AI分析の実行に失敗しました',
@@ -2044,16 +1985,7 @@ ${analysisContext.map((link, index) =>
         linkCount: tagLinks.length
       });
       
-      // エラー時に使用量を元に戻す（ユーザーの損失を防ぐ）
-      setAiUsageCount(prev => {
-        const correctedCount = Math.max(0, (prev ?? 0) - 1);
-        console.log('🔄 エラー時に使用量を元に戻す（ユーザー保護）:', {
-          previous: prev,
-          correctedCount,
-          reason: 'AI分析が失敗したため、カウントを戻しました'
-        });
-        return correctedCount;
-      });
+      // エラー時は使用量記録を行わない（Firebaseへの記録も行われないため）
       
       // Remove analyzing placeholder on error
       setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
@@ -2515,7 +2447,7 @@ ${analysisContext.map((link, index) =>
                                 canUseAI,
                                 userPlan: user?.subscription?.plan || 'free'
                               });
-                              return `${currentUsage} / ${limit} 回`;
+                              return `${remaining} / ${limit} 回`;
                             })()
                         }
                     </Text>

@@ -130,7 +130,7 @@ class NotificationService {
   }
 
   /**
-   * リンク未アクセス通知をスケジュール
+   * リンク未アクセス通知を即座スケジュール（主にCloud Functionsからの呼び出し用）
    */
   async scheduleUnusedLinkNotification(link: Link): Promise<string | null> {
     try {
@@ -139,10 +139,9 @@ class NotificationService {
         return null;
       }
 
-      // 3日後の通知予定時刻を計算
+      // 即座通知を送信（リンク作成時ではなく3日間未読チェック時に呼ばれる）
       const notificationDate = new Date();
-      notificationDate.setDate(notificationDate.getDate() + 3);
-      notificationDate.setHours(10, 0, 0, 0);
+      notificationDate.setSeconds(notificationDate.getSeconds() + 5); // 5秒後に即座通知
 
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
@@ -219,9 +218,10 @@ class NotificationService {
         updatedAt: now,
       });
 
-      // 3. 新しい通知を3日後にスケジュール
-      const updatedLink = { ...link, lastAccessedAt: now, isRead: true };
-      await this.scheduleUnusedLinkNotification(updatedLink);
+      // 3. リンクアクセス時は即座の新しい通知スケジュールは行わない
+      // バックグラウンドタスクが3日後にチェックして通知する
+      // const updatedLink = { ...link, lastAccessedAt: now, isRead: true };
+      // await this.scheduleUnusedLinkNotification(updatedLink);
 
       console.log('✅ リンクアクセス処理完了:', {
         linkId: link.id,

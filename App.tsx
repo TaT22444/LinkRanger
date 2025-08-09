@@ -15,6 +15,7 @@ import { TagDetailScreen } from './src/screens/TagDetailScreen';
 import { Tag } from './src/types';
 import { GOOGLE_SIGN_IN_CONFIG } from './src/config/auth';
 import { notificationService } from './src/services/notificationService';
+import { backgroundTaskService } from './src/services/backgroundTaskService';
 import { shareLinkService } from './src/services/shareLinkService';
 
 type RootStackParamList = {
@@ -157,6 +158,10 @@ const App: React.FC = () => {
         // 通知サービス初期化
         await notificationService.initializeNotifications();
         console.log('✅ 通知サービス初期化完了');
+        
+        // バックグラウンドタスクサービス初期化
+        await backgroundTaskService.registerBackgroundTasks();
+        console.log('✅ バックグラウンドタスクサービス初期化完了');
       } catch (error) {
         console.error('❌ アプリ初期化エラー:', error);
       }
