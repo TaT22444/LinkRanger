@@ -12,6 +12,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Link, UserPlan } from '../types';
 import { TagSelectorModal } from '../components/TagSelectorModal';
+import { notificationService } from '../services/notificationService';
 
 interface Tag {
   id: string;
@@ -55,6 +56,13 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
     try {
       const supported = await Linking.canOpenURL(link.url);
       if (supported) {
+        // 3日間未アクセス通知システム：リンクアクセス時の処理
+        await notificationService.handleLinkAccess(link);
+        
+        // 外部リンクを開く前に既読マーク
+        if (onUpdateLink && !link.isRead) {
+          await onUpdateLink(link.id, { isRead: true });
+        }
         await Linking.openURL(link.url);
       } else {
         Alert.alert('エラー', 'このリンクを開くことができません');

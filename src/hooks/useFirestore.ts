@@ -65,11 +65,20 @@ export const useLinks = (
   const [links, setLinks] = useState<Link[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // 🚀 段階的ローディング用の設定
+  const INITIAL_PAGE_SIZE = 20; // 初回ロード数を20に変更
+  const LOAD_MORE_PAGE_SIZE = 10; // 追加ロード数
 
   useEffect(() => {
     if (!userId) {
       setLinks([]);
       setLoading(false);
+      setHasMore(true);
+      setNextCursor(undefined);
       return;
     }
 
@@ -91,11 +100,16 @@ export const useLinks = (
       setLinks(cachedEntry!.data);
       setLoading(false);
       setError(null);
+      // キャッシュデータの場合、hasMoreをfalseに設定
+      setHasMore(false);
+      setNextCursor(undefined);
       return;
     }
 
     setLoading(true);
     setError(null);
+    setHasMore(true);
+    setNextCursor(undefined);
 
     // リアルタイム監視 vs 一回限り読み取りの選択
     if (cacheUtils.shouldUseRealtime()) {
@@ -150,6 +164,9 @@ export const useLinks = (
           
           setLoading(false);
           setError(null);
+          // リアルタイム更新の場合、全データを取得するためhasMoreはfalse
+          setHasMore(false);
+          setNextCursor(undefined);
           
           // キャッシュ更新
           globalCache.links.set(cacheKey, {
@@ -176,25 +193,29 @@ export const useLinks = (
         globalCache.activeSubscriptions.delete(cacheKey);
       };
     } else {
-      // 一回限り読み取り（高負荷時）
+      // 一回限り読み取り（高負荷時）- 段階的ローディングで実装
       console.log('📖 useLinks: 一回限り読み取り（高負荷対応）', {
         userId,
         activeSubscriptions: globalCache.activeSubscriptions.size,
-        threshold: CACHE_CONFIG.REALTIME_THRESHOLD
+        threshold: CACHE_CONFIG.REALTIME_THRESHOLD,
+        initialPageSize: INITIAL_PAGE_SIZE
       });
 
       const fetchLinks = async () => {
         try {
-          const result = await linkService.getUserLinks(userId, filter, sort, 100);
+          const result = await linkService.getUserLinks(userId, filter, sort, INITIAL_PAGE_SIZE);
           console.log('📥 useLinks: 一回限り読み取り完了', {
             userId,
             linksCount: result.data.length,
-            strategy: 'one_time_read'
+            hasMore: result.hasMore,
+            strategy: 'one_time_read_paginated'
           });
           
           setLinks(result.data);
           setLoading(false);
           setError(null);
+          setHasMore(result.hasMore);
+          setNextCursor(result.nextCursor);
           
           // キャッシュ保存
           globalCache.links.set(cacheKey, {
@@ -213,6 +234,47 @@ export const useLinks = (
       fetchLinks();
     }
   }, [userId, filter, sort]);
+
+  // 🚀 無限スクロール用のloadMore関数
+  const loadMore = useCallback(async () => {
+    if (!userId || !hasMore || isLoadingMore || loading) return;
+
+    console.log('📚 useLinks: loadMore開始', {
+      userId,
+      hasMore,
+      isLoadingMore,
+      currentLinksCount: links.length,
+      nextCursor
+    });
+
+    setIsLoadingMore(true);
+
+    try {
+      const result = await linkService.getUserLinks(
+        userId, 
+        filter, 
+        sort, 
+        LOAD_MORE_PAGE_SIZE, 
+        nextCursor
+      );
+      
+      console.log('📥 useLinks: loadMore完了', {
+        userId,
+        newLinksCount: result.data.length,
+        hasMoreAfterLoad: result.hasMore,
+        totalLinksCount: links.length + result.data.length
+      });
+
+      setLinks(prevLinks => [...prevLinks, ...result.data]);
+      setHasMore(result.hasMore);
+      setNextCursor(result.nextCursor);
+    } catch (err) {
+      console.error('❌ useLinks: loadMoreエラー', err);
+      setError(err instanceof Error ? err.message : '追加読み込みに失敗しました');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [userId, filter, sort, hasMore, isLoadingMore, loading, links.length, nextCursor]);
 
   const createLink = useCallback(async (linkData: Omit<Link, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
@@ -303,8 +365,12 @@ export const useLinks = (
     createLink,
     updateLink,
     deleteLink,
+    // 🚀 段階的ローディング用の新しいプロパティ
+    hasMore,
+    isLoadingMore,
+    loadMore,
   };
-};
+};;
 
 // ===== タグ関連のHooks =====
 export const useTags = (userId: string | null) => {
@@ -585,12 +651,12 @@ export const usePaginatedLinks = (
   const [lastDoc, setLastDoc] = useState<any>(null);
 
   const loadLinks = useCallback(async (isInitial: boolean = false) => {
-    if (!userId || loading) return;
+    if (!userId || (loading && isInitial) || (!hasMore && !isInitial) ) return;
+
+    setLoading(true);
+    setError(null);
 
     try {
-      setLoading(true);
-      setError(null);
-
       const result = await linkService.getUserLinks(
         userId,
         filter,
@@ -602,7 +668,7 @@ export const usePaginatedLinks = (
       if (isInitial) {
         setLinks(result.data);
       } else {
-        setLinks(prev => [...prev, ...result.data]);
+        setLinks(prev => [...prev, ...result.data.filter(newItem => !prev.some(prevItem => prevItem.id === newItem.id))]);
       }
 
       setHasMore(result.hasMore);
@@ -612,7 +678,7 @@ export const usePaginatedLinks = (
     } finally {
       setLoading(false);
     }
-  }, [userId, filter, sort, pageSize, lastDoc, loading]);
+  }, [userId, filter, sort, pageSize, lastDoc, loading, hasMore]);
 
   const loadMore = useCallback(() => {
     if (hasMore && !loading) {
@@ -627,8 +693,69 @@ export const usePaginatedLinks = (
   }, [loadLinks]);
 
   useEffect(() => {
-    refresh();
-  }, [userId, filter, sort]);
+    if (userId) {
+      refresh();
+    } else {
+      setLinks([]);
+      setHasMore(true);
+      setLastDoc(null);
+    }
+  }, [userId, JSON.stringify(filter), JSON.stringify(sort)]);
+
+  const createLink = useCallback(async (linkData: Omit<Link, 'id' | 'createdAt' | 'updatedAt'>) => {
+    if (!userId) throw new Error("User not authenticated");
+    
+    const optimisticLink: Link = {
+      ...linkData,
+      id: `optimistic-${Date.now()}`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      isRead: false,
+      isExpired: false,
+      notificationsSent: { threeDays: false, oneDay: false, oneHour: false },
+    };
+    
+    setLinks(prevLinks => [optimisticLink, ...prevLinks]);
+
+    try {
+      const linkId = await linkService.createLink(linkData);
+      setLinks(prevLinks => prevLinks.map(link => 
+        link.id === optimisticLink.id ? { ...optimisticLink, id: linkId } : link
+      ));
+      return linkId;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create link');
+      setLinks(prevLinks => prevLinks.filter(link => link.id !== optimisticLink.id));
+      throw err;
+    }
+  }, [userId]);
+
+  const updateLink = useCallback(async (linkId: string, updates: Partial<Link>) => {
+    const originalLinks = links;
+    setLinks(prevLinks => prevLinks.map(link => 
+      link.id === linkId ? { ...link, ...updates } : link
+    ));
+    try {
+      await linkService.updateLink(linkId, updates);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update link');
+      setLinks(originalLinks);
+      throw err;
+    }
+  }, [links]);
+
+  const deleteLink = useCallback(async (linkId: string, userId: string) => {
+    const originalLinks = links;
+    setLinks(prevLinks => prevLinks.filter(link => link.id !== linkId));
+    try {
+      await linkService.deleteLink(linkId, userId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete link');
+      setLinks(originalLinks);
+      throw err;
+    }
+  }, [links]);
 
   return {
     links,
@@ -637,6 +764,9 @@ export const usePaginatedLinks = (
     hasMore,
     loadMore,
     refresh,
+    createLink,
+    updateLink,
+    deleteLink,
   };
 };
 

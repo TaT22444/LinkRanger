@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useAuth } from './AuthContext';
 import { AIUsageManager } from '../services/aiUsageService';
 import { PlanService } from '../services/planService';
+import { isUnlimitedTestAccount } from '../utils/testAccountUtils';
 
 interface AIUsageState {
   used: number;
@@ -116,7 +117,7 @@ export const AIUsageProvider: React.FC<AIUsageProviderProps> = ({ children }) =>
         now: new Date().toISOString()
       });
       
-      if (isTestAccount) {
+      if (isUnlimitedTestAccount(user?.email || null)) {
         setState({
           used: 0,
           limit: 999999,

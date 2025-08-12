@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
+import { isUnlimitedTestAccount } from '../utils/testAccountUtils';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { AIUsageManager } from '../services/aiUsageService';
 import { deleteUserAccount } from '../services/authService';
@@ -27,84 +28,15 @@ export const AccountScreen: React.FC = () => {
   const userPlan = useMemo(() => PlanService.getUserPlan(user), [user]);
   const planLimits = useMemo(() => PlanService.getPlanLimits(user), [user]);
   const isTestAccount = useMemo(() => PlanService.isTestAccount(user), [user]);
+  const isUnlimitedTest = useMemo(() => isUnlimitedTestAccount(user?.email || null), [user?.email]);
 
   // Freeプランかどうか
   const isFree = userPlan === 'free';
 
-  // 1ヶ月後のリセット日を計算
-  const renewalDate = useMemo(() => {
-    if (!user) return null;
-    
-    try {
-      // プラン開始日があればそれを使用、なければアカウント作成日を使用
-      let baseDate = user.subscription?.startDate || user.createdAt;
-      if (!baseDate) return null;
-      
-      // Firebase Timestampの処理
-      let startDate: Date;
-      if (baseDate && typeof baseDate === 'object' && 'seconds' in baseDate) {
-        // Firebase Timestamp
-        startDate = new Date((baseDate as any).seconds * 1000);
-      } else if (baseDate && typeof baseDate === 'object' && 'toDate' in baseDate) {
-        // Firebase Timestamp with toDate method
-        startDate = (baseDate as any).toDate();
-      } else if (baseDate instanceof Date) {
-        startDate = new Date(baseDate);
-      } else if (typeof baseDate === 'string') {
-        startDate = new Date(baseDate);
-      } else {
-        console.warn('Unsupported date format:', baseDate);
-        return null;
-      }
-      
-      if (isNaN(startDate.getTime())) {
-        console.warn('Invalid date:', baseDate);
-        return null;
-      }
-      
-      // 現在の日付を取得
-      const now = new Date();
-      
-      // 次のリセット日を計算（startDateの同じ日付の次の月）
-      const nextRenewal = new Date(startDate);
-      nextRenewal.setMonth(startDate.getMonth() + 1);
-      
-      // 月末の調整（例：1/31 -> 2/28）
-      if (nextRenewal.getDate() !== startDate.getDate()) {
-        nextRenewal.setDate(0); // 前月の最後の日
-      }
-      
-      // 既に過ぎている場合は、さらに1ヶ月後にする
-      while (nextRenewal <= now) {
-        const targetDay = startDate.getDate();
-        nextRenewal.setMonth(nextRenewal.getMonth() + 1);
-        
-        // 月末の調整
-        if (nextRenewal.getDate() !== targetDay) {
-          nextRenewal.setDate(0);
-        }
-      }
-      
-      return nextRenewal;
-    } catch (error) {
-      console.error('リセット日計算エラー:', error);
-      return null;
-    }
+  // AI使用回数リセット日テキストの生成
+  const aiResetDateText = useMemo(() => {
+    return PlanService.getAIUsageResetDateText(user);
   }, [user]);
-
-  // リセット日テキストの生成
-  const renewalDateText = useMemo(() => {
-    if (isTestAccount) return '';
-    if (!renewalDate) return '毎月1日にリセット';
-    
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    };
-    const formattedDate = renewalDate.toLocaleDateString('ja-JP', options);
-    return `${formattedDate}にリセット`;
-  }, [renewalDate, isTestAccount]);
 
   // AI使用状況の状態
   const [aiUsage, setAiUsage] = useState({
@@ -128,8 +60,8 @@ export const AccountScreen: React.FC = () => {
       if (!user?.uid) return;
       
       try {
-        // テストアカウントの場合は特別扱い
-        if (isTestAccount) {
+        // 無制限テストアカウントの場合は特別扱い
+        if (isUnlimitedTest) {
           setAiUsage({ used: 0, limit: 999999, remaining: 999999 });
           return;
         }
@@ -150,8 +82,7 @@ export const AccountScreen: React.FC = () => {
           used,
           remaining,
           analysisUsage: usageStats.analysisUsage,
-          monthlyStats: usageStats.currentMonth,
-          renewalDate: renewalDate?.toISOString()
+          monthlyStats: usageStats.currentMonth
         });
         
         setAiUsage({ used, limit, remaining });
@@ -164,7 +95,7 @@ export const AccountScreen: React.FC = () => {
     };
 
     fetchAIUsage();
-  }, [user?.uid, userPlan, planLimits.aiUsageLimit, renewalDate, isTestAccount]);
+  }, [user?.uid, userPlan, planLimits.aiUsageLimit, isUnlimitedTest]);
 
   // AIタグ付与設定を切り替える
   const toggleAutoTagging = async (enabled: boolean) => {
@@ -270,9 +201,9 @@ export const AccountScreen: React.FC = () => {
             <Text style={styles.email}>{user?.username || userEmail}</Text>
             <View style={styles.planContainer}>
               <Text style={styles.plan}>
-                {isTestAccount ? 'テストアカウント' : `${PlanService.getPlanDisplayName(user)}プラン`}
+                {PlanService.getPlanDisplayName(user)}プラン
               </Text>
-              {isTestAccount && (
+              {isUnlimitedTest && (
                 <View style={styles.testBadge}>
                   <Text style={styles.testBadgeText}>無制限</Text>
                 </View>
@@ -286,18 +217,20 @@ export const AccountScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* AIタグ自動付与 */}
       <View style={styles.section}>
-        {!isTestAccount && renewalDateText && (
-          <Text style={styles.renewalDateText}>
-            {renewalDateText}
-          </Text>
-        )}
+        <Text style={styles.plan}>
+          {PlanService.getPlanDisplayName(user)}プラン
+        </Text>
       
         <View style={styles.aiUsageRow}>
           <Text style={styles.aiUsageLabel}>AI解説機能</Text>
+          {aiResetDateText && (
+            <Text style={styles.renewalDateText}>
+              {aiResetDateText}
+            </Text>
+          )}
           <Text style={styles.aiUsageValue}>
-            {isTestAccount ? '無制限' : `${aiUsage.remaining} / ${aiUsage.limit}回`}
+            {isUnlimitedTest ? '無制限' : `${aiUsage.remaining} / ${aiUsage.limit}回`}
           </Text>
         </View>
 
@@ -481,6 +414,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   aiUsageRow: {
+    marginTop: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -497,7 +431,6 @@ const styles = StyleSheet.create({
   renewalDateText: {
     fontSize: 12,
     color: '#8E8E93',
-    marginBottom: 16,
   },
   planLimitsContainer: {
     marginTop: 16,

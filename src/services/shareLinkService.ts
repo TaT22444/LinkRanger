@@ -43,10 +43,30 @@ class ShareLinkService {
    */
   parseSharedUrl(url: string): SharedLinkData | null {
     try {
+      console.log('🔍 URL解析開始:', url);
+      
       // Deep Linkの場合: wink://share?url=https://example.com&title=Example
-      if (url.startsWith('wink://share')) {
+      if (url.startsWith('wink://')) {
         const parsed = Linking.parse(url);
         const queryParams = parsed.queryParams;
+        
+        console.log('🔗 Deep Link解析:', { parsed, queryParams });
+        
+        if (queryParams && queryParams.url) {
+          return {
+            url: queryParams.url as string,
+            title: queryParams.title as string || undefined,
+            source: 'deep-link'
+          };
+        }
+      }
+
+      // Universal Linksの場合: https://wink.app/share?url=https://example.com&title=Example  
+      if (url.startsWith('https://wink.app/') || url.includes('wink.app')) {
+        const parsed = Linking.parse(url);
+        const queryParams = parsed.queryParams;
+        
+        console.log('🌐 Universal Link解析:', { parsed, queryParams });
         
         if (queryParams && queryParams.url) {
           return {
@@ -59,12 +79,14 @@ class ShareLinkService {
 
       // 直接URLの場合（他のアプリからの共有）
       if (url.startsWith('http://') || url.startsWith('https://')) {
+        console.log('📄 直接URL共有:', url);
         return {
           url,
           source: 'share-extension'
         };
       }
 
+      console.log('❓ 未対応URL形式:', url);
       return null;
     } catch (error) {
       console.error('❌ URL解析エラー:', error);

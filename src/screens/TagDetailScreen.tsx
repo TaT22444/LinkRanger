@@ -15,6 +15,8 @@ import {
   Linking,
   ScrollView,
   Dimensions,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Modalize } from 'react-native-modalize';
@@ -37,6 +39,7 @@ import { aiService, AnalysisSuggestion } from '../services/aiService';
 import { AIUsageManager } from '../services/aiUsageService';
 import { SavedAnalysis } from '../types';
 import { PlanService } from '../services/planService';
+import { isUnlimitedTestAccount } from '../utils/testAccountUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type TagDetailScreenRouteProp = RouteProp<{ TagDetail: { tag: Tag } }, 'TagDetail'>;
@@ -45,9 +48,41 @@ export const TagDetailScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const route = useRoute<TagDetailScreenRouteProp>();
   
+  // 🔧 早期リターン: ルートパラメータが不正な場合
+  if (!route?.params?.tag) {
+    console.error('❌ TagDetailScreen: 必要なパラメータが不足しています');
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#121212', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: '#FFF', fontSize: 16 }}>エラー: タグ情報が見つかりません</Text>
+        <TouchableOpacity 
+          style={{ marginTop: 20, backgroundColor: '#8A2BE2', padding: 12, borderRadius: 8 }}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={{ color: '#FFF', fontSize: 14 }}>戻る</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+  
   // Convert serialized dates back to Date objects
   const tag = useMemo(() => {
-    const rawTag = route.params.tag;
+    const rawTag = route?.params?.tag;
+    
+    // 🔧 安全チェック: パラメータが存在しない場合のフォールバック
+    if (!rawTag) {
+      console.error('❌ TagDetailScreen: タグパラメータが不正です', { route: route?.params });
+      // デフォルトタグを返すか、エラーを表示
+      return {
+        id: 'error',
+        name: 'エラー',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastUsedAt: new Date(),
+        firstUsedAt: new Date(),
+        userId: '',
+        type: 'manual' as const
+      };
+    }
     return {
       ...rawTag,
       createdAt: typeof rawTag.createdAt === 'string' ? new Date(rawTag.createdAt) : rawTag.createdAt,
@@ -55,7 +90,7 @@ export const TagDetailScreen: React.FC = () => {
       lastUsedAt: typeof rawTag.lastUsedAt === 'string' ? new Date(rawTag.lastUsedAt) : rawTag.lastUsedAt,
       firstUsedAt: typeof rawTag.firstUsedAt === 'string' ? new Date(rawTag.firstUsedAt) : rawTag.firstUsedAt,
     } as Tag;
-  }, [route.params.tag]);
+  }, [route?.params?.tag]);
   const { user } = useAuth();
   const { links, loading: linksLoading, updateLink, deleteLink } = useLinks(user?.uid || null);
   const { tags, deleteTag: deleteTagById, createOrGetTag, loading: tagsLoading } = useTags(user?.uid || null);
@@ -74,6 +109,16 @@ export const TagDetailScreen: React.FC = () => {
   const [showLinkDetail, setShowLinkDetail] = useState(false);
   const [showExitConfirmAlert, setShowExitConfirmAlert] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
+  
+  // 🔧 バックグラウンド処理管理用のstate
+  const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
+  const [backgroundAnalysis, setBackgroundAnalysis] = useState<{
+    tagName: string;
+    theme: string;
+    startTime: number;
+    isCompleted: boolean;
+  } | null>(null);
+  const [wasBackgrounded, setWasBackgrounded] = useState(false); // AI分析中にバックグラウンド移行したかのフラグ
   const modalizeRef = useRef<Modalize>(null);
   
   // 🚀 キャッシュ効率化のための状態追加
@@ -85,17 +130,16 @@ export const TagDetailScreen: React.FC = () => {
   const isFocused = useIsFocused();
   const previousFocusedRef = useRef(isFocused);
   
-  // AI分析中のページ離脱確認
+  // 🔧 AI分析中のページ遷移は許可（確認アラートなし）
   useEffect(() => {
-    // ページがフォーカスを失った時（離脱時）
-    if (previousFocusedRef.current && !isFocused && aiAnalyzing) {
-      console.log('⚠️ AI分析中にページ離脱を検知:', {
+    // 🔧 新仕様: AI分析中のページ遷移はOK、確認アラートを表示しない
+    // ページ遷移してもAI分析は継続実行される
+    if (previousFocusedRef.current && !isFocused && aiAnalyzing && currentAnalyzingTheme) {
+      console.log('📱 AI分析中のページ遷移検知: 分析継続（確認アラートなし）', {
         theme: currentAnalyzingTheme,
-        isAnalyzing: aiAnalyzing
+        isAnalyzing: aiAnalyzing,
+        reason: 'page_navigation_allowed_during_analysis'
       });
-      
-      // 確認アラートを表示
-      setShowExitConfirmAlert(true);
     }
     
     // フォーカス状態を更新
@@ -115,38 +159,17 @@ export const TagDetailScreen: React.FC = () => {
   }
   const [analysisHistory, setAnalysisHistory] = useState<AnalysisResult[]>([]);
   
-  // AI分析を中断する関数
+  // 🔧 AI分析中断関数（新仕様: 不要）
   const cancelAIAnalysis = useCallback(() => {
-    console.log('🛑 AI分析を中断:', {
-      theme: currentAnalyzingTheme,
-      isAnalyzing: aiAnalyzing
-    });
-    
-    // 分析状態をリセット
-    setAiAnalyzing(false);
-    setCurrentAnalyzingTheme(null);
-    
-    // 分析プレースホルダーをクリア
-    setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
-    
-    // 中断時は使用量記録を行わない（Firebaseへの記録も行われないため）
-    
-    // 確認アラートを閉じる
-    setShowExitConfirmAlert(false);
-    setIsNavigatingAway(false);
-  }, [aiAnalyzing, currentAnalyzingTheme]);
+    console.log('🔇 中断関数呼び出し: 新仕様では使用されません');
+    // 新仕様では確認アラートを表示しないため、この関数は使用されない
+  }, []);
   
-  // AI分析を続行する関数
+  // 🔧 AI分析継続関数（新仕様: 不要）
   const continueAIAnalysis = useCallback(() => {
-    console.log('✅ AI分析を続行:', {
-      theme: currentAnalyzingTheme,
-      isAnalyzing: aiAnalyzing
-    });
-    
-    // 確認アラートを閉じる
-    setShowExitConfirmAlert(false);
-    setIsNavigatingAway(false);
-  }, [aiAnalyzing, currentAnalyzingTheme]);
+    console.log('🔇 継続関数呼び出し: 新仕様では使用されません');
+    // 新仕様では確認アラートを表示しないため、この関数は使用されない
+  }, []);
   
   // Create analyzing placeholder item
   const createAnalyzingPlaceholder = (theme: string): AnalysisResult => ({
@@ -208,6 +231,13 @@ export const TagDetailScreen: React.FC = () => {
   // 🚀 AI分析確認アラート設定
   const [showAIAnalysisAlert, setShowAIAnalysisAlert] = useState(true);
   const [loadingUserSettings, setLoadingUserSettings] = useState(true);
+
+  // 🔧 安全チェック: 初期化時にundefinedエラーを防ぐ
+  const safeLinks = links || [];
+  const safeTags = tags || [];
+  const safeAnalysisHistory = analysisHistory || [];
+  const safeSavedAnalyses = savedAnalyses || [];
+  const safeAiSuggestions = aiSuggestions || [];
   
   // 🚀 カスタム確認アラートの状態
   const [showCustomAlert, setShowCustomAlert] = useState(false);
@@ -280,26 +310,136 @@ export const TagDetailScreen: React.FC = () => {
     loadUserSettings();
   }, [loadUserSettings]);
 
+  // 🔧 AppState監視 - バックグラウンド処理管理
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      console.log('📱 AppState変更:', {
+        previous: appState,
+        current: nextAppState,
+        aiAnalyzing,
+        currentTheme: currentAnalyzingTheme,
+        backgroundAnalysis
+      });
+
+      // バックグラウンドになるタイミング
+      if (appState.match(/inactive|background/) && nextAppState === 'active') {
+        // フォアグラウンドに復帰した時の処理
+        handleForegroundReturn();
+      } else if (appState === 'active' && nextAppState.match(/inactive|background/)) {
+        // バックグラウンドに移行した時の処理
+        handleBackgroundTransition();
+      }
+
+      setAppState(nextAppState);
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [appState, aiAnalyzing, currentAnalyzingTheme, backgroundAnalysis]);
+
+  // 🔧 バックグラウンド移行時の処理（分析継続）
+  const handleBackgroundTransition = useCallback(() => {
+    if (aiAnalyzing && currentAnalyzingTheme) {
+      console.log('🌙 AI分析中にバックグラウンド移行: 分析継続（中断なし）', {
+        tagName: tag.name,
+        theme: currentAnalyzingTheme,
+        startTime: Date.now(),
+        continuousAnalysis: true
+      });
+
+      // バックグラウンド分析情報を記録（完了チェック用）
+      setBackgroundAnalysis({
+        tagName: tag.name,
+        theme: currentAnalyzingTheme,
+        startTime: Date.now(),
+        isCompleted: false
+      });
+    }
+  }, [aiAnalyzing, currentAnalyzingTheme, tag.name]);
+
+  // 🔧 フォアグラウンド復帰時の処理（完了チェック）
+  const handleForegroundReturn = useCallback(() => {
+    if (backgroundAnalysis) {
+      // AI分析が完了している可能性をチェック
+      const analysisWasCompleted = analysisHistory.some(analysis => 
+        analysis.suggestedTheme === backgroundAnalysis.theme && 
+        analysis.id !== 'analyzing-placeholder'
+      );
+
+      if (analysisWasCompleted) {
+        console.log('🎉 バックグラウンドでAI分析が完了: 完了通知を表示', {
+          tagName: backgroundAnalysis.tagName,
+          theme: backgroundAnalysis.theme,
+          duration: Date.now() - backgroundAnalysis.startTime
+        });
+
+        // 完了通知アラートを表示
+        setTimeout(() => {
+          Alert.alert(
+            '🎉 AI解説が完了しました！',
+            `「${backgroundAnalysis.tagName}」タグの「${backgroundAnalysis.theme}」の解説が完了しました。
+
+バックグラウンドで処理が完了していました。`,
+            [
+              {
+                text: '結果を確認',
+                style: 'default',
+                onPress: () => {
+                  // 解説結果リストを開いて該当分析を展開
+                  setShowAllSavedAnalyses(true);
+                  const completedAnalysis = analysisHistory.find(analysis => 
+                    analysis.suggestedTheme === backgroundAnalysis!.theme
+                  );
+                  if (completedAnalysis) {
+                    setExpandedAnalysisId(`current-${completedAnalysis.id}`);
+                  }
+                }
+              }
+            ],
+            {
+              cancelable: true,
+              userInterfaceStyle: 'dark'
+            }
+          );
+        }, 500); // 少し遅延させて確実に表示
+
+        // バックグラウンド分析情報をクリア
+        setBackgroundAnalysis(null);
+      } else if (!aiAnalyzing) {
+        // Development環境でのタイムアウト対応
+        console.log('🔄 バックグラウンド分析状態をクリア', {
+          theme: backgroundAnalysis.theme,
+          isDevelopment: __DEV__,
+          reason: 'analysis_not_running_or_timeout'
+        });
+        
+        // Development環境では制限があることをログのみで記録（アラート表示なし）
+        
+        setBackgroundAnalysis(null);
+      }
+    }
+  }, [backgroundAnalysis, analysisHistory, aiAnalyzing, tag.name]);
+
     // 統合された分析リスト（現在の分析 + 保存済み分析）- 重複除去強化版
   const unifiedAnalyses = useMemo(() => {
     console.log('🔄 統合分析リスト構築開始:', {
-      currentHistoryCount: analysisHistory.length,
-      savedAnalysesCount: savedAnalyses.length,
+      currentHistoryCount: safeAnalysisHistory.length,
+      savedAnalysesCount: safeSavedAnalyses.length,
       tagName: tag.name
     });
 
     // 現在の分析履歴があれば、最新のものを準備
-    if (analysisHistory.length > 0) {
-      const currentAnalysis = analysisHistory[0];
+    if (safeAnalysisHistory.length > 0) {
+      const currentAnalysis = safeAnalysisHistory[0];
       const currentTheme = currentAnalysis.suggestedTheme;
       
       const currentAnalysisFormatted = {
         id: `current-${currentAnalysis.id}`,
-        title: currentTheme ? `${currentTheme}について（${currentAnalysis.selectedLinks.length}件分析）` : `${tag.name}タグの深掘り分析（${currentAnalysis.selectedLinks.length}件対象）`,
+        title: currentTheme ? `${currentTheme}について（${currentAnalysis.selectedLinks?.length || 0}件分析）` : `${tag.name}タグの深掘り分析（${currentAnalysis.selectedLinks?.length || 0}件対象）`,
         result: currentAnalysis.result,
         createdAt: currentAnalysis.timestamp,
         metadata: {
-          linkCount: currentAnalysis.selectedLinks.length,
+          linkCount: currentAnalysis.selectedLinks?.length || 0,
           analysisType: 'current' as const
         },
         isCurrent: true
@@ -312,7 +452,7 @@ export const TagDetailScreen: React.FC = () => {
       });
       
       // 重複除去：複数の条件で厳密にチェック
-      const filteredSavedAnalyses = savedAnalyses.filter(saved => {
+      const filteredSavedAnalyses = safeSavedAnalyses.filter(saved => {
         // 1. テーマベースの重複チェック
         if (currentTheme) {
           const savedTheme = saved.result.match(/^## (.+?)について?$/m)?.[1]?.trim();
@@ -370,9 +510,9 @@ export const TagDetailScreen: React.FC = () => {
       });
       
       console.log('✅ 重複除去完了:', {
-        originalSavedCount: savedAnalyses.length,
+        originalSavedCount: safeSavedAnalyses.length,
         filteredSavedCount: filteredSavedAnalyses.length,
-        removedCount: savedAnalyses.length - filteredSavedAnalyses.length,
+        removedCount: safeSavedAnalyses.length - filteredSavedAnalyses.length,
         finalListCount: filteredSavedAnalyses.length + 1 // +1 for current
       });
       
@@ -380,11 +520,21 @@ export const TagDetailScreen: React.FC = () => {
     }
     
     console.log('📄 現在の分析なし - 保存済み分析のみ表示:', {
-      savedAnalysesCount: savedAnalyses.length
+      savedAnalysesCount: safeSavedAnalyses.length
     });
     
-    return savedAnalyses;
-  }, [analysisHistory, savedAnalyses, tag.name]);
+    return safeSavedAnalyses;
+  }, [safeAnalysisHistory, safeSavedAnalyses, tag.name]);
+
+  // 🔧 unifiedAnalysesの安全性チェック
+  const safeUnifiedAnalyses = unifiedAnalyses || [];
+
+  // Filter links for this tag - moved before useFocusEffect to fix declaration order
+  const tagLinks = useMemo(() => {
+    return safeLinks.filter(link => link?.tagIds?.includes(tag.id));
+  }, [safeLinks, tag.id]);
+
+
 
   // 現在の分析が追加されたら自動的に展開
   useEffect(() => {
@@ -393,25 +543,54 @@ export const TagDetailScreen: React.FC = () => {
     }
   }, [unifiedAnalyses]);
 
-  // アプリ起動時の初期化：前回の分析履歴をクリア
+  // 🔧 AI分析状態のクリーンアップ（失敗時の通知はexecuteAIAnalysis内で処理）
   useFocusEffect(
     useCallback(() => {
       console.log('📱 TagDetailScreen: ページにフォーカス', {
         currentHistoryCount: analysisHistory.length,
-        savedAnalysesCount: savedAnalyses.length
+        savedAnalysesCount: savedAnalyses.length,
+        isAnalyzing: aiAnalyzing,
+        currentTheme: currentAnalyzingTheme
       });
-    }, [analysisHistory.length, savedAnalyses.length])
+      
+      // 🔧 アプリ完全終了後の再開時処理
+      if (aiAnalyzing && currentAnalyzingTheme) {
+        const hasAnalyzingPlaceholder = analysisHistory.some(item => item.id === 'analyzing-placeholder');
+        const hasRecentCompletedAnalysis = analysisHistory.some(item => 
+          item.id !== 'analyzing-placeholder' && 
+          item.suggestedTheme === currentAnalyzingTheme &&
+          (Date.now() - new Date(item.timestamp).getTime()) < 5 * 60 * 1000
+        );
+        
+        // 正常完了している場合のみ状態クリーンアップ
+        if (hasRecentCompletedAnalysis && !hasAnalyzingPlaceholder) {
+          console.log('🔄 正常完了した分析の状態をクリーンアップ', {
+            theme: currentAnalyzingTheme,
+            action: 'cleanup_completed_analysis'
+          });
+          setAiAnalyzing(false);
+          setCurrentAnalyzingTheme(null);
+          setIsNavigatingAway(false);
+        } 
+        // 🔧 中断検知は完全に削除（AI分析は継続実行される）
+        // 中断アラートは表示しない - AI分析は実際に継続されるため
+      }
+    }, [
+      analysisHistory.length, 
+      savedAnalyses.length, 
+      aiAnalyzing, 
+      currentAnalyzingTheme,
+      links?.length,
+      tag.id
+    ])
   );
 
-  // Filter links for this tag
-  const tagLinks = useMemo(() => {
-    return links.filter(link => link.tagIds.includes(tag.id));
-  }, [links, tag.id]);
+
 
   // Available tags for merge (excluding current tag)
   const availableTagsForMerge = useMemo(() => {
-    return tags.filter(t => t.id !== tag.id);
-  }, [tags, tag.id]);
+    return safeTags.filter(t => t?.id !== tag.id);
+  }, [safeTags, tag.id]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -607,7 +786,7 @@ export const TagDetailScreen: React.FC = () => {
       
       console.log('🌐 AI使用量をFirebaseから取得中...', {
         userId: user.uid,
-        plan: user.subscription?.plan || 'free',
+        plan: PlanService.getEffectivePlan(user),
         cacheExpired: cachedUsage ? true : false,
         forceRefresh,
       });
@@ -619,7 +798,7 @@ export const TagDetailScreen: React.FC = () => {
         totalAnalysisUsage,
         usageStats,
         userId: user.uid,
-        plan: user.subscription?.plan || 'free'
+        plan: PlanService.getEffectivePlan(user)
       });
       
       // キャッシュに保存
@@ -672,6 +851,8 @@ export const TagDetailScreen: React.FC = () => {
     
     return isTest;
   }, [user, planInfo]);
+  
+  const isUnlimitedTest = useMemo(() => isUnlimitedTestAccount(user?.email || null), [user?.email]);
 
   const canUseAI = useMemo(() => {
     // Test accounts have unlimited access
@@ -802,7 +983,7 @@ export const TagDetailScreen: React.FC = () => {
     
     setLoadingSuggestions(true);
     const linkTitles = tagLinks.map(link => link.title);
-    const userPlan = user.subscription?.plan || 'free';
+    const userPlan = PlanService.getEffectivePlan(user);
     
     console.log('🔍 AI候補生成開始:', {
       tagName: tag.name,
@@ -1063,11 +1244,47 @@ export const TagDetailScreen: React.FC = () => {
         });
       }
       
-      // 2. テーマの主要単語との一致
+      // 🔧 1.5. より柔軟なマッチング（大文字小文字、記号を無視）
+      const normalizedContent = content.replace(/[（）()「」\[\]【】]/g, '').toLowerCase();
+      const normalizedSuggestion = suggestionLower.replace(/[（）()「」\[\]【】]/g, '');
+      
+      if (normalizedContent.includes(normalizedSuggestion) && !content.includes(suggestionLower)) {
+        score += 30;
+        console.log('🎯 正規化マッチング:', {
+          normalizedSuggestion,
+          linkTitle: link.title.slice(0, 50) + '...',
+          addedScore: 30
+        });
+      }
+      
+      // 2. テーマの主要単語との一致（改良版）
       const excludeWords = ['とは', 'について', 'の', 'と', 'は', 'が', 'を', 'に', 'で', 'から', '?', '？', '!', '！'];
-      const themeWords = suggestionLower
-        .split(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠]+/)
-        .filter(word => word.length > 1 && !excludeWords.includes(word));
+      
+      // 🔧 アルファベットと日本語を適切に分割
+      let themeWords = [];
+      
+      // アルファベット部分を抽出（例：MCP）
+      const alphabetMatches = suggestionLower.match(/[a-zA-Z]+/g);
+      if (alphabetMatches) {
+        themeWords = themeWords.concat(alphabetMatches);
+      }
+      
+      // 日本語部分を抽出
+      const japaneseMatches = suggestionLower.match(/[ぁ-んァ-ヶ一-龠]+/g);
+      if (japaneseMatches) {
+        themeWords = themeWords.concat(
+          japaneseMatches.filter(word => word.length > 1 && !excludeWords.includes(word))
+        );
+      }
+      
+      // 重複を除去
+      themeWords = [...new Set(themeWords)];
+      
+      console.log('🔍 テーマ単語抽出:', {
+        originalTheme: suggestion.title,
+        extractedWords: themeWords,
+        linkTitle: link.title.slice(0, 30) + '...'
+      });
       
       let themeWordMatches = 0;
       themeWords.forEach(word => {
@@ -1213,6 +1430,25 @@ export const TagDetailScreen: React.FC = () => {
     setAiAnalyzing(true);
     setCurrentAnalyzingTheme(suggestedTheme || null);
     
+    // 🔧 中断検知フラグを初期化
+    let wasInterrupted = false;
+    
+    // 🔧 中断検知関数（新仕様: ページ遷移中断なし）
+    const checkIfInterrupted = () => {
+      // 🔧 新仕様: ページ遷移では中断しない、AI分析は継続実行
+      // 明示的にユーザーが中断を選択した場合のみ中断
+      console.log('🔍 中断チェック: ページ遷移中断は無効化済み', {
+        isFocused,
+        isNavigatingAway,
+        aiAnalyzing,
+        theme: suggestedTheme,
+        allowPageNavigation: true
+      });
+      
+      // 常に中断なしとして扱う（AI分析は継続）
+      return false;
+    };
+    
     // Add analyzing placeholder to history
     if (suggestedTheme) {
       const placeholder = createAnalyzingPlaceholder(suggestedTheme);
@@ -1254,7 +1490,7 @@ export const TagDetailScreen: React.FC = () => {
       }
 
       // 厳密な制限チェック（ローカル状態とFirebase両方）
-      const plan = user.subscription?.plan || 'free';
+      const plan = PlanService.getEffectivePlan(user);
       const limit = getAIUsageLimit();
       const currentUsage = aiUsageCount ?? 0;
       
@@ -1424,7 +1660,7 @@ ${analysisContext.map((link, index) =>
 5. ✅ 必須: 各箇条書きは必ず参考資料の具体的な内容に基づいて記載する
 6. 🎯 目標: 「${suggestedTheme || tag.name}」について分かりやすく解説する文章を作成する`;
 
-              const userPlan = user.subscription?.plan || 'free';
+              const userPlan = PlanService.getEffectivePlan(user);
         const aiAnalysisStartTime = Date.now();
         
         // Firebase-based detailed usage limit check (skip for test accounts)
@@ -1565,6 +1801,68 @@ ${analysisContext.map((link, index) =>
           analysisLength: response.analysis.length,
           analysisPreview: response.analysis.slice(0, 300) + '...'
         });
+        
+        // 🔧 エラーレスポンスのチェック（正常なエラーのみ処理）
+        const isErrorResponse = response.analysis.includes('分析に失敗しました') || 
+                               response.analysis.includes('エラーが発生しました') ||
+                               response.analysis.includes('処理に失敗');
+        
+        if (isErrorResponse) {
+          console.log('❌ エラーレスポンス検出:', {
+            responseContent: response.analysis,
+            tokensUsed: response.tokensUsed,
+            cost: response.cost,
+            appState,
+            isDevelopment: __DEV__,
+            backgroundAnalysis
+          });
+          
+          // 🔧 バックグラウンド処理中のエラー（アラート表示をスキップ）
+          if (backgroundAnalysis || appState !== 'active') {
+            console.log('🌙 バックグラウンド処理中のエラー: アラート表示をスキップ', {
+              isDevelopment: __DEV__,
+              appState,
+              backgroundAnalysis
+            });
+            
+            // プレースホルダーをクリア（アラート表示なし）
+            setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
+            
+            // バックグラウンド状態をクリア
+            if (backgroundAnalysis) {
+              setBackgroundAnalysis(null);
+            }
+            
+            return; // エラーアラート表示をスキップ
+          }
+          
+          // フォアグラウンドでの通常エラーのみアラート表示
+          setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
+          
+          setTimeout(() => {
+            Alert.alert(
+              '📱 AI解説機能が失敗しました',
+              `「${suggestedTheme}」の解説分析に失敗しました。
+
+📱 ネットワークエラーやサーバーエラーが発生した可能性があります
+
+✅ AI使用回数はカウントされていません
+✅ 再度テーマを選択して分析を開始できます`,
+              [
+                {
+                  text: 'OK',
+                  style: 'default'
+                }
+              ],
+              {
+                cancelable: true,
+                userInterfaceStyle: 'dark'
+              }
+            );
+          }, 500);
+          
+          return;
+        }
 
         // Ensure the title matches the selected theme
         let correctedAnalysis = response.analysis;
@@ -1609,6 +1907,16 @@ ${analysisContext.map((link, index) =>
           const filtered = prev.filter(item => item.id !== 'analyzing-placeholder');
           const updatedHistory = [newAnalysis, ...filtered];
           
+          // バックグラウンド分析の完了を記録
+          if (appState === 'background') {
+            setBackgroundAnalysis({
+              tagName: tag.name,
+              theme: suggestedTheme || tag.name,
+              startTime: analysisStartTime,
+              isCompleted: true
+            });
+          }
+          
           // 分析完了時に自動的に結果を展開（正しいID形式で設定）
           setExpandedAnalysisId(`current-${newAnalysis.id}`);
           // 解説結果リストを自動的に開く
@@ -1632,53 +1940,97 @@ ${analysisContext.map((link, index) =>
         }, 5 * 60 * 1000); // 5分
         setAnalysisTimer(newTimer);
         
-        // Record usage in Firebase
-        try {
-          const aiUsageManager = AIUsageManager.getInstance();
-          const userPlan = user.subscription?.plan || 'free';
-          
-          await aiUsageManager.recordUsage(
-            user.uid,
-            'analysis',
-            response.tokensUsed,
-            response.cost
-          );
-          
-          console.log('📝 AI使用量をFirebaseに記録完了:', {
-            type: 'analysis',
-            tokensUsed: response.tokensUsed,
-            textLength: analysisPrompt.length,
-            cost: response.cost,
-            plan: userPlan,
-            isTestAccount: isTestAccount,
-          });
-          
-          // 成功時にカウントを確定（既に増加済みなので変更なし）
-          console.log('✅ AI分析成功 - 使用量カウント確定:', {
-            currentCount: aiUsageCount,
-            limit: getAIUsageLimit()
-          });
-          
-          // 使用状況を即座に再読み込みして、ボタン状態を更新
-          try {
-            await loadAIUsage(true);
-            console.log('✅ AI使用量同期完了 - ボタン状態更新（成功）');
-          } catch (error) {
-            console.error('❌ バックグラウンド同期エラー:', error);
+        // 🔧 AI分析完全成功の厳密チェックと使用量記録
+        const isAnalysisSuccessful = () => {
+          // 中断チェック
+          if (wasInterrupted || checkIfInterrupted()) {
+            console.log('❌ 使用量記録スキップ: 分析が中断されました', {
+              wasInterrupted,
+              isFocused,
+              isNavigatingAway,
+              aiAnalyzing
+            });
+            return false;
           }
           
-          console.log('🔄 使用量表示更新完了（オプティミスティック）');
-        } catch (recordError) {
-          console.error('❌ AI使用量記録エラー:', recordError);
-          // フォールバック: ローカル状態のみ更新
-          setAiUsageCount(prev => prev + 1);
-          // エラー時でも使用状況をFirebaseから取得して同期
-          try {
-            await loadAIUsage(true);
-            console.log('✅ AI使用量同期完了 - エラー時フォールバック（成功時）');
-          } catch (syncError) {
-            console.error('❌ エラー時同期失敗（成功時）:', syncError);
+          // レスポンス品質チェック
+          if (!response.analysis || response.analysis.trim().length < 50) {
+            console.log('❌ 使用量記録スキップ: 分析結果が不十分', {
+              analysisLength: response.analysis?.length || 0,
+              hasAnalysis: !!response.analysis
+            });
+            return false;
           }
+          
+          // 期待されるフォーマットチェック
+          const hasExpectedTitle = response.analysis.includes(`## ${suggestedTheme || tag.name}`);
+          const hasBulletPoints = response.analysis.includes('・ ') || response.analysis.includes('• ');
+          
+          if (!hasExpectedTitle || !hasBulletPoints) {
+            console.log('❌ 使用量記録スキップ: 分析フォーマットが不適切', {
+              hasExpectedTitle,
+              hasBulletPoints,
+              expectedTitle: `## ${suggestedTheme || tag.name}`
+            });
+            return false;
+          }
+          
+          console.log('✅ AI分析完全成功確認: 使用量記録条件を満たしました', {
+            analysisLength: response.analysis.length,
+            hasExpectedTitle,
+            hasBulletPoints,
+            wasInterrupted: false
+          });
+          return true;
+        };
+
+        // 分析が完全に成功した場合のみ使用量を記録
+        if (isAnalysisSuccessful()) {
+          try {
+            const aiUsageManager = AIUsageManager.getInstance();
+            const userPlan = PlanService.getEffectivePlan(user);
+            
+            await aiUsageManager.recordUsage(
+              user.uid,
+              'analysis',
+              response.tokensUsed,
+              response.cost
+            );
+            
+            console.log('📝 AI使用量をFirebaseに記録完了（完全成功時のみ）:', {
+              type: 'analysis',
+              tokensUsed: response.tokensUsed,
+              textLength: analysisPrompt.length,
+              cost: response.cost,
+              plan: userPlan,
+              isTestAccount: isTestAccount,
+              analysisLength: response.analysis.length,
+              theme: suggestedTheme
+            });
+            
+            // 成功時にカウントを確定
+            console.log('✅ AI分析完全成功 - 使用量カウント確定:', {
+              currentCount: aiUsageCount,
+              limit: getAIUsageLimit(),
+              newCount: aiUsageCount + 1
+            });
+            
+            // 使用状況を即座に再読み込みして、ボタン状態を更新
+            try {
+              await loadAIUsage(true);
+              console.log('✅ AI使用量同期完了 - ボタン状態更新（完全成功時）');
+            } catch (error) {
+              console.error('❌ バックグラウンド同期エラー:', error);
+            }
+            
+            console.log('🔄 使用量表示更新完了（完全成功時）');
+          } catch (recordError) {
+            console.error('❌ AI使用量記録エラー:', recordError);
+            // エラー時は使用量記録をスキップ（不完全な分析の可能性）
+            console.log('⚠️ 使用量記録エラー: カウントしません（分析結果は表示）');
+          }
+        } else {
+          console.log('⚠️ 使用量記録スキップ: 分析が不完全または中断されました');
         }
         
         // Hide theme list after analysis completion
@@ -1917,56 +2269,54 @@ ${analysisContext.map((link, index) =>
           return updatedHistory;
         });
         
-        // Record usage in Firebase (even for insufficient content)
-        try {
-          const aiUsageManager = AIUsageManager.getInstance();
-          const userPlan = user.subscription?.plan || 'free';
-          
-          await aiUsageManager.recordUsage(
-            user.uid,
-            'analysis',
-            response.tokensUsed,
-            response.cost
-          );
-          
-          console.log('📝 AI使用量をFirebaseに記録完了（情報不足）:', {
-            type: 'analysis',
-            tokensUsed: response.tokensUsed,
-            textLength: analysisPrompt.length,
-            cost: response.cost,
-            plan: userPlan,
-            isTestAccount: isTestAccount,
-            testAccountInfo: isTestAccount ? {
-              uid: user.uid,
-              email: user.email,
-              role: user.role
-            } : undefined
-          });
-          
-          // 成功時にカウントを確定（既に増加済みなので変更なし）
-          console.log('✅ AI分析成功（情報不足） - 使用量カウント確定:', {
-            currentCount: aiUsageCount,
-            limit: getAIUsageLimit()
-          });
-          
-          // 使用状況を即座に再読み込みして、ボタン状態を更新
+        // 🔧 情報不足の場合も中断チェックを行い、正当な処理の場合のみ使用量記録
+        if (!wasInterrupted && !checkIfInterrupted()) {
           try {
-            await loadAIUsage(true);
-            console.log('✅ AI使用量同期完了 - ボタン状態更新');
-          } catch (error) {
-            console.error('❌ バックグラウンド同期エラー（情報不足）:', error);
+            const aiUsageManager = AIUsageManager.getInstance();
+            const userPlan = PlanService.getEffectivePlan(user);
+            
+            await aiUsageManager.recordUsage(
+              user.uid,
+              'analysis',
+              response.tokensUsed,
+              response.cost
+            );
+            
+            console.log('📝 AI使用量をFirebaseに記録完了（情報不足・中断なし）:', {
+              type: 'analysis',
+              tokensUsed: response.tokensUsed,
+              textLength: analysisPrompt.length,
+              cost: response.cost,
+              plan: userPlan,
+              isTestAccount: isTestAccount,
+              reason: 'insufficient_content_but_completed',
+              theme: suggestedTheme
+            });
+            
+            // 成功時にカウントを確定
+            console.log('✅ AI分析完了（情報不足・中断なし） - 使用量カウント確定:', {
+              currentCount: aiUsageCount,
+              limit: getAIUsageLimit()
+            });
+            
+            // 使用状況を即座に再読み込みして、ボタン状態を更新
+            try {
+              await loadAIUsage(true);
+              console.log('✅ AI使用量同期完了 - ボタン状態更新（情報不足・完了時）');
+            } catch (error) {
+              console.error('❌ バックグラウンド同期エラー（情報不足）:', error);
+            }
+          } catch (recordError) {
+            console.error('❌ AI使用量記録エラー:', recordError);
+            // エラー時は使用量記録をスキップ
+            console.log('⚠️ 使用量記録エラー: カウントしません（情報不足時）');
           }
-        } catch (recordError) {
-          console.error('❌ AI使用量記録エラー:', recordError);
-          // フォールバック: ローカル状態のみ更新
-          setAiUsageCount(prev => prev + 1);
-          // エラー時でも使用状況をFirebaseから取得して同期
-          try {
-            await loadAIUsage(true);
-            console.log('✅ AI使用量同期完了 - エラー時フォールバック（情報不足時）');
-          } catch (syncError) {
-            console.error('❌ エラー時同期失敗（情報不足時）:', syncError);
-          }
+        } else {
+          console.log('⚠️ 使用量記録スキップ: 分析が中断されました（情報不足時）', {
+            wasInterrupted,
+            isFocused,
+            isNavigatingAway
+          });
         }
         
         // Hide theme list after analysis completion
@@ -1982,10 +2332,39 @@ ${analysisContext.map((link, index) =>
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
         tagName: tag.name,
-        linkCount: tagLinks.length
+        linkCount: tagLinks.length,
+        wasInterrupted,
+        currentTheme: suggestedTheme
       });
       
-      // エラー時は使用量記録を行わない（Firebaseへの記録も行われないため）
+      // 🔧 Firebase エラーの特別処理（新仕様: deadline-exceededエラー表示を抑制）
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const isDeadlineExceeded = errorMessage.includes('deadline-exceeded') || 
+                                errorMessage.includes('DEADLINE_EXCEEDED');
+      const isFirebaseInternal = errorMessage.includes('internal') && errorMessage.includes('Firebase');
+      
+      if (isDeadlineExceeded) {
+        console.log('⏰ deadline-exceeded エラー: エラー表示を抑制（新仕様）', {
+          errorType: 'deadline-exceeded',
+          theme: suggestedTheme,
+          skipErrorDisplay: true
+        });
+        wasInterrupted = true; // 中断扱いにしてエラー表示をスキップ
+      } else if (isFirebaseInternal) {
+        console.log('🔥 Firebase internal エラー: エラー表示を抑制（新仕様）', {
+          errorType: 'firebase-internal',
+          theme: suggestedTheme,
+          skipErrorDisplay: true
+        });
+        wasInterrupted = true; // Firebase内部エラーも中断扱い
+      }
+      
+      // 🔧 エラー時は使用量記録を行わない（正しい判断）
+      console.log('⚠️ AI分析エラー: 使用量記録をスキップします', {
+        reason: isDeadlineExceeded ? 'deadline_exceeded' : 'analysis_error',
+        wasInterrupted,
+        theme: suggestedTheme
+      });
       
       // Remove analyzing placeholder on error
       setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
@@ -1993,29 +2372,60 @@ ${analysisContext.map((link, index) =>
       // Hide theme list after analysis error
       setAiSuggestions([]);
       
-      const errorMessage = error instanceof Error ? error.message : 'AI分析に失敗しました';
+      // 🔧 新仕様: ユーザー選択による中断の場合は、エラーアラートを表示しない
+      if (wasInterrupted || isDeadlineExceeded || isFirebaseInternal) {
+        console.log('🔄 AI分析中断/エラー: エラーアラートをスキップ（新仕様対応）', {
+          wasInterrupted,
+          isDeadlineExceeded,
+          isFirebaseInternal,
+          userInterruption: wasInterrupted && isNavigatingAway,
+          errorType: isFirebaseInternal ? 'firebase-internal' : isDeadlineExceeded ? 'deadline-exceeded' : 'user-interrupted',
+          skipErrorDisplay: true // 新仕様: エラー表示を抑制
+        });
+        return; // アラート表示をスキップ
+      }
       
-      // タイムアウトエラーの場合は専用メッセージを表示
-      if (errorMessage.includes('timeout') || errorMessage.includes('DEADLINE_EXCEEDED') || errorMessage.includes('処理時間が長すぎます')) {
-        Alert.alert(
-          'タイムアウトエラー', 
-          '処理に時間がかかりすぎました。\n\n解決方法：\n• 選択するリンクの数を減らす\n• しばらく時間をおいてから再試行\n• ネットワーク環境の確認',
-          [{ text: 'OK' }]
-        );
+      // 🔧 新仕様: deadline-exceededおよびFirebaseエラーは表示しない
+      const displayMessage = error instanceof Error ? error.message : 'AI分析に失敗しました';
+      
+      // deadline-exceededやFirebaseエラーの場合は何も表示しない（既に抑制済み）
+      if (displayMessage.includes('timeout') || 
+          displayMessage.includes('DEADLINE_EXCEEDED') || 
+          displayMessage.includes('deadline-exceeded') ||
+          displayMessage.includes('Firebase') ||
+          displayMessage.includes('処理時間が長すぎます')) {
+        console.log('🔇 エラー表示スキップ: deadline-exceeded/Firebaseエラー', {
+          errorType: displayMessage.includes('deadline') ? 'deadline-exceeded' : 'firebase-error',
+          skipReason: 'user_requested_suppression'
+        });
+        // 何も表示しない
       } else {
-        Alert.alert('エラー', `${errorMessage}\n\nしばらく時間をおいてから再度お試しください。`);
+        // その他のエラーのみ表示
+        Alert.alert('エラー', `${displayMessage}
+
+しばらく時間をおいてから再度お試しください。`);
       }
     } finally {
+      // 🔧 分析状態のクリーンアップ
       setAiAnalyzing(false);
       setCurrentAnalyzingTheme(null);
-      setShowExitConfirmAlert(false); // 確認アラートを閉じる
+      
+      // 🔧 中断確認アラートの適切な制御
+      if (wasInterrupted) {
+        console.log('🔄 AI分析中断完了: アラートを適切に閉じます');
+      }
+      setShowExitConfirmAlert(false);
+      setIsNavigatingAway(false);
+      
       const finalProcessingTime = Date.now() - analysisStartTime;
       console.log('🏁 AI分析処理終了:', {
         totalTime: `${finalProcessingTime}ms`,
-        status: 'completed'
+        status: wasInterrupted ? 'interrupted' : 'completed',
+        wasInterrupted,
+        theme: suggestedTheme
       });
     }
-  }, [user, tagLinks, tag.name, canUseAI, getAIUsageLimit]);
+  }, [user, tagLinks, tag.name, canUseAI, getAIUsageLimit, isFocused, isNavigatingAway, aiAnalyzing, loadAIUsage]);
 
   // 🚀 提案されたテーマでの分析処理（確認アラート付き）
   const handleSuggestedAnalysis = useCallback(async (suggestedTheme: string) => {
@@ -2423,17 +2833,17 @@ ${analysisContext.map((link, index) =>
                 </View>
                 <View style={styles.usageBadgeContainer}>
                   <Text style={styles.usageBadgeLabel}>
-                    {isTestAccount ? 'テストモード' : `${planInfo.displayName}プラン`}
+                    {planInfo.displayName}プラン
                   </Text>
                   <View style={[
                     styles.usageBadge,
-                    isTestAccount && styles.usageBadgeTest
+                    isUnlimitedTest && styles.usageBadgeTest
                   ]}>
                     <Text style={[
                       styles.usageBadgeText,
-                      isTestAccount && styles.usageBadgeTextTest
+                      isUnlimitedTest && styles.usageBadgeTextTest
                     ]}>
-                        {isTestAccount 
+                        {isUnlimitedTest 
                           ? '無制限' 
                           : (() => {
                               const limit = getAIUsageLimit();
@@ -3021,12 +3431,12 @@ ${analysisContext.map((link, index) =>
           <View style={styles.modalContent}>
             <View style={styles.exitConfirmHeader}>
               <Feather name="alert-triangle" size={24} color="#FF6B6B" />
-              <Text style={styles.exitConfirmTitle}>AI分析を中断しますか？</Text>
+              <Text style={styles.exitConfirmTitle}>ページを離れますか？</Text>
             </View>
             
             <Text style={styles.exitConfirmDescription}>
               AI分析「{currentAnalyzingTheme}」が実行中です。{'\n'}
-              ページを離れると分析が中断され、使用回数がカウントされます。
+              ページを離れると分析が中断されますが、使用回数はカウントされません。
             </Text>
             
             <View style={styles.modalButtons}>
@@ -3034,14 +3444,14 @@ ${analysisContext.map((link, index) =>
                 style={[styles.modalButton, styles.modalCancelButton]}
                 onPress={cancelAIAnalysis}
               >
-                <Text style={styles.modalCancelText}>中断する</Text>
+                <Text style={styles.modalCancelText}>ページを離れる</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalConfirmButton]}
                 onPress={continueAIAnalysis}
               >
-                <Text style={styles.modalConfirmText}>続行する</Text>
+                <Text style={styles.modalConfirmText}>このページに留まる</Text>
               </TouchableOpacity>
             </View>
           </View>

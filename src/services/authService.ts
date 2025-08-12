@@ -23,6 +23,41 @@ import { User } from '../types';
 import { userService } from './firestoreService';
 import { UserPlan } from '../types';
 
+// Firebase Timestampを Dateに変換するヘルパー
+const convertFirebaseTimestamp = (timestamp: any): Date => {
+  if (!timestamp) return new Date();
+  
+  try {
+    // Firebase Timestamp (seconds + nanoseconds)
+    if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
+      return new Date(timestamp.seconds * 1000);
+    } 
+    // Firebase Timestamp with toDate method
+    else if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp) {
+      return timestamp.toDate();
+    } 
+    // Already a Date object
+    else if (timestamp instanceof Date) {
+      return timestamp;
+    } 
+    // String format
+    else if (typeof timestamp === 'string') {
+      const date = new Date(timestamp);
+      return !isNaN(date.getTime()) ? date : new Date();
+    }
+    // Number (milliseconds)
+    else if (typeof timestamp === 'number') {
+      return new Date(timestamp);
+    }
+    
+    console.warn('Unsupported timestamp format in authService:', timestamp);
+    return new Date();
+  } catch (error) {
+    console.error('Timestamp conversion error in authService:', error);
+    return new Date();
+  }
+};
+
 export const deleteUserAccount = async (): Promise<void> => {
   try {
     const user = auth.currentUser;
@@ -371,7 +406,7 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
             username: userData.username || userData.email || null,
             avatarId: userData.avatarId,
             avatarIcon: userData.avatarIcon,
-            createdAt: userData.createdAt instanceof Date ? userData.createdAt : new Date(userData.createdAt)
+            createdAt: convertFirebaseTimestamp(userData.createdAt)
           };
           
           console.log('Calling callback with user data:', user.uid);
@@ -393,7 +428,7 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
                 username: userData.username || userData.email || null,
                 avatarId: userData.avatarId,
                 avatarIcon: userData.avatarIcon,
-                createdAt: userData.createdAt instanceof Date ? userData.createdAt : new Date(userData.createdAt)
+                createdAt: convertFirebaseTimestamp(userData.createdAt)
               };
               console.log('Calling callback with newly created user data:', user.uid);
               callback(user);

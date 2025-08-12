@@ -13,6 +13,7 @@ import {
   Animated,
   TextInput,
   TouchableWithoutFeedback,
+  Dimensions,
 } from 'react-native';
 import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
@@ -40,7 +41,7 @@ import { notificationService } from '../services/notificationService';
 
 import { AIStatusMonitor } from '../components/AIStatusMonitor';
 import { UpgradeModal } from '../components/UpgradeModal';
-import { TEST_CONFIG } from '../config/auth';
+
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -48,7 +49,7 @@ export const HomeScreen: React.FC = () => {
   
   // 🚀 最適化されたHooksの使用
   
-  const { links, loading, error, createLink, updateLink, deleteLink } = useLinks(user?.uid || null);
+  const { links, loading, error, createLink, updateLink, deleteLink, hasMore, isLoadingMore, loadMore } = useLinks(user?.uid || null);
   const { tags: userTags, createOrGetTag, deleteTag: deleteTagById } = useTags(user?.uid || null);
   
   
@@ -107,8 +108,8 @@ export const HomeScreen: React.FC = () => {
 
   const listPaddingTop = isSearchMode ? dynamicHeaderHeight : 24;
 
-  // テスト用ユーザープラン
-  const userPlan: UserPlan = user?.email === TEST_CONFIG.proUserEmail ? 'pro' : 'free';
+  // ユーザープラン（PlanServiceを使用）
+  const userPlan: UserPlan = PlanService.getEffectivePlan(user);
 
 
   const handleAccountPress = () => {
@@ -772,9 +773,24 @@ export const HomeScreen: React.FC = () => {
         link={item}
         tags={userTags}
         onPress={() => {
+          console.log('🔥 LinkCard tapped:', {
+            linkId: item.id,
+            title: item.title,
+            isSwipeActive,
+            isSelectionMode
+          });
+          
+          // 実際にスワイプ中の場合はタップを無効化
+          if (isSwipeActive) {
+            console.log('🚫 Tap blocked by active swipe gesture');
+            return;
+          }
+          
           if (isSelectionMode) {
+            console.log('📝 Selection mode - toggling selection');
             toggleLinkSelection(item.id);
           } else {
+            console.log('✅ Opening detail modal for link:', item.title);
             setSelectedLink(item);
             setShowDetailModal(true);
           }
@@ -809,7 +825,7 @@ export const HomeScreen: React.FC = () => {
     });
   };
 
-  const modes: LinkViewMode[] = ['list', 'folder', 'tag'];
+  const modes: LinkViewMode[] = ['list', 'tag', 'folder'];
   
   const getNextMode = () => {
     const currentIndex = modes.indexOf(viewMode);
@@ -834,15 +850,24 @@ export const HomeScreen: React.FC = () => {
   const handleSwipeGesture = (event: any) => {
     const { translationX, velocityX, state } = event.nativeEvent;
     
+    if (state === State.BEGAN) {
+      // スワイプ開始時は一度リセットしておく
+      setIsSwipeActive(false);
+    }
+    
     if (state === State.ACTIVE) {
-      if (!isSwipeActive) setIsSwipeActive(true);
+      // 実際に移動が発生した場合のみスワイプ状態にする
+      const minSwipeDistance = 10; // 最小スワイプ距離
+      if (Math.abs(translationX) > minSwipeDistance) {
+        setIsSwipeActive(true);
+      }
       const dampedTranslation = translationX * 0.5;
       swipeTranslateX.setValue(dampedTranslation);
     }
     
     if (state === State.END) {
-      const swipeThreshold = 80;
-      const velocityThreshold = 400;
+      const swipeThreshold = 100; // 閾値を上げてより明確なスワイプを要求
+      const velocityThreshold = 600; // 速度閾値も上げる
       const shouldSwitch = Math.abs(translationX) > swipeThreshold || Math.abs(velocityX) > velocityThreshold;
       
       if (shouldSwitch) {
@@ -855,15 +880,25 @@ export const HomeScreen: React.FC = () => {
           toValue: 0,
           duration: 250,
           useNativeDriver: true,
-        }).start(() => setIsSwipeActive(false));
+        }).start(() => {
+          setIsSwipeActive(false);
+          setIsSwipeEnabled(true);
+        });
       } else {
         Animated.spring(swipeTranslateX, {
           toValue: 0,
           tension: 100,
           friction: 8,
           useNativeDriver: true,
-        }).start(() => setIsSwipeActive(false));
+        }).start(() => {
+          setIsSwipeActive(false);
+          setIsSwipeEnabled(true);
+        });
       }
+      
+      // 即座にスワイプ状態をリセット
+      setIsSwipeActive(false);
+      setIsSwipeEnabled(true);
     }
     
     if (state === State.CANCELLED || state === State.FAILED) {
@@ -872,7 +907,14 @@ export const HomeScreen: React.FC = () => {
         tension: 100,
         friction: 8,
         useNativeDriver: true,
-      }).start(() => setIsSwipeActive(false));
+      }).start(() => {
+        setIsSwipeActive(false);
+        setIsSwipeEnabled(true);
+      });
+      
+      // 即座にスワイプ状態をリセット
+      setIsSwipeActive(false);
+      setIsSwipeEnabled(true);
     }
   };
 
@@ -900,6 +942,10 @@ export const HomeScreen: React.FC = () => {
                   isExpanded={expandedTagIds.has(tag.id)}
                   onToggleExpanded={() => toggleTagExpansion(tag.id)}
                   onPress={(link) => {
+                    if (isSwipeActive) {
+                      console.log('🚫 TagGroupCard tap blocked by active swipe gesture');
+                      return;
+                    }
                     if (isSelectionMode) {
                       toggleLinkSelection(link.id);
                     } else {
@@ -933,6 +979,10 @@ export const HomeScreen: React.FC = () => {
                     link={link}
                     tags={userTags}
                     onPress={() => {
+                      if (isSwipeActive) {
+                        console.log('🚫 Untagged LinkCard tap blocked by active swipe gesture');
+                        return;
+                      }
                       if (isSelectionMode) {
                         toggleLinkSelection(link.id);
                       } else {
@@ -1016,7 +1066,28 @@ export const HomeScreen: React.FC = () => {
             )}
           </View>
         )}
-        ListFooterComponent={() => <View style={styles.bottomSpacer} />}
+        ListFooterComponent={() => (
+          <View style={styles.bottomSpacer}>
+            {/* 🚀 無限スクロール用のローディングインジケーター */}
+            {isLoadingMore && (
+              <View style={styles.loadMoreContainer}>
+                <Text style={styles.loadMoreText}>さらに読み込み中...</Text>
+              </View>
+            )}
+          </View>
+        )}
+        onEndReached={() => {
+          console.log('📚 FlatList: onEndReached triggered', { hasMore, isLoadingMore, loading });
+          if (hasMore && !isLoadingMore && !loading) {
+            loadMore();
+          }
+        }}
+        onEndReachedThreshold={0.3}
+        windowSize={10}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        initialNumToRender={10}
+        updateCellsBatchingPeriod={50}
       />
     );
   };
@@ -1049,6 +1120,48 @@ export const HomeScreen: React.FC = () => {
     </View>
   );
 
+  // タグ別グループ化の最適化されたメモ化
+  const tagGroupData = useMemo(() => {
+    if (viewMode !== 'tag') return null;
+    
+    const tagGroups = new Map<string, Link[]>();
+    const untaggedLinks: Link[] = [];
+    
+    // タグMapを効率的に初期化
+    userTags.forEach(tag => {
+      tagGroups.set(tag.id, []);
+    });
+    
+    // リンクを効率的に分類
+    filteredLinks.forEach(link => {
+      if (!link.tagIds || link.tagIds.length === 0) {
+        untaggedLinks.push(link);
+      } else {
+        link.tagIds.forEach(tagId => {
+          const tagLinks = tagGroups.get(tagId);
+          if (tagLinks) {
+            tagLinks.push(link);
+          }
+        });
+      }
+    });
+    
+    const tagGroupsArray = Array.from(tagGroups.entries())
+      .map(([tagId, links]) => {
+        const tag = userTags.find(t => t.id === tagId);
+        return tag ? { tag, links } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (b!.links.length !== a!.links.length) {
+          return b!.links.length - a!.links.length;
+        }
+        return a!.tag.name.localeCompare(b!.tag.name);
+      });
+    
+    return { tagGroups: tagGroupsArray, untaggedLinks };
+  }, [viewMode, filteredLinks, userTags]);
+
   const groupedData = useMemo(() => {
     if (viewMode === 'folder') {
       const folderGroups: { folder: any; links: Link[] }[] = [];
@@ -1057,46 +1170,11 @@ export const HomeScreen: React.FC = () => {
     }
     
     if (viewMode === 'tag') {
-      const tagGroups = new Map<string, Link[]>();
-      const untaggedLinks: Link[] = [];
-      
-      // まず、すべてのユーザータグを空の配列で初期化
-      userTags.forEach(tag => {
-        tagGroups.set(tag.id, []);
-      });
-      
-      // 次に、リンクを各タグに振り分け
-      filteredLinks.forEach(link => {
-        if (!link.tagIds || link.tagIds.length === 0) {
-          untaggedLinks.push(link);
-        } else {
-          link.tagIds.forEach(tagId => {
-            if (tagGroups.has(tagId)) {
-              tagGroups.get(tagId)!.push(link);
-            }
-          });
-        }
-      });
-      
-      const tagGroupsArray = Array.from(tagGroups.entries())
-        .map(([tagId, links]) => {
-          const tag = userTags.find(t => t.id === tagId);
-          return tag ? { tag, links } : null;
-        })
-        .filter(Boolean)
-        .sort((a, b) => {
-          // リンク数で降順ソート、同じ場合はタグ名でソート
-          if (b!.links.length !== a!.links.length) {
-            return b!.links.length - a!.links.length;
-          }
-          return a!.tag.name.localeCompare(b!.tag.name);
-        });
-      
-      return { tagGroups: tagGroupsArray, untaggedLinks };
+      return tagGroupData || { tagGroups: [], untaggedLinks: [] };
     }
     
     return { listLinks: filteredLinks };
-  }, [filteredLinks, viewMode, userTags]);
+  }, [viewMode, filteredLinks, tagGroupData]);
 
   useEffect(() => {
     if (!isSearchMode) {
@@ -1511,6 +1589,16 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 100,
+  },
+  loadMoreContainer: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  loadMoreText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
   },
   tagFilterSection: {
     //

@@ -26,7 +26,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "18",
+      "buildNumber": "21",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -42,12 +42,22 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "wink.share",
-            "CFBundleURLSchemes": ["wink"]
+            "CFBundleURLSchemes": ["wink"],
+            "CFBundleURLIconFile": "icon"
+          },
+          {
+            "CFBundleURLName": "wink.universal",
+            "CFBundleURLSchemes": ["https"],
+            "CFBundleURLIconFile": "icon"
           }
+        ],
+        "NSUserActivityTypes": [
+          "com.tat22444.wink.share-link"
         ]
       },
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": ["Default"],
+        "com.apple.developer.associated-domains": ["applinks:wink.app"]
       },
       "backgroundModes": [
         "background-fetch"

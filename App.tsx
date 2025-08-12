@@ -123,7 +123,8 @@ const AppContent: React.FC = () => {
           screens: {
             Main: {
               screens: {
-                Home: 'home'
+                Home: 'home',
+                ShareLink: 'share'
               }
             }
           }

@@ -1,5 +1,6 @@
 // プラン管理統一サービス
 import { User, UserPlan } from '../types';
+import { getTestAccountPlan, isTestAccount as isTestAccountUtil } from '../utils/testAccountUtils';
 
 interface PlanLimits {
   maxTags: number;
@@ -29,7 +30,7 @@ export class PlanService {
     'plus': {
       maxTags: 500,
       maxLinks: 50,
-      aiUsageLimit: 80,
+      aiUsageLimit: 50,
       aiDailyLimit: 10,
       hasBasicAlerts: true,
       hasCustomReminders: true,
@@ -51,8 +52,8 @@ export class PlanService {
   // プラン価格の定義
   private static readonly PLAN_PRICING = {
     'free': { price: 0, currency: 'JPY', period: 'month' },
-    'plus': { price: 580, currency: 'JPY', period: 'month' },
-    'pro': { price: 1480, currency: 'JPY', period: 'month' },
+    'plus': { price: 500, currency: 'JPY', period: 'month' },
+    'pro': { price: 1420, currency: 'JPY', period: 'month' },
   };
   
   // プラン取得（統一アクセスポイント）
@@ -79,22 +80,227 @@ export class PlanService {
   
   // Firebase Timestampを Dateに変換するヘルパー
   private static getDateFromFirebaseTimestamp(timestamp: any): Date | null {
-    if (!timestamp) return null;
+    if (!timestamp) {
+      console.log('🔍 getDateFromFirebaseTimestamp - timestamp is null/undefined');
+      return null;
+    }
+    
+    console.log('🔍 getDateFromFirebaseTimestamp - input:', timestamp, 'type:', typeof timestamp);
     
     try {
+      // Firebase Timestamp (seconds + nanoseconds)
       if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
-        return new Date(timestamp.seconds * 1000);
-      } else if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp) {
-        return timestamp.toDate();
-      } else if (timestamp instanceof Date) {
+        const date = new Date(timestamp.seconds * 1000);
+        console.log('📅 Converted from seconds:', date);
+        return date;
+      } 
+      // Firebase Timestamp with toDate method
+      else if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp) {
+        const date = timestamp.toDate();
+        console.log('📅 Converted from toDate:', date);
+        return date;
+      } 
+      // Already a Date object
+      else if (timestamp instanceof Date) {
+        console.log('📅 Already Date object:', timestamp);
         return timestamp;
-      } else if (typeof timestamp === 'string') {
-        return new Date(timestamp);
+      } 
+      // String format
+      else if (typeof timestamp === 'string') {
+        const date = new Date(timestamp);
+        console.log('📅 Converted from string:', date, 'isValid:', !isNaN(date.getTime()));
+        return !isNaN(date.getTime()) ? date : null;
       }
+      // Number (milliseconds)
+      else if (typeof timestamp === 'number') {
+        const date = new Date(timestamp);
+        console.log('📅 Converted from number:', date);
+        return date;
+      }
+      
+      console.warn('🔍 Unsupported timestamp format:', timestamp);
       return null;
     } catch (error) {
-      console.error('Timestamp conversion error:', error);
+      console.error('❌ Timestamp conversion error:', error, 'for timestamp:', timestamp);
       return null;
+    }
+  }
+
+  // プラン開始日または最後の変更日を取得
+  static getPlanStartDate(user: User | null): Date | null {
+    if (!user) return null;
+
+    console.log('🔍 getPlanStartDate - user:', user.uid, 'createdAt:', user.createdAt, 'subscription:', user.subscription);
+
+    // テストアカウントの場合はアカウント作成日を返す
+    if (this.isTestAccount(user)) {
+      const date = this.getDateFromFirebaseTimestamp(user.createdAt) || new Date();
+      console.log('📅 TestAccount date:', date);
+      return date;
+    }
+
+    const subscription = user.subscription;
+    if (!subscription) {
+      // サブスクリプション情報がない場合はアカウント作成日を返す
+      const date = this.getDateFromFirebaseTimestamp(user.createdAt) || new Date();
+      console.log('📅 No subscription, using createdAt:', date);
+      return date;
+    }
+
+    // ダウングレード予定がある場合の処理
+    if (subscription.downgradeTo) {
+      const now = new Date();
+      const downgradeDate = this.getDateFromFirebaseTimestamp(subscription.downgradeEffectiveDate);
+      
+      // ダウングレード日が過ぎている場合はダウングレード日を返す
+      if (downgradeDate && now >= downgradeDate) {
+        console.log('📅 Using downgrade date:', downgradeDate);
+        return downgradeDate;
+      }
+    }
+
+    // プラン開始日を返す（Firebase Timestampの変換）
+    const startDate = this.getDateFromFirebaseTimestamp(subscription.startDate);
+    const finalDate = startDate || this.getDateFromFirebaseTimestamp(user.createdAt) || new Date();
+    console.log('📅 Final date:', finalDate, 'from startDate:', startDate, 'createdAt conversion:', this.getDateFromFirebaseTimestamp(user.createdAt));
+    return finalDate;
+  }
+
+  // AI使用回数のリセット日を計算
+  static getAIUsageResetDate(user: User | null): Date | null {
+    if (!user) return null;
+
+    let startDate = this.getPlanStartDate(user);
+    
+    // startDateが無効な場合のフォールバック処理を改善
+    if (!startDate || isNaN(startDate.getTime())) {
+      console.log('📅 Invalid startDate, trying alternative approaches...');
+      
+      // フォールバック1: 現在の月の11日を基準にする（多くのユーザーが8/11登録のため）
+      const now = new Date();
+      let fallbackDate = new Date(now.getFullYear(), now.getMonth(), 11);
+      
+      // 今月の11日が過ぎていれば来月の11日
+      if (fallbackDate <= now) {
+        fallbackDate = new Date(now.getFullYear(), now.getMonth() + 1, 11);
+      }
+      
+      console.log('📅 Using fallback date (11th of month):', fallbackDate);
+      return fallbackDate;
+    }
+
+    console.log('📅 Start date for reset calculation:', startDate);
+    const now = new Date();
+    
+    // 開始日と同じ日付の次の月を計算
+    let nextReset = new Date(now.getFullYear(), now.getMonth(), startDate.getDate());
+    console.log('📅 Initial next reset (same month):', nextReset);
+    
+    // 既に今月のリセット日を過ぎている場合は、来月の同日にする
+    if (nextReset <= now) {
+      nextReset = new Date(now.getFullYear(), now.getMonth() + 1, startDate.getDate());
+      console.log('📅 Reset date passed, using next month:', nextReset);
+    }
+    
+    // 月末の調整（例：1/31登録 → 2/28リセット）
+    if (nextReset.getDate() !== startDate.getDate()) {
+      // 指定した日付が存在しない場合（例：2/31）は月末に調整
+      nextReset = new Date(nextReset.getFullYear(), nextReset.getMonth() + 1, 0);
+      console.log('📅 Adjusted for month end:', nextReset);
+    }
+    
+    console.log('📅 Final reset date:', nextReset);
+    return nextReset;
+  }
+
+  // AI使用回数リセット日のテキストを生成
+  static getAIUsageResetDateText(user: User | null): string {
+    // テストアカウントは表示しない
+    if (this.isTestAccount(user)) {
+      return '';
+    }
+
+    const resetDate = this.getAIUsageResetDate(user);
+    if (!resetDate) return '毎月1日にリセット';
+
+    const options: Intl.DateTimeFormatOptions = { 
+      month: 'long', 
+      day: 'numeric' 
+    };
+    const formattedDate = resetDate.toLocaleDateString('ja-JP', options);
+    return `${formattedDate}にリセット`;
+  }
+
+  // プラン開始日のテキストを生成（従来の機能）
+  static getPlanStartDateText(user: User | null): string {
+    const startDate = this.getPlanStartDate(user);
+    if (!startDate) return '';
+
+    // 日付が有効かチェック
+    if (isNaN(startDate.getTime())) {
+      console.error('Invalid startDate:', startDate, 'for user:', user?.uid);
+      // フォールバック: 現在の日付を使用
+      const fallbackDate = new Date();
+      const options: Intl.DateTimeFormatOptions = { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      };
+      const formattedDate = fallbackDate.toLocaleDateString('ja-JP', options);
+      return `${formattedDate}から利用開始`;
+    }
+
+    // テストアカウントの場合は特別な表示
+    if (this.isTestAccount(user)) {
+      const options: Intl.DateTimeFormatOptions = { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      };
+      const formattedDate = startDate.toLocaleDateString('ja-JP', options);
+      return `${formattedDate}からテスト利用中`;
+    }
+
+    const subscription = user?.subscription;
+    const now = new Date();
+    
+    // ダウングレード予定がある場合
+    if (subscription?.downgradeTo) {
+      const downgradeDate = this.getDateFromFirebaseTimestamp(subscription.downgradeEffectiveDate);
+      
+      if (downgradeDate && now >= downgradeDate) {
+        // ダウングレード後
+        const options: Intl.DateTimeFormatOptions = { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric' 
+        };
+        const formattedDate = downgradeDate.toLocaleDateString('ja-JP', options);
+        return `${formattedDate}に${subscription.downgradeTo.toUpperCase()}プランに変更`;
+      } else if (downgradeDate) {
+        // ダウングレード予定
+        const options: Intl.DateTimeFormatOptions = { 
+          month: 'short', 
+          day: 'numeric' 
+        };
+        const formattedDate = downgradeDate.toLocaleDateString('ja-JP', options);
+        return `${formattedDate}に${subscription.downgradeTo.toUpperCase()}プランに変更予定`;
+      }
+    }
+
+    // 通常のプラン開始日
+    const options: Intl.DateTimeFormatOptions = { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    };
+    const formattedDate = startDate.toLocaleDateString('ja-JP', options);
+    const currentPlan = this.getUserPlan(user);
+    
+    if (currentPlan === 'free') {
+      return `${formattedDate}から利用開始`;
+    } else {
+      return `${formattedDate}から${currentPlan.toUpperCase()}プラン`;
     }
   }
 
@@ -102,20 +308,28 @@ export class PlanService {
   static isTestAccount(user: User | null): boolean {
     if (!user) return false;
     
-    // Firestoreフラグベースの判定
-    const isTestByFlag = user.isTestAccount === true || user.role === 'admin' || user.role === 'tester';
-    
-    // メールアドレスベースの判定
-    const developerEmails = process.env.EXPO_PUBLIC_DEVELOPER_EMAILS?.split(',').map((email: string) => email.trim()) || [];
-    const isTestByEmail = user.email && developerEmails.includes(user.email);
-    
-    return isTestByFlag || isTestByEmail;
+    // testAccountUtils.tsの統一ロジックを使用
+    return isTestAccountUtil({
+      email: user.email,
+      isTestAccount: user.isTestAccount,
+      role: user.role
+    });
   }
 
   // 実効プラン（テストアカウントは特別扱い）
   static getEffectivePlan(user: User | null): UserPlan {
     if (this.isTestAccount(user)) {
-      return 'pro'; // テストアカウントは最高プランとして扱う
+      // テストアカウントのプランタイプを取得
+      const testPlan = getTestAccountPlan(user?.email || null);
+      
+      if (testPlan === 'unlimited') {
+        return 'pro'; // 無制限テストアカウントは最高プランとして扱う
+      } else if (testPlan === 'plus' || testPlan === 'pro') {
+        return testPlan; // 指定されたプランを返す
+      }
+      
+      // フォールバック：従来通り最高プランとして扱う
+      return 'pro';
     }
     return this.getUserPlan(user);
   }
@@ -127,12 +341,20 @@ export class PlanService {
     
     // テストアカウントは特別扱い
     if (this.isTestAccount(user)) {
-      return {
-        ...limits,
-        maxTags: -1, // 無制限
-        maxLinks: -1, // 無制限
-        aiUsageLimit: 999999, // 実質無制限
-      };
+      const testPlan = getTestAccountPlan(user?.email || null);
+      
+      // 無制限テストアカウントのみ制限を無制限に設定
+      if (testPlan === 'unlimited') {
+        return {
+          ...limits,
+          maxTags: -1, // 無制限
+          maxLinks: -1, // 無制限
+          aiUsageLimit: 999999, // 実質無制限
+        };
+      }
+      
+      // plus/proテストアカウントは通常の制限を適用
+      return limits;
     }
     
     return limits;
@@ -185,7 +407,7 @@ export class PlanService {
   }
 
   // AI分析結果保存可能かチェック（全プランで可能）
-  static canSaveAnalysis(user: User | null): boolean {
+  static canSaveAnalysis(): boolean {
     // 全プランでAI分析結果の保存が可能
     return true;
   }
@@ -193,6 +415,16 @@ export class PlanService {
   // プラン表示名取得
   static getPlanDisplayName(user: User | null): string {
     if (this.isTestAccount(user)) {
+      const testPlan = getTestAccountPlan(user?.email || null);
+      
+      if (testPlan === 'unlimited') {
+        return 'テスト(無制限)';
+      } else if (testPlan === 'plus') {
+        return 'テスト(Plus)';
+      } else if (testPlan === 'pro') {
+        return 'テスト(Pro)';
+      }
+      
       return 'テスト';
     }
     
@@ -272,7 +504,6 @@ export class PlanService {
 
   // 制限超過メッセージ取得
   static getLimitExceededMessage(user: User | null, type: 'tags' | 'links' | 'ai' | 'ai_daily'): string {
-    const plan = this.getUserPlan(user);
     const limits = this.getPlanLimits(user);
     
     switch (type) {
@@ -319,7 +550,7 @@ export class PlanService {
       isTestAccount: this.isTestAccount(user),
       limits,
       displayName: this.getPlanDisplayName(user),
-      canSaveAnalysis: this.canSaveAnalysis(user),
+      canSaveAnalysis: this.canSaveAnalysis(),
     };
   }
 } 
