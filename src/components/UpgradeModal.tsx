@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,9 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
-import { useApplePay } from '../services/applePayService';
+import { IapService } from '../services/applePayService'; // Updated import
 import { useAuth } from '../contexts/AuthContext';
+import { Product, Subscription } from 'react-native-iap';
 
 interface UpgradeModalProps {
   visible: boolean;
@@ -46,25 +47,64 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   onClose,
   currentPlan = 'free',
   heroTitle = 'プランをアップグレード',
-  heroDescription = 'より多くのリンクとタグを保存し、\nAI機能をさらに活用しましょう',
+  heroDescription = `より多くのリンクとタグを保存し、
+AI機能をさらに活用しましょう`,
   sourceContext = 'general',
 }) => {
   const { user } = useAuth();
-  const { handleSubscription } = useApplePay();
+  const iapService = IapService.getInstance();
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingPlan, setProcessingPlan] = useState<UserPlan | null>(null);
+  const [products, setProducts] = useState<(Product | Subscription)[]>([]);
 
-  // プラン詳細を動的に生成
+  useEffect(() => {
+    const fetchProducts = async () => {
+      if (visible) {
+        try {
+          await iapService.initialize();
+          const fetchedProducts = await iapService.getProducts();
+          setProducts(fetchedProducts);
+          console.log('🛒 UpgradeModal: Products loaded successfully', {
+            count: fetchedProducts.length,
+            isDevelopment: __DEV__,
+            products: fetchedProducts.map(p => ({
+              productId: p.productId,
+              localizedPrice: (p as any).localizedPrice
+            }))
+          });
+        } catch (error) {
+          console.error('Failed to fetch products', error);
+          
+          // Development環境では警告のみ、本番環境ではエラー表示
+          if (__DEV__) {
+            console.warn('⚠️ Development mode: IAP products not available, using fallback pricing');
+          } else {
+            Alert.alert('エラー', 'プラン情報の取得に失敗しました。');
+          }
+        }
+      }
+    };
+    fetchProducts();
+  }, [visible, iapService]);
+
   const generatePlanOptions = (): PlanOption[] => {
     const planTypes: UserPlan[] = ['free', 'plus', 'pro'];
     
     return planTypes.map((planType): PlanOption => {
       const details = PlanService.getPlanDetails(planType);
+      // Apple Store Connectから取得した商品情報を使用
+      const product = products.find(p => {
+        if (planType === 'plus') return p.productId === 'com.tat22444.wink.plus.monthly';
+        if (planType === 'pro') return p.productId === 'com.tat22444.wink.pro.monthly';
+        return false;
+      });
+
+      const features: PlanFeature[] = [];
+      // ... (feature generation logic remains the same)
+
       const pricing = PlanService.getPlanPricing(planType);
       
       // プランごとの機能定義（sourceContextに応じて説明を調整）
-      const features: PlanFeature[] = [];
-      
       if (planType === 'free') {
         features.push(
           {
@@ -157,11 +197,14 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           }
         );
       }
-      
+
       return {
         name: planType,
         displayName: details.displayName,
-        price: pricing.price === 0 ? '¥0' : `¥${pricing.price.toLocaleString()}`,
+        // Apple Store Connect価格を優先、フォールバックでPlanService価格を使用
+        price: product && (product as any).localizedPrice ? 
+          (product as any).localizedPrice : 
+          (pricing.price === 0 ? '¥0' : `¥${pricing.price.toLocaleString()}`),
         period: pricing.price === 0 ? '無料' : '月額',
         description: planType === 'free' ? '基本機能をお試し' :
                     planType === 'plus' ? 'Freeプランに加えて、より多くのリンクとAI解説' :
@@ -179,35 +222,35 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       Alert.alert('エラー', 'ログインが必要です');
       return;
     }
-
-    if (planName === 'free') {
-      Alert.alert('情報', 'Freeプランは既に利用可能です');
-      return;
-    }
+    if (planName === 'free') return;
 
     try {
       setIsProcessing(true);
       setProcessingPlan(planName);
-
       console.log('🔄 支払い処理開始:', { planName, userId: user.uid });
 
-      await handleSubscription(planName, user.uid);
+      await iapService.purchasePlan(planName);
       
-      // Apple課金機能は一時的に無効化されているため、常にエラーが発生
-      // 成功時の処理は後で実装
-    } catch (error) {
-      console.error('❌ 支払い処理エラー:', error);
       Alert.alert(
-        '機能準備中',
-        'Apple課金機能は現在準備中です。\n\n基本機能（リンク管理、タグ管理、AI解説）は引き続きご利用いただけます。',
-        [{ text: 'OK' }]
+        '購入処理中',
+        '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。',
+        [{ text: 'OK', onPress: onClose }]
       );
+
+    } catch (error: any) {
+      console.error('❌ 支払い処理エラー:', error);
+      if (error.code === 'E_USER_CANCELLED') {
+        Alert.alert('キャンセル', '購入がキャンセルされました。');
+      } else {
+        Alert.alert('エラー', `購入処理中にエラーが発生しました: ${error.message}`);
+      }
     } finally {
       setIsProcessing(false);
       setProcessingPlan(null);
     }
   };
 
+  // ... (renderFeature and other render logic remains the same, but I will include it for a full file write)
   const renderFeature = (feature: PlanFeature) => (
     <View key={feature.title} style={styles.featureItem}>
       <View style={styles.featureIcon}>
@@ -256,7 +299,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
         {!isCurrentPlan && (
           <TouchableOpacity
-            style={[
+            style={[ 
               styles.upgradeButton,
               plan.recommended && styles.recommendedButton,
               (isProcessing && processingPlan === plan.name) && styles.processingButton
@@ -267,7 +310,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             {isProcessing && processingPlan === plan.name ? (
               <View style={styles.processingContainer}>
                 <ActivityIndicator size="small" color="#FFF" style={styles.processingSpinner} />
-                <Text style={[
+                <Text style={[ 
                   styles.upgradeButtonText,
                   plan.recommended && styles.recommendedButtonText
                 ]}>
@@ -275,7 +318,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 </Text>
               </View>
             ) : (
-              <Text style={[
+              <Text style={[ 
                 styles.upgradeButtonText,
                 plan.recommended && styles.recommendedButtonText
               ]}>
@@ -297,7 +340,6 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       <View style={styles.container}>
         <View style={styles.modalContainer}>
           <SafeAreaView style={{ flex: 1 }}>
-            {/* Header */}
             <View style={styles.header}>
               <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                 <Feather name="x" size={24} color="#FFF" />
@@ -307,29 +349,25 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Hero Section */}
-          <View style={styles.heroSection}>
-            <Text style={styles.heroTitle}>
-              {heroTitle}
-            </Text>
-            <Text style={styles.heroDescription}>
-              {heroDescription}
-            </Text>
-          </View>
+              <View style={styles.heroSection}>
+                <Text style={styles.heroTitle}>{heroTitle}</Text>
+                <Text style={styles.heroDescription}>{heroDescription}</Text>
+              </View>
 
-          {/* Plans */}
-          <View style={styles.plansContainer}>
-            {plans.map(renderPlan)}
-          </View>
+              <View style={styles.plansContainer}>
+                {plans.map(renderPlan)}
+              </View>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              • いつでもプラン変更・キャンセル可能{'\n'}
-              • 初回30日間返金保証{'\n'}
-              • データは安全に暗号化して保存
-            </Text>
-          </View>
+              <View style={styles.footer}>
+                <TouchableOpacity onPress={() => Alert.alert('リストア', '過去の購入情報を復元します。よろしいですか？', [{text: 'キャンセル'}, {text: 'OK', onPress: () => iapService.restorePurchases()}])}>
+                    <Text style={styles.footerLink}>購入の復元</Text>
+                </TouchableOpacity>
+                <Text style={styles.footerText}>
+                  • いつでもプラン変更・キャンセル可能
+  
+                  • データは安全に暗号化して保存
+                </Text>
+              </View>
             </ScrollView>
           </SafeAreaView>
         </View>
@@ -535,12 +573,18 @@ const styles = StyleSheet.create({
     color: '#777',
     textAlign: 'center',
     lineHeight: 18,
+    marginTop: 8,
+  },
+  footerLink: {
+    fontSize: 13,
+    color: '#8A2BE2',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   processingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
   },
   processingSpinner: {
     marginRight: 8,
@@ -548,4 +592,4 @@ const styles = StyleSheet.create({
   processingButton: {
     opacity: 0.7,
   },
-}); 
+});

@@ -183,7 +183,7 @@ async function generateTagsLogic(
   // 11. コスト計算と記録
   const tokensUsed = Math.ceil(prompt.length / 4);
   const cost = AI_LIMITS[userPlan]?.costPerRequest || 0;
-  await recordAIUsage(userId, "tags", tokensUsed, combinedText.length, cost);
+  // AI使用量記録は各機能で個別に実装
   await cacheTags(combinedText, tags);
 
   logger.info(`🤖 [AI Tagging Success] Generated tags for userId: ${userId}`, {
@@ -503,7 +503,7 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
 
     // 各テーマのrelatedLinkIndicesを検証・修正
     if (suggestions.suggestions) {
-      suggestions.suggestions.forEach((suggestion: any, themeIndex: number) => {
+      suggestions.suggestions.forEach((suggestion: any) => {
         // relatedLinkIndicesが存在しない場合は、デフォルト値を設定
         if (!suggestion.relatedLinkIndices || !Array.isArray(suggestion.relatedLinkIndices)) {
           // リンク数に応じてデフォルトインデックスを設定
@@ -525,7 +525,7 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
           suggestion.relatedLinkIndices = [0];
         }
 
-        logger.info(`📊 テーマ${themeIndex + 1}の関連リンク設定:`, {
+        logger.info("📊 テーマの関連リンク設定:", {
           theme: suggestion.title,
           relatedLinkIndices: suggestion.relatedLinkIndices,
           relatedLinkTitles: suggestion.relatedLinkIndices.map((index: number) => linkTitles[index]),
@@ -1130,6 +1130,184 @@ async function getCachedTags(text: string): Promise<string[] | null> {
   return null;
 }
 
+// ユーザーのAI利用状況を安全に取得する
+export const getAIUsageStats = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication is required.");
+  }
+  const userId = request.auth.uid;
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+  const day = now.toISOString().slice(0, 10);
+
+  try {
+    // 月次サマリーを取得
+    const summaryRef = db.collection("aiUsageSummary").doc(`${userId}_${month}`);
+    const summaryDoc = await summaryRef.get();
+    const summaryData = summaryDoc.exists ? summaryDoc.data() : {totalRequests: 0, totalTokens: 0, totalCost: 0};
+
+    // 今日の利用回数を取得
+    const dailyQuery = db.collection("aiUsage").where("userId", "==", userId).where("day", "==", day);
+    const dailySnapshot = await dailyQuery.get();
+
+    // 月間のAI解説機能の使用回数を取得
+    const analysisQuery = db.collection("aiUsage").where("userId", "==", userId).where("type", "==", "analysis").where("month", "==", month);
+    const analysisSnapshot = await analysisQuery.get();
+
+    const result = {
+      currentMonth: {
+        totalRequests: summaryData?.totalRequests || 0,
+        totalTokens: summaryData?.totalTokens || 0,
+        totalCost: summaryData?.totalCost || 0,
+      },
+      todayUsage: dailySnapshot.size,
+      analysisUsage: analysisSnapshot.size,
+    };
+
+    logger.info(`Fetched AI usage stats for user: ${userId}`, result);
+    return result;
+  } catch (error) {
+    logger.error(`Error fetching AI usage stats for user ${userId}:`, error);
+    throw new HttpsError("internal", "Failed to fetch AI usage stats.");
+  }
+});
+
+// AI使用制限チェック
+export const checkAIUsageLimit = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "認証が必要です");
+  }
+
+  const {userId, plan, type} = request.data;
+  if (!userId || !plan || !type) {
+    throw new HttpsError("invalid-argument", "userId, plan, typeが必要です");
+  }
+
+  try {
+    logger.info("🔍 AI使用制限チェック開始:", {userId, plan, type});
+
+    const now = new Date();
+    const currentMonth = now.toISOString().slice(0, 7);
+    const today = now.toISOString().slice(0, 10);
+
+    // プラン制限を取得
+    const planLimits: Record<string, {monthlyLimit: number, dailyLimit: number}> = {
+      "free": {monthlyLimit: 5, dailyLimit: 5},
+      "plus": {monthlyLimit: 50, dailyLimit: 10},
+      "pro": {monthlyLimit: 150, dailyLimit: 50},
+    };
+
+    const limits = planLimits[plan] || planLimits["free"];
+
+    // 月次使用量チェック
+    let currentUsageCount = 0;
+    if (type === "analysis") {
+      const analysisQuery = db.collection("aiUsage")
+        .where("userId", "==", userId)
+        .where("type", "==", "analysis")
+        .where("month", "==", currentMonth);
+      const analysisSnapshot = await analysisQuery.get();
+      currentUsageCount = analysisSnapshot.size;
+    } else {
+      const summaryRef = db.collection("aiUsageSummary").doc(`${userId}_${currentMonth}`);
+      const summaryDoc = await summaryRef.get();
+      currentUsageCount = summaryDoc.exists ? (summaryDoc.data()?.totalRequests || 0) : 0;
+    }
+
+    if (currentUsageCount >= limits.monthlyLimit) {
+      logger.info("❌ 月次制限チェック失敗:", {currentUsageCount, monthlyLimit: limits.monthlyLimit});
+      return {
+        allowed: false,
+        reason: `月間利用制限に達しました（${limits.monthlyLimit}回/月）`,
+      };
+    }
+
+    // 日次使用量チェック
+    let currentDailyUsage = 0;
+    if (type === "analysis") {
+      const dailyAnalysisQuery = db.collection("aiUsage")
+        .where("userId", "==", userId)
+        .where("type", "==", "analysis")
+        .where("day", "==", today);
+      const dailyAnalysisSnapshot = await dailyAnalysisQuery.get();
+      currentDailyUsage = dailyAnalysisSnapshot.size;
+    } else {
+      const dailyQuery = db.collection("aiUsage")
+        .where("userId", "==", userId)
+        .where("day", "==", today);
+      const dailySnapshot = await dailyQuery.get();
+      currentDailyUsage = dailySnapshot.size;
+    }
+
+    if (currentDailyUsage >= limits.dailyLimit) {
+      logger.info("❌ 日次制限チェック失敗:", {currentDailyUsage, dailyLimit: limits.dailyLimit});
+      return {
+        allowed: false,
+        reason: `日間利用制限に達しました（${limits.dailyLimit}回/日）`,
+      };
+    }
+
+    logger.info("✅ AI使用制限チェック通過:", {
+      currentUsageCount,
+      currentDailyUsage,
+      limits,
+    });
+
+    return {allowed: true};
+  } catch (error) {
+    logger.error("❌ AI使用制限チェックエラー:", error);
+    throw new HttpsError("internal", "使用制限チェックに失敗しました");
+  }
+});
+
+// AI使用量記録
+export const recordAIUsage = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "認証が必要です");
+  }
+
+  const {userId, type, tokensUsed, cost} = request.data;
+  if (!userId || !type || tokensUsed === undefined || cost === undefined) {
+    throw new HttpsError("invalid-argument", "userId, type, tokensUsed, costが必要です");
+  }
+
+  try {
+    logger.info("📝 AI使用量記録開始:", {userId, type, tokensUsed, cost});
+
+    const now = new Date();
+    const month = now.toISOString().slice(0, 7);
+    const day = now.toISOString().slice(0, 10);
+
+    // 使用量記録を追加
+    await db.collection("aiUsage").add({
+      userId,
+      type,
+      tokensUsed,
+      textLength: 0, // 後方互換性のため
+      cost,
+      timestamp: FieldValue.serverTimestamp(),
+      month,
+      day,
+    });
+
+    // 月次サマリー更新
+    const summaryRef = db.collection("aiUsageSummary").doc(`${userId}_${month}`);
+    await summaryRef.set({
+      totalRequests: FieldValue.increment(1),
+      totalTokens: FieldValue.increment(tokensUsed),
+      totalCost: FieldValue.increment(cost),
+      lastUpdated: FieldValue.serverTimestamp(),
+    }, {merge: true});
+
+    logger.info("✅ AI使用量記録完了:", {userId, type, tokensUsed, cost});
+
+    return {success: true};
+  } catch (error) {
+    logger.error("❌ AI使用量記録エラー:", error);
+    throw new HttpsError("internal", "使用量記録に失敗しました");
+  }
+});
+
 async function cacheTags(text: string, tags: string[]): Promise<void> {
   const hash = generateContentHash(text);
   logger.info(`🤖 [Cache Store] Storing tags for text: "${text.slice(0, 100)}..." (hash: ${hash})`, {tags});
@@ -1145,13 +1323,129 @@ function generateContentHash(text: string): string {
   return Math.abs(hash).toString(36);
 }
 
-async function recordAIUsage(userId: string, type: string, tokensUsed: number, textLength: number, cost: number): Promise<void> {
-  const now = new Date();
-  const month = now.toISOString().slice(0, 7);
-  const day = now.toISOString().slice(0, 10);
-  await db.collection("aiUsage").add({userId, type, tokensUsed, textLength, cost, timestamp: FieldValue.serverTimestamp(), month, day});
-  const summaryRef = db.collection("aiUsageSummary").doc(`${userId}_${month}`);
-  await summaryRef.set({totalRequests: FieldValue.increment(1), totalTokens: FieldValue.increment(tokensUsed), totalCost: FieldValue.increment(cost), lastUpdated: FieldValue.serverTimestamp()}, {merge: true});
+// ===================================================================
+//
+// Apple App Store 購入検証
+//
+// ===================================================================
+
+interface AppleReceiptValidationRequest {
+  receipt: string;
+  productId: string;
+}
+
+interface AppleReceiptResponse {
+  status: number;
+  receipt?: any;
+  "latest_receipt_info"?: any[];
+  "pending_renewal_info"?: any[];
+}
+
+export const validateAppleReceipt = onCall<AppleReceiptValidationRequest>(async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "認証が必要です");
+    }
+
+    const {receipt, productId} = request.data;
+    const userId = request.auth.uid;
+
+    logger.info("🛒 Apple レシート検証開始:", {userId, productId});
+
+    if (!receipt || !productId) {
+      throw new HttpsError("invalid-argument", "レシートまたはプロダクトIDが無効です");
+    }
+
+    // Apple App Store レシート検証
+    const validationResult = await validateReceiptWithApple(receipt);
+
+    if (validationResult.status !== 0) {
+      logger.error("❌ Apple レシート検証失敗:", {status: validationResult.status, userId, productId});
+      throw new HttpsError("invalid-argument", "無効なレシートです");
+    }
+
+    // プロダクトIDの確認
+    const validProducts = [
+      "com.tat22444.wink.plus.monthly",
+      "com.tat22444.wink.pro.monthly",
+    ];
+
+    if (!validProducts.includes(productId)) {
+      throw new HttpsError("invalid-argument", "無効なプロダクトIDです");
+    }
+
+    // ユーザーのプランを更新
+    const planType = productId.includes("plus") ? "plus" : "pro";
+    await updateUserSubscription(userId, planType, validationResult);
+
+    logger.info("✅ Apple レシート検証・プラン更新完了:", {userId, planType, productId});
+
+    return {
+      success: true,
+      planType,
+      validatedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    logger.error("❌ Apple レシート検証エラー:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "レシート検証に失敗しました");
+  }
+});
+
+async function validateReceiptWithApple(receiptData: string): Promise<AppleReceiptResponse> {
+  // まずは本番環境で試す
+  let response = await attemptReceiptValidation(receiptData, "https://buy.itunes.apple.com/verifyReceipt");
+
+  // 本番環境で21007エラー (sandbox receipt)の場合はsandboxで試す
+  if (response.status === 21007) {
+    logger.info("🛒 本番環境で21007エラー、sandboxで再試行");
+    response = await attemptReceiptValidation(receiptData, "https://sandbox.itunes.apple.com/verifyReceipt");
+  }
+
+  return response;
+}
+
+async function attemptReceiptValidation(receiptData: string, url: string): Promise<AppleReceiptResponse> {
+  const response = await axios.post<AppleReceiptResponse>(url, {
+    "receipt-data": receiptData,
+    "password": process.env.APPLE_SHARED_SECRET || functions.config().apple?.shared_secret,
+    "exclude-old-transactions": true,
+  }, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    timeout: 10000,
+  });
+
+  return response.data;
+}
+
+async function updateUserSubscription(userId: string, planType: "plus" | "pro", validationResult: AppleReceiptResponse): Promise<void> {
+  const userRef = db.collection("users").doc(userId);
+
+  const subscriptionData = {
+    plan: planType,
+    status: "active",
+    startDate: FieldValue.serverTimestamp(),
+    lastValidatedAt: FieldValue.serverTimestamp(),
+    source: "apple_app_store",
+    // Apple レシートから取得した情報も保存
+    appleTransactionInfo: validationResult.receipt ? {
+      transactionId: validationResult.receipt.in_app?.[0]?.transaction_id,
+      originalTransactionId: validationResult.receipt.in_app?.[0]?.original_transaction_id,
+      purchaseDate: validationResult.receipt.in_app?.[0]?.purchase_date_ms,
+    } : null,
+  };
+
+  // ユーザードキュメントのsubscriptionフィールドを更新
+  await userRef.set({
+    subscription: subscriptionData,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, {merge: true});
+
+  logger.info("✅ ユーザープラン更新完了:", {userId, planType, subscriptionData});
 }
 
 

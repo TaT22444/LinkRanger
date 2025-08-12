@@ -1,20 +1,5 @@
-import {
-  collection,
-  doc,
-  addDoc,
-  updateDoc,
-  setDoc, // setDocを追加
-  getDoc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  limit,
-  serverTimestamp,
-  increment,
-  Timestamp,
-} from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../config/firebase';
 import { UserPlan } from '../types';
 import { PlanService } from './planService';
 
@@ -40,6 +25,40 @@ interface MonthlyUsage {
   lastUpdated: Date;
 }
 
+// Firebase Functions呼び出し用の型定義
+interface CheckUsageLimitRequest {
+  userId: string;
+  plan: UserPlan;
+  type: 'summary' | 'tags' | 'analysis';
+}
+
+interface CheckUsageLimitResponse {
+  allowed: boolean;
+  reason?: string;
+}
+
+interface RecordUsageRequest {
+  userId: string;
+  type: 'summary' | 'tags' | 'analysis';
+  tokensUsed: number;
+  cost: number;
+}
+
+interface GetUsageStatsResponse {
+  currentMonth: {
+    totalRequests: number;
+    totalTokens: number;
+    totalCost: number;
+  };
+  todayUsage: number;
+  analysisUsage: number;
+}
+
+// Firebase Functions
+const checkAIUsageLimitFn = httpsCallable<CheckUsageLimitRequest, CheckUsageLimitResponse>(functions, 'checkAIUsageLimit');
+const recordAIUsageFn = httpsCallable<RecordUsageRequest, {success: boolean}>(functions, 'recordAIUsage');
+const getAIUsageStatsFn = httpsCallable<{}, GetUsageStatsResponse>(functions, 'getAIUsageStats');
+
 export class AIUsageManager {
   private static instance: AIUsageManager;
   
@@ -50,232 +69,94 @@ export class AIUsageManager {
     return this.instance;
   }
 
-  // 使用可能かチェック
+  // 使用可能かチェック（サーバー側で実行）
   async checkUsageLimit(
     userId: string, 
     plan: UserPlan, 
     type: 'summary' | 'tags' | 'analysis'
   ): Promise<{ allowed: boolean; reason?: string }> {
-    const monthlyLimit = PlanService.getAIUsageLimit({ subscription: { plan } } as any);
-    const dailyLimit = PlanService.getAIDailyLimit({ subscription: { plan } } as any);
-
-    // 月次制限チェック（特定のtype用）
-    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-    let currentUsageCount = 0;
-    
-    // typeに応じて適切な使用回数を取得
-    if (type === 'analysis') {
-      currentUsageCount = await this.getMonthlyAnalysisUsage(userId, currentMonth);
-    } else {
-      // 他のtypeについては従来通り総使用量を使用
-      const monthlyUsage = await this.getMonthlyUsage(userId, currentMonth);
-      currentUsageCount = monthlyUsage.totalRequests;
-    }
-    
-    if (currentUsageCount >= monthlyLimit) {
+    try {
+      console.log('🔍 AI使用制限チェック開始（サーバー側）:', { userId, plan, type });
+      
+      const result = await checkAIUsageLimitFn({ userId, plan, type });
+      
+      console.log('✅ AI使用制限チェック完了（サーバー側）:', result.data);
+      return result.data;
+    } catch (error) {
+      console.error('❌ AI使用制限チェックエラー（サーバー側）:', error);
+      // エラー時はとりあえず制限に引っかかったものとして扱う
       return {
         allowed: false,
-        reason: `月間利用制限に達しました（${monthlyLimit}回/月）`
+        reason: 'サーバーエラーが発生しました。しばらく時間をおいてから再度お試しください。'
       };
     }
-
-    // 日次制限チェック（特定のtype用）
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    let currentDailyUsage = 0;
-    
-    // typeに応じて適切な日次使用回数を取得
-    if (type === 'analysis') {
-      currentDailyUsage = await this.getDailyAnalysisUsage(userId, today);
-    } else {
-      // 他のtypeについては従来通り総使用量を使用
-      currentDailyUsage = await this.getDailyUsage(userId, today);
-    }
-    
-    if (currentDailyUsage >= dailyLimit) {
-      return {
-        allowed: false,
-        reason: `日間利用制限に達しました（${dailyLimit}回/日）`
-      };
-    }
-
-    return { allowed: true };
   }
 
-  // 使用量を記録
+  // 使用量を記録（サーバー側で実行）
   async recordUsage(
     userId: string,
     type: 'summary' | 'tags' | 'analysis',
     tokensUsed: number,
     cost: number
   ): Promise<void> {
-    const now = new Date();
-    const month = now.toISOString().slice(0, 7);
-    const day = now.toISOString().slice(0, 10);
-
-    // 個別使用記録
-    const usageRecord: Omit<AIUsageRecord, 'id'> = {
-      userId,
-      type,
-      tokensUsed,
-      cost,
-      timestamp: now,
-      month,
-      day,
-    };
-
-    const usageRef = collection(db, 'aiUsage');
-    await addDoc(usageRef, {
-      ...usageRecord,
-      timestamp: serverTimestamp(),
-    });
-
-    // 月次サマリー更新
-    await this.updateMonthlySummary(userId, month, tokensUsed, cost);
-  }
-
-  // 月次使用量を取得
-  private async getMonthlyUsage(userId: string, month: string): Promise<MonthlyUsage> {
-    const summaryRef = doc(db, 'aiUsageSummary', `${userId}_${month}`);
-    const summaryDoc = await getDoc(summaryRef);
-    
-    if (summaryDoc.exists()) {
-      const data = summaryDoc.data();
-      return {
-        userId,
-        month,
-        totalRequests: data.totalRequests || 0,
-        totalTokens: data.totalTokens || 0,
-        totalCost: data.totalCost || 0,
-        lastUpdated: data.lastUpdated?.toDate() || new Date(),
-      };
-    }
-
-    return {
-      userId,
-      month,
-      totalRequests: 0,
-      totalTokens: 0,
-      totalCost: 0,
-      lastUpdated: new Date(),
-    };
-  }
-
-  // 日次使用量を取得
-  private async getDailyUsage(userId: string, day: string): Promise<number> {
-    const q = query(
-      collection(db, 'aiUsage'),
-      where('userId', '==', userId),
-      where('day', '==', day)
-    );
-    
-    const snapshot = await getDocs(q);
-    return snapshot.size;
-  }
-
-  // 月次サマリーを更新
-  private async updateMonthlySummary(
-    userId: string,
-    month: string,
-    tokensUsed: number,
-    cost: number
-  ): Promise<void> {
-    const summaryRef = doc(db, 'aiUsageSummary', `${userId}_${month}`);
-    
     try {
-      await updateDoc(summaryRef, {
-        totalRequests: increment(1),
-        totalTokens: increment(tokensUsed),
-        totalCost: increment(cost),
-        lastUpdated: serverTimestamp(),
-      });
+      console.log('📝 AI使用量記録開始（サーバー側）:', { userId, type, tokensUsed, cost });
+      
+      const result = await recordAIUsageFn({ userId, type, tokensUsed, cost });
+      
+      console.log('✅ AI使用量記録完了（サーバー側）:', result.data);
     } catch (error) {
-      // ドキュメントが存在しない場合は新規作成
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'not-found') {
-        await setDoc(summaryRef, {
-          userId,
-          month,
-          totalRequests: 1,
-          totalTokens: tokensUsed,
-          totalCost: cost,
-          lastUpdated: serverTimestamp(),
-        });
-      } else {
-        throw error;
-      }
+      console.error('❌ AI使用量記録エラー（サーバー側）:', error);
+      throw error;
     }
   }
 
-  // ユーザーの使用状況を取得（ダッシュボード用）
+  // ユーザーの使用状況を取得（サーバー側で実行）
   async getUserUsageStats(userId: string): Promise<{
     currentMonth: MonthlyUsage;
     todayUsage: number;
     recentUsage: AIUsageRecord[];
     analysisUsage: number;
   }> {
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const today = new Date().toISOString().slice(0, 10);
-
-    const [monthlyUsage, dailyUsage, recentUsage] = await Promise.all([
-      this.getMonthlyUsage(userId, currentMonth),
-      this.getDailyUsage(userId, today),
-      this.getRecentUsage(userId, 10)
-    ]);
-
-    // 月間のAI解説機能（analysis）の使用回数を正確に取得
-    const analysisUsage = await this.getMonthlyAnalysisUsage(userId, currentMonth);
-
-    return {
-      currentMonth: monthlyUsage,
-      todayUsage: dailyUsage,
-      recentUsage,
-      analysisUsage,
-    };
-  }
-
-  // 月間のAI解説機能使用回数を取得
-  private async getMonthlyAnalysisUsage(userId: string, month: string): Promise<number> {
-    const q = query(
-      collection(db, 'aiUsage'),
-      where('userId', '==', userId),
-      where('type', '==', 'analysis'),
-      where('month', '==', month)
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.size;
-  }
-
-  // 日次のAI解説機能使用回数を取得
-  private async getDailyAnalysisUsage(userId: string, day: string): Promise<number> {
-    const q = query(
-      collection(db, 'aiUsage'),
-      where('userId', '==', userId),
-      where('type', '==', 'analysis'),
-      where('day', '==', day)
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.size;
-  }
-
-  // 最近の使用履歴を取得
-  private async getRecentUsage(userId: string, limitCount: number): Promise<AIUsageRecord[]> {
-    const q = query(
-      collection(db, 'aiUsage'),
-      where('userId', '==', userId),
-      orderBy('timestamp', 'desc'),
-      limit(limitCount)
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => {
-      const data = doc.data();
+    try {
+      console.log('📊 AI使用量統計取得開始（サーバー側）:', { userId });
+      
+      const result = await getAIUsageStatsFn({});
+      const stats = result.data;
+      
+      console.log('✅ AI使用量統計取得完了（サーバー側）:', stats);
+      
+      // レスポンス形式を既存のインターフェースに合わせる
       return {
-        ...data,
-        id: doc.id,
-        timestamp: data.timestamp?.toDate() || new Date(),
-      } as AIUsageRecord;
-    });
+        currentMonth: {
+          userId,
+          month: new Date().toISOString().slice(0, 7),
+          totalRequests: stats.currentMonth.totalRequests,
+          totalTokens: stats.currentMonth.totalTokens,
+          totalCost: stats.currentMonth.totalCost,
+          lastUpdated: new Date(),
+        },
+        todayUsage: stats.todayUsage,
+        recentUsage: [], // サーバー側では最近の使用履歴は取得しない（パフォーマンス向上のため）
+        analysisUsage: stats.analysisUsage,
+      };
+    } catch (error) {
+      console.error('❌ AI使用量統計取得エラー（サーバー側）:', error);
+      // エラー時はデフォルト値を返す
+      return {
+        currentMonth: {
+          userId,
+          month: new Date().toISOString().slice(0, 7),
+          totalRequests: 0,
+          totalTokens: 0,
+          totalCost: 0,
+          lastUpdated: new Date(),
+        },
+        todayUsage: 0,
+        recentUsage: [],
+        analysisUsage: 0,
+      };
+    }
   }
 
   // プラン制限情報を取得

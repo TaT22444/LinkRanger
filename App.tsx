@@ -17,6 +17,7 @@ import { GOOGLE_SIGN_IN_CONFIG } from './src/config/auth';
 import { notificationService } from './src/services/notificationService';
 import { backgroundTaskService } from './src/services/backgroundTaskService';
 import { shareLinkService } from './src/services/shareLinkService';
+import { IapService } from './src/services/applePayService';
 
 type RootStackParamList = {
   Auth: undefined;
@@ -169,6 +170,15 @@ const App: React.FC = () => {
     };
     
     initializeApp();
+
+    // IAPサービスの初期化
+    const iapService = IapService.getInstance();
+    iapService.initialize();
+
+    // アプリ終了時にIAP接続を終了
+    return () => {
+      iapService.terminate();
+    };
   }, []);
 
   return (

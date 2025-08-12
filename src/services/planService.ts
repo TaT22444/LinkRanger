@@ -52,8 +52,8 @@ export class PlanService {
   // プラン価格の定義
   private static readonly PLAN_PRICING = {
     'free': { price: 0, currency: 'JPY', period: 'month' },
-    'plus': { price: 500, currency: 'JPY', period: 'month' },
-    'pro': { price: 1420, currency: 'JPY', period: 'month' },
+    'plus': { price: 480, currency: 'JPY', period: 'month' },
+    'pro': { price: 1280, currency: 'JPY', period: 'month' },
   };
   
   // プラン取得（統一アクセスポイント）

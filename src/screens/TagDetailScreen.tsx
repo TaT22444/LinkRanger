@@ -1675,18 +1675,12 @@ ${analysisContext.map((link, index) =>
           try {
             const aiUsageManager = AIUsageManager.getInstance();
             
-            // Firebase制限チェックにタイムアウトを追加（10秒）
-            const usageCheckPromise = aiUsageManager.checkUsageLimit(
+            // サーバー側AI使用制限チェック
+            const usageCheck = await aiUsageManager.checkUsageLimit(
               user.uid,
               userPlan,
               'analysis'
             );
-            
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Firebase制限チェックタイムアウト（10秒）')), 10000);
-            });
-            
-            const usageCheck = await Promise.race([usageCheckPromise, timeoutPromise]) as any;
             
             if (!usageCheck.allowed) {
               console.log('❌ AI分析中止: Firebase詳細制限チェック失敗', {
@@ -1713,25 +1707,19 @@ ${analysisContext.map((link, index) =>
               textLength: analysisPrompt.length
             });
           } catch (limitCheckError) {
-            console.error('❌ Firebase詳細制限チェックエラー:', limitCheckError);
+            console.error('❌ サーバー側制限チェックエラー:', limitCheckError);
             
-            // タイムアウトエラーやその他の重大エラーの場合は分析を中止
-            if (limitCheckError instanceof Error && limitCheckError.message.includes('タイムアウト')) {
-              console.log('❌ AI分析中止: Firebase制限チェックタイムアウト');
-              
-              // 分析プレースホルダーをクリア
-              setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
-              
-              
-              Alert.alert(
-                'AI分析の実行に失敗しました',
-                'ネットワークエラーまたはサーバーエラーが発生しました。しばらく時間をおいてから再度お試しください。'
-              );
-              return;
-            }
+            // サーバーエラーの場合は分析を中止
+            console.log('❌ AI分析中止: サーバー側制限チェック失敗');
             
-            // その他のエラーの場合は警告のみ出して続行
-            console.warn('⚠️ Firebase詳細制限チェック失敗（続行）:', limitCheckError);
+            // 分析プレースホルダーをクリア
+            setAnalysisHistory(prev => prev.filter(item => item.id !== 'analyzing-placeholder'));
+            
+            Alert.alert(
+              'AI分析の実行に失敗しました',
+              'サーバーエラーが発生しました。しばらく時間をおいてから再度お試しください。'
+            );
+            return;
           }
         }
         // 実際のプロンプト詳細分析
