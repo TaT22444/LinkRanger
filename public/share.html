@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wink - リンクを共有</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        // URLパラメータを取得
+        const urlParams = new URLSearchParams(window.location.search);
+        const shareUrl = urlParams.get('url');
+        const shareTitle = urlParams.get('title');
+        
+        // アプリが起動できるかテスト
+        function tryOpenApp() {
+            const deepLink = `wink://share?url=${encodeURIComponent(shareUrl || '')}&title=${encodeURIComponent(shareTitle || '')}`;
+            console.log('Deep Linkを試行:', deepLink);
+            
+            // iOSの場合、アプリを開く試行
+            if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+                window.location = deepLink;
+                
+                // 1.5秒後にApp Storeに誘導（アプリが開かなかった場合）
+                setTimeout(() => {
+                    window.location = 'https://apps.apple.com/jp/developer/your-developer-id';
+                }, 1500);
+            } else {
+                // 非iOSデバイスの場合
+                document.getElementById('message').innerHTML = 
+                    '<p>このリンクはiOSデバイスでのみ動作します</p>';
+            }
+        }
+        
+        // ページ読み込み後に実行
+        window.onload = function() {
+            if (shareUrl) {
+                document.getElementById('share-info').innerHTML = 
+                    `<p>共有リンク: ${shareUrl}</p><p>タイトル: ${shareTitle || 'なし'}</p>`;
+                tryOpenApp();
+            } else {
+                document.getElementById('message').innerHTML = 
+                    '<p>共有するURLが指定されていません</p>';
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Wink</h1>
+    <h2>リンクをアプリで開いています...</h2>
+    <div id="share-info"></div>
+    <div id="message">
+        <p>Winkアプリでリンクを開いています。</p>
+        <p>アプリが起動しない場合は、App Storeからダウンロードしてください。</p>
+    </div>
+</body>
+</html>

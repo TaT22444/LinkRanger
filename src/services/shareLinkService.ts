@@ -61,8 +61,8 @@ class ShareLinkService {
         }
       }
 
-      // Universal Linksの場合: https://wink.app/share?url=https://example.com&title=Example  
-      if (url.startsWith('https://wink.app/') || url.includes('wink.app')) {
+      // Universal Linksの場合: https://www.dot-wink.com/share?url=https://example.com&title=Example  
+      if (url.startsWith('https://www.dot-wink.com/') || url.includes('www.dot-wink.com')) {
         const parsed = Linking.parse(url);
         const queryParams = parsed.queryParams;
         

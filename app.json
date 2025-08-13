@@ -4,11 +4,15 @@
     "scheme": "wink",
     "slug": "Wink",
     "linking": {
-      "prefixes": ["wink://", "https://wink.app"],
+      "prefixes": ["wink://", "https://www.dot-wink.com"],
       "config": {
         "screens": {
-          "Home": "home",
-          "ShareLink": "share"
+          "Main": {
+            "screens": {
+              "Home": "home",
+              "ShareLink": "share"
+            }
+          }
         }
       }
     },
@@ -26,7 +30,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "21",
+      "buildNumber": "22",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -53,11 +57,23 @@
         ],
         "NSUserActivityTypes": [
           "com.tat22444.wink.share-link"
+        ],
+        "NSExtensionActivationRule": {
+          "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+          "NSExtensionActivationSupportsWebPageWithMaxCount": 1
+        },
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Web URL",
+            "CFBundleTypeRole": "Viewer",
+            "LSItemContentTypes": ["public.url"],
+            "LSHandlerRank": "Alternate"
+          }
         ]
       },
       "entitlements": {
         "com.apple.developer.applesignin": ["Default"],
-        "com.apple.developer.associated-domains": ["applinks:wink.app"]
+        "com.apple.developer.associated-domains": ["applinks:www.dot-wink.com"]
       },
       "backgroundModes": [
         "background-fetch"
@@ -74,7 +90,25 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.tat22444.wink",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "www.dot-wink.com"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "SEND",
+          "category": "DEFAULT",
+          "data": "text/plain"
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

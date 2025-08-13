@@ -119,7 +119,7 @@ const AppContent: React.FC = () => {
   return (
     <NavigationContainer
       linking={{
-        prefixes: ['wink://', 'https://wink.app'],
+        prefixes: ['wink://', 'https://www.dot-wink.com'],
         config: {
           screens: {
             Main: {
