@@ -1448,4 +1448,82 @@ async function updateUserSubscription(userId: string, planType: "plus" | "pro", 
   logger.info("✅ ユーザープラン更新完了:", {userId, planType, subscriptionData});
 }
 
+// ===================================================================
+//
+// Share Extension用 - リンク保存関数
+//
+// ===================================================================
+
+/**
+ * Share Extension経由でリンクを保存
+ */
+export const saveSharedLink = onCall(
+  {region: "asia-northeast1"},
+  async (request) => {
+    const {data, auth} = request;
+
+    // 認証チェック
+    if (!auth?.uid) {
+      logger.error("❌ 認証されていないユーザーからのリクエスト");
+      throw new HttpsError("unauthenticated", "Authentication required");
+    }
+
+    const {url, title} = data;
+    if (!url || typeof url !== "string") {
+      logger.error("❌ 無効なURL:", url);
+      throw new HttpsError("invalid-argument", "Valid URL is required");
+    }
+
+    logger.info("🔗 Share Extension: リンク保存開始", {
+      userId: auth.uid,
+      url,
+      title,
+    });
+
+    try {
+      // リンクデータを作成
+      const linkData = {
+        userId: auth.uid,
+        url: url.trim(),
+        title: title?.trim() || "共有されたリンク",
+        description: "",
+        status: "pending" as const,
+        tagIds: [],
+        isBookmarked: false,
+        isArchived: false,
+        priority: "medium" as const,
+        isRead: false,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      // Firestoreに保存
+      const docRef = await db.collection("links").add(linkData);
+      logger.info("✅ Share Extension: リンク保存完了", {
+        userId: auth.uid,
+        linkId: docRef.id,
+        url,
+      });
+
+      // 成功レスポンス（通知は返さず、クライアントが処理）
+      return {
+        success: true,
+        linkId: docRef.id,
+        message: "リンクを保存しました。AIが自動でタグ付けと要約を生成しています。",
+      };
+    } catch (error) {
+      logger.error("❌ Share Extension: リンク保存エラー", {
+        userId: auth.uid,
+        url,
+        error: error instanceof Error ? error.message : error,
+      });
+
+      throw new HttpsError(
+        "internal",
+        "Failed to save shared link"
+      );
+    }
+  }
+);
+
 

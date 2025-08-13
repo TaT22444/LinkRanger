@@ -29,6 +29,7 @@
     "expo-dev-client": "^5.2.4",
     "expo-device": "^7.1.4",
     "expo-notifications": "~0.31.4",
+    "expo-share-extension": "^4.0.1",
     "expo-status-bar": "~2.2.3",
     "expo-task-manager": "~13.1.6",
     "firebase": "^11.10.0",
