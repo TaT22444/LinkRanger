@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "23",
+      "buildNumber": "28",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -61,23 +61,6 @@
             ],
             "CFBundleURLIconFile": "icon"
           }
-        ],
-        "NSUserActivityTypes": [
-          "com.tat22444.wink.share-link"
-        ],
-        "NSExtensionActivationRule": {
-          "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
-          "NSExtensionActivationSupportsWebPageWithMaxCount": 1
-        },
-        "CFBundleDocumentTypes": [
-          {
-            "CFBundleTypeName": "Web URL",
-            "CFBundleTypeRole": "Viewer",
-            "LSItemContentTypes": [
-              "public.url"
-            ],
-            "LSHandlerRank": "Alternate"
-          }
         ]
       },
       "entitlements": {
@@ -86,6 +69,9 @@
         ],
         "com.apple.developer.associated-domains": [
           "applinks:www.dot-wink.com"
+        ],
+        "com.apple.security.application-groups": [
+          "group.com.tat22444.wink"
         ]
       },
       "backgroundModes": [
@@ -149,12 +135,19 @@
       [
         "expo-share-extension",
         {
-          "bundleIdentifier": "com.tat22444.wink.share-extension",
-          "activationRules": {
-            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
-            "NSExtensionActivationSupportsWebPageWithMaxCount": 1
-          },
-          "extensionName": "Wink Share"
+          "ios": {
+            "bundleIdentifier": "com.tat22444.wink.ShareExtension",
+            "extensionName": "WinkShareExtension",
+            "mainView": "./src/ShareExtension.tsx",
+            "activationRules": {
+              "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+              "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
+              "NSExtensionActivationSupportsText": true
+            },
+            "entitlements": {
+              "com.apple.security.application-groups": ["group.com.tat22444.wink"]
+            }
+          }
         }
       ]
     ],

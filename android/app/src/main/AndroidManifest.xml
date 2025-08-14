@@ -34,6 +34,17 @@
         <data android:scheme="wink"/>
         <data android:scheme="exp+wink"/>
       </intent-filter>
+      <intent-filter android:autoVerify="true" data-generated="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <data android:scheme="https" android:host="www.dot-wink.com"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+      <intent-filter data-generated="true">
+        <action android:name="android.intent.action.SEND"/>
+        <data android:0="t" android:1="e" android:2="x" android:3="t" android:4="/" android:5="p" android:6="l" android:7="a" android:8="i" android:9="n"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
     </activity>
   </application>
 </manifest>
