@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "37",
+      "buildNumber": "38",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -132,6 +132,11 @@
       ],
       "expo-background-fetch",
       "expo-task-manager",
+      "expo-router",
+      [
+        "expo-build-properties",
+        { "ios": { "useFrameworks": "static" } }
+      ],
       [
         "expo-share-extension",
         {
@@ -151,7 +156,8 @@
           }
         }
       ],
-      "./app.plugin"
+      "./app.plugin",
+      "./app.shared-inbox.plugin"
     ],
     "extra": {
       "eas": {
