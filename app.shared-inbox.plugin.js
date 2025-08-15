@@ -3,7 +3,7 @@ const { withXcodeProject, withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-const EXT_TARGET_NAME = 'WinkShareExtension'; // ← 拡張ターゲット名に合わせて
+const TARGET_NAME = 'WinkShareExtension'; // ← ここをプロジェクトに合わせる
 const NATIVE_FILE = 'SharedInbox.m';
 const INBOX_KEY = 'SHARED_INBOX_ITEMS';
 
@@ -52,7 +52,7 @@ RCT_EXPORT_METHOD(readAndClear:(NSString *)groupId
 @end
 `;
 
-// ------- helpers -------
+// --------- helpers ----------
 function findTargetByProductType(project, productType) {
   const section = project.pbxNativeTargetSection();
   for (const k in section) {
@@ -84,15 +84,14 @@ function hasSourceInTarget(project, targetUuid, fileName) {
   return files.some((f) => String(f.comment) === `${fileName} in Sources`);
 }
 
-function addSourceToTarget(project, targetUuid, filePath) {
-  const fileName = path.basename(filePath);
-  if (hasSourceInTarget(project, targetUuid, fileName)) return; // 既に登録済み
-
-  // addSourceFile は target 指定でそのターゲットに追加してくれる
-  project.addSourceFile(filePath, { target: targetUuid });
+// 重要：相対パス + グループ名（CustomTemplate）を指定して追加
+function addSourceToTarget(project, targetUuid, fileName) {
+  if (hasSourceInTarget(project, targetUuid, fileName)) return;
+  // 第3引数でグループを指定すると、plugins path 補正に入らず安全に追加できる
+  project.addSourceFile(fileName, { target: targetUuid }, 'CustomTemplate');
 }
 
-// ------- mods -------
+// --------- mods ----------
 const withSharedInboxFile = (config) =>
   withDangerousMod(config, [
     'ios',
@@ -110,26 +109,24 @@ const withSharedInboxFile = (config) =>
 const withSharedInboxXcode = (config) =>
   withXcodeProject(config, (cfg) => {
     const project = cfg.modResults;
-    const iosDir = cfg.modRequest.platformProjectRoot;
-    const filePath = path.join(iosDir, NATIVE_FILE);
 
     // メインアプリターゲット
     const appTarget = findTargetByProductType(project, 'com.apple.product-type.application');
-    if (!appTarget) {
+    if (appTarget) {
+      addSourceToTarget(project, appTarget.uuid, NATIVE_FILE);
+    } else {
       console.warn('[shared-inbox.plugin] App target not found');
-      return cfg;
     }
-    addSourceToTarget(project, appTarget.uuid, filePath);
 
     // Share Extension ターゲット
     const extTarget =
-      findTargetByName(project, EXT_TARGET_NAME) ||
+      findTargetByName(project, TARGET_NAME) ||
       findTargetByProductType(project, 'com.apple.product-type.app-extension');
 
-    if (!extTarget) {
-      console.warn(`[shared-inbox.plugin] Extension target "${EXT_TARGET_NAME}" not found`);
+    if (extTarget) {
+      addSourceToTarget(project, extTarget.uuid, NATIVE_FILE);
     } else {
-      addSourceToTarget(project, extTarget.uuid, filePath);
+      console.warn(`[shared-inbox.plugin] Extension target "${EXT_TARGET_NAME}" not found`);
     }
 
     return cfg;
