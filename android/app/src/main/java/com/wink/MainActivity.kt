@@ -1,4 +1,4 @@
-package com.tat22444.wink
+package com.wink
 
 import android.os.Build
 import android.os.Bundle

@@ -3,11 +3,10 @@ const { withXcodeProject, withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-const EXT_TARGET_NAME = 'WinkShareExtension'; // ← あなたの拡張ターゲット名に合わせて
+const EXT_TARGET_NAME = 'WinkShareExtension'; // ← 拡張ターゲット名に合わせて
 const NATIVE_FILE = 'SharedInbox.m';
 const INBOX_KEY = 'SHARED_INBOX_ITEMS';
 
-// ① Obj-C ネイティブモジュールを書き込む（本体/拡張の両方で使える）
 const OBJC_CODE = `#import <Foundation/Foundation.h>
 #import <React/RCTBridgeModule.h>
 
@@ -53,7 +52,7 @@ RCT_EXPORT_METHOD(readAndClear:(NSString *)groupId
 @end
 `;
 
-// ユーティリティ: ターゲット検索
+// ------- helpers -------
 function findTargetByProductType(project, productType) {
   const section = project.pbxNativeTargetSection();
   for (const k in section) {
@@ -66,6 +65,7 @@ function findTargetByProductType(project, productType) {
   }
   return null;
 }
+
 function findTargetByName(project, name) {
   const section = project.pbxNativeTargetSection();
   for (const k in section) {
@@ -77,19 +77,22 @@ function findTargetByName(project, name) {
   return null;
 }
 
-// ② ソース追加（両ターゲットに登録）
-function addSourceToTarget(project, targetUuid, filePath) {
-  // すでに存在する場合は二重追加を避ける
-  const files = project.pbxSourcesBuildPhaseObj(targetUuid)?.files || [];
-  const has = files.some((f) => {
-    const file = project.getPBXFile(f.value); // pbxBuildFile
-    return file?.fileRef && project.getPBXFile(file.fileRef)?.path === path.basename(filePath);
-  });
-  if (!has) {
-    project.addSourceFile(filePath, { target: targetUuid });
-  }
+// そのターゲットの Sources に既に入っているか（コメントで判定）
+function hasSourceInTarget(project, targetUuid, fileName) {
+  const phase = project.pbxSourcesBuildPhaseObj(targetUuid);
+  const files = phase?.files || [];
+  return files.some((f) => String(f.comment) === `${fileName} in Sources`);
 }
 
+function addSourceToTarget(project, targetUuid, filePath) {
+  const fileName = path.basename(filePath);
+  if (hasSourceInTarget(project, targetUuid, fileName)) return; // 既に登録済み
+
+  // addSourceFile は target 指定でそのターゲットに追加してくれる
+  project.addSourceFile(filePath, { target: targetUuid });
+}
+
+// ------- mods -------
 const withSharedInboxFile = (config) =>
   withDangerousMod(config, [
     'ios',
@@ -119,15 +122,16 @@ const withSharedInboxXcode = (config) =>
     addSourceToTarget(project, appTarget.uuid, filePath);
 
     // Share Extension ターゲット
-    const extTarget = findTargetByName(project, EXT_TARGET_NAME)
-      || findTargetByProductType(project, 'com.apple.product-type.app-extension');
+    const extTarget =
+      findTargetByName(project, EXT_TARGET_NAME) ||
+      findTargetByProductType(project, 'com.apple.product-type.app-extension');
+
     if (!extTarget) {
       console.warn(`[shared-inbox.plugin] Extension target "${EXT_TARGET_NAME}" not found`);
     } else {
       addSourceToTarget(project, extTarget.uuid, filePath);
     }
 
-    // Swift ではないのでブリッジングヘッダ不要。ビルド設定も特に追加不要。
     return cfg;
   });
 
