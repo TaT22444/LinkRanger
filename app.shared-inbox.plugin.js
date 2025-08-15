@@ -3,7 +3,9 @@ const { withXcodeProject, withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
-const TARGET_NAME = 'WinkShareExtension'; // ← ここをプロジェクトに合わせる
+// ← あなたの拡張ターゲット名に合わせて
+const TARGET_NAME = 'WinkShareExtension';
+
 const NATIVE_FILE = 'SharedInbox.m';
 const INBOX_KEY = 'SHARED_INBOX_ITEMS';
 
@@ -52,7 +54,7 @@ RCT_EXPORT_METHOD(readAndClear:(NSString *)groupId
 @end
 `;
 
-// --------- helpers ----------
+// ---------- helpers ----------
 function findTargetByProductType(project, productType) {
   const section = project.pbxNativeTargetSection();
   for (const k in section) {
@@ -84,14 +86,34 @@ function hasSourceInTarget(project, targetUuid, fileName) {
   return files.some((f) => String(f.comment) === `${fileName} in Sources`);
 }
 
-// 重要：相対パス + グループ名（CustomTemplate）を指定して追加
-function addSourceToTarget(project, targetUuid, fileName) {
-  if (hasSourceInTarget(project, targetUuid, fileName)) return;
-  // 第3引数でグループを指定すると、plugins path 補正に入らず安全に追加できる
-  project.addSourceFile(fileName, { target: targetUuid }, 'CustomTemplate');
+// メイングループUUID取得
+function getMainGroupUuid(project) {
+  const fp = project.getFirstProject().firstProject; // { mainGroup: '<UUID>' }
+  return fp?.mainGroup;
 }
 
-// --------- mods ----------
+// 専用グループ（'SharedInbox'）を作成してメイングループにぶら下げる
+function ensureGroup(project, groupName = 'SharedInbox') {
+  const groups = project.hash.project.objects['PBXGroup'];
+  for (const key in groups) {
+    const g = groups[key];
+    if (typeof g !== 'object') continue;
+    const name = g.name && String(g.name).replace(/"/g, '');
+    if (name === groupName) return key; // 既存グループのUUID
+  }
+  const groupKey = project.pbxCreateGroup(groupName, ''); // ルート直下
+  const mainGroupUuid = getMainGroupUuid(project);
+  if (mainGroupUuid) project.appendToPbxGroup(groupKey, mainGroupUuid);
+  return groupKey;
+}
+
+// 相対パス + グループUUID で追加（安全）
+function addSourceToTarget(project, targetUuid, fileName, groupUuid) {
+  if (hasSourceInTarget(project, targetUuid, fileName)) return;
+  project.addSourceFile(fileName, { target: targetUuid }, groupUuid);
+}
+
+// ---------- mods ----------
 const withSharedInboxFile = (config) =>
   withDangerousMod(config, [
     'ios',
@@ -110,10 +132,13 @@ const withSharedInboxXcode = (config) =>
   withXcodeProject(config, (cfg) => {
     const project = cfg.modResults;
 
+    // 追加先グループを用意
+    const groupUuid = ensureGroup(project, 'SharedInbox');
+
     // メインアプリターゲット
     const appTarget = findTargetByProductType(project, 'com.apple.product-type.application');
     if (appTarget) {
-      addSourceToTarget(project, appTarget.uuid, NATIVE_FILE);
+      addSourceToTarget(project, appTarget.uuid, NATIVE_FILE, groupUuid);
     } else {
       console.warn('[shared-inbox.plugin] App target not found');
     }
@@ -124,9 +149,9 @@ const withSharedInboxXcode = (config) =>
       findTargetByProductType(project, 'com.apple.product-type.app-extension');
 
     if (extTarget) {
-      addSourceToTarget(project, extTarget.uuid, NATIVE_FILE);
+      addSourceToTarget(project, extTarget.uuid, NATIVE_FILE, groupUuid);
     } else {
-      console.warn(`[shared-inbox.plugin] Extension target "${EXT_TARGET_NAME}" not found`);
+      console.warn(`[shared-inbox.plugin] Extension target "${TARGET_NAME}" not found`);
     }
 
     return cfg;
