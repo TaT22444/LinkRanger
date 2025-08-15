@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "32",
+      "buildNumber": "34",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -139,13 +139,21 @@
             "bundleIdentifier": "com.tat22444.wink.ShareExtension",
             "extensionName": "WinkShareExtension",
             "mainView": "./src/ShareExtension.tsx",
-            "appGroup": "group.com.tat22444.wink",
+            "entryFile": "index.share.js",
             "activationRules": {
-              "NSExtensionActivationRule": "TRUEPREDICATE"
+              "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+              "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
+              "NSExtensionActivationSupportsText": true
+            },
+            "entitlements": {
+              "com.apple.security.application-groups": [
+                "group.com.tat22444.wink"
+              ]
             }
           }
         }
-      ]
+      ],
+      "./app.plugin"
     ],
     "extra": {
       "eas": {

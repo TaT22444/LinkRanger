@@ -1,5 +1,5 @@
-import { registerRootComponent } from 'expo';
+// index.share.js
+import { AppRegistry } from 'react-native';
 import ShareExtension from './src/ShareExtension';
 
-// Share ExtensionのUIコンポーネントを登録
-registerRootComponent(ShareExtension);
+AppRegistry.registerComponent('main', () => ShareExtension);

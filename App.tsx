@@ -1,6 +1,6 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -87,24 +87,86 @@ const MainNavigator: React.FC = () => {
   );
 };
 
+// 受け渡し用の最小データ型（サービス側の想定に合わせて必要なら項目を拡張してください）
+type SharedLinkData = {
+  url: string;
+  title?: string;
+  // description?: string; など必要に応じて
+};
+
+// wink://share?url=...&title=... / https://www.dot-wink.com/share?url=... に対応
+const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
+  try {
+    const parsed = Linking.parse(incomingUrl);
+    // クエリパラメータから取り出し
+    const qp = parsed?.queryParams || {};
+    const sharedUrl = typeof qp?.url === 'string' ? qp.url : '';
+
+    // URL本体が直接来る（例: wink://share/https://example.com）のようなパターンにも一応配慮
+    // path 末尾を URL として扱えるケースのみ利用（任意）
+    const fallbackUrl =
+      !sharedUrl && typeof parsed?.path === 'string' && parsed.path.startsWith('share/')
+        ? parsed.path.replace(/^share\//, '')
+        : '';
+
+    const finalUrl = sharedUrl || fallbackUrl;
+    if (!finalUrl) return null;
+
+    return {
+      url: finalUrl,
+      title: typeof qp?.title === 'string' ? qp.title : undefined,
+    };
+  } catch (e) {
+    console.warn('parseSharedLink failed:', e);
+    return null;
+  }
+};
+
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
 
-  // Deep Linkingハンドリング
+  // Deep Link の初回URL & ランタイムイベントの両方を処理
   useEffect(() => {
     if (!user) return;
 
-    const cleanup = shareLinkService.setupDeepLinkListener(async (sharedData) => {
-      console.log('🔗 共有リンク受信:', sharedData);
-      
-      try {
-        await shareLinkService.handleSharedLink(sharedData, user);
-      } catch (error) {
-        console.error('❌ 共有リンク処理エラー:', error);
-      }
-    });
+    let removeListener: (() => void) | undefined;
 
-    return cleanup;
+    (async () => {
+      try {
+        // ① cold start の初期URL
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl) {
+          const data = parseSharedLink(initialUrl);
+          if (data) {
+            console.log('🔗 初期URLから共有リンク受信:', data);
+            await shareLinkService.handleSharedLink(data, user);
+          }
+        }
+      } catch (e) {
+        console.error('❌ initialURL 処理エラー:', e);
+      }
+
+      // ② ランタイムのURLイベント
+      const onUrl = async ({ url }: { url: string }) => {
+        try {
+          const data = parseSharedLink(url);
+          if (data) {
+            console.log('🔗 ランタイムURLから共有リンク受信:', data);
+            await shareLinkService.handleSharedLink(data, user);
+          }
+        } catch (e) {
+          console.error('❌ 共有リンク処理エラー:', e);
+        }
+      };
+
+      // 新API
+      const subscription = Linking.addEventListener('url', onUrl);
+      removeListener = () => subscription.remove();
+    })();
+
+    return () => {
+      if (removeListener) removeListener();
+    };
   }, [user]);
 
   if (loading) {
@@ -125,7 +187,7 @@ const AppContent: React.FC = () => {
             Main: {
               screens: {
                 Home: 'home',
-                ShareLink: 'share'
+                ShareLink: 'share', // 例: wink://share?url=...
               }
             }
           }
