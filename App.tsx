@@ -1,6 +1,6 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, AppState, AppStateStatus } from 'react-native'; // ★ 追加: AppState
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -18,6 +18,19 @@ import { notificationService } from './src/services/notificationService';
 import { backgroundTaskService } from './src/services/backgroundTaskService';
 import { shareLinkService } from './src/services/shareLinkService';
 import { IapService } from './src/services/applePayService';
+
+// ★ 追加: Firestore / 受け取り箱ラッパ
+import {
+  getFirestore,
+  addDoc,
+  collection,
+  serverTimestamp,
+  query,
+  where,
+  limit,
+  getDocs,
+} from 'firebase/firestore';
+import { readAndClearInbox } from './src/native/sharedInbox'; // 受け取り箱（App Group）→ JSラッパ
 
 type RootStackParamList = {
   Auth: undefined;
@@ -122,10 +135,67 @@ const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
   }
 };
 
+// ★ 追加: 受け取り箱 → Firestore 取り込み用の小ヘルパ
+type InboxItem = { url: string; note?: string; title?: string; ts?: number };
+
+function normalizeUrl(u: string) {
+  try {
+    const url = new URL(u);
+    url.hash = '';
+    ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid','igshid'].forEach(k => url.searchParams.delete(k));
+    let s = url.toString();
+    if (s.endsWith('/')) s = s.slice(0, -1);
+    return s;
+  } catch {
+    return u;
+  }
+}
+
+async function linkExists(uid: string, url: string) {
+  const db = getFirestore();
+  const q = query(
+    collection(db, 'links'),
+    where('userId', '==', uid),
+    where('url', '==', url),
+    limit(1)
+  );
+  const snap = await getDocs(q);
+  return !snap.empty;
+}
+
+async function importSharedInboxOnce(uid: string) {
+  const items: InboxItem[] = await readAndClearInbox();
+  if (!items || items.length === 0) return;
+
+  const db = getFirestore();
+  const now = Date.now();
+
+  await Promise.all(
+    items
+      .filter((it) => !!it?.url)
+      .map(async (it) => {
+        const norm = normalizeUrl(String(it.url));
+        const already = await linkExists(uid, norm);
+        if (already) return;
+
+        await addDoc(collection(db, 'links'), {
+          url: norm,
+          note: it.note ?? '',
+          userId: uid,                  // ★ Firestoreルール要件
+          createdAt: serverTimestamp(),
+          source: 'share-extension',    // 取り込み元メモ
+          importedAtMs: now,
+        });
+      })
+  );
+
+  // TODO: 必要ならここでリスト再フェッチ or グローバルストア更新
+}
+
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
 
-  // Deep Link の初回URL & ランタイムイベントの両方を処理
+  // Deep Link の初回URL & ランタイムイベントの両方を処理（既存）
   useEffect(() => {
     if (!user) return;
 
@@ -166,6 +236,40 @@ const AppContent: React.FC = () => {
 
     return () => {
       if (removeListener) removeListener();
+    };
+  }, [user]);
+
+  // ★ 追加: 受け取り箱（App Group）→ Firestore 自動取り込み
+  useEffect(() => {
+    if (!user) return;
+
+    let mounted = true;
+    const running = { current: false };
+
+    const run = async () => {
+      if (!mounted || running.current) return;
+      try {
+        running.current = true;
+        await importSharedInboxOnce(user.uid);
+      } catch (e) {
+        console.error('❌ 受け取り箱取り込みエラー:', e);
+      } finally {
+        running.current = false;
+      }
+    };
+
+    // 起動直後に1回
+    run();
+
+    // フォアグラウンド復帰時に取り込み
+    const onChange = (s: AppStateStatus) => {
+      if (s === 'active') run();
+    };
+    const sub = AppState.addEventListener('change', onChange);
+
+    return () => {
+      mounted = false;
+      sub.remove();
     };
   }, [user]);
 

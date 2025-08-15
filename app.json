@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "38",
+      "buildNumber": "39",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -146,6 +146,7 @@
             "mainView": "./src/ShareExtension.tsx",
             "entryFile": "index.share.js",
             "activationRules": {
+              "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
               "NSExtensionActivationRule": "TRUEPREDICATE"
             },
             "entitlements": {
