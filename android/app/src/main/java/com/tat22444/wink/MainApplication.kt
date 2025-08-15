@@ -1,4 +1,4 @@
-package com.wink
+package com.tat22444.wink
 
 import android.app.Application
 import android.content.res.Configuration
