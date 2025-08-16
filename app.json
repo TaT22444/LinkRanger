@@ -145,10 +145,11 @@
             "extensionName": "WinkShareExtension",
             "mainView": "./src/ShareExtension.tsx",
             "entryFile": "index.share.js",
-            "activationRules": {
-              "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
-              "NSExtensionActivationRule": "TRUEPREDICATE"
-            },
+            "activationRules": [
+              { "type": "url",  "max": 1 },
+              { "type": "text" }
+            ],
+            "googleServicesFile": "./GoogleService-Info-ShareExtension.plist",
             "entitlements": {
               "com.apple.security.application-groups": [
                 "group.com.tat22444.wink"
@@ -157,8 +158,8 @@
           }
         }
       ],
-      "./app.plugin",
-      "./app.shared-inbox.plugin"
+      "./app.shared-inbox.plugin",
+      "./app.plugin"
     ],
     "extra": {
       "eas": {

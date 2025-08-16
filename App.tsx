@@ -1,6 +1,6 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, AppState, AppStateStatus } from 'react-native'; // ★ 追加: AppState
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, AppState, AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -19,7 +19,13 @@ import { backgroundTaskService } from './src/services/backgroundTaskService';
 import { shareLinkService } from './src/services/shareLinkService';
 import { IapService } from './src/services/applePayService';
 
-// ★ 追加: Firestore / 受け取り箱ラッパ
+// ★ 追加：App Group（受け取り箱 & トークン）
+import {
+  readAndClearInbox,
+  setAuthToken, // ← これを追加
+} from './src/native/sharedInbox';
+
+// ★ Firestore（取り込み時に使用）
 import {
   getFirestore,
   addDoc,
@@ -30,7 +36,6 @@ import {
   limit,
   getDocs,
 } from 'firebase/firestore';
-import { readAndClearInbox } from './src/native/sharedInbox'; // 受け取り箱（App Group）→ JSラッパ
 
 type RootStackParamList = {
   Auth: undefined;
@@ -64,13 +69,9 @@ const MainNavigator: React.FC = () => {
         options={{
           headerShown: true,
           headerTitle: 'アカウント',
-          headerStyle: {
-            backgroundColor: '#121212',
-          },
+          headerStyle: { backgroundColor: '#121212' },
           headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-          },
+          headerTitleStyle: { fontWeight: 'bold' },
         }}
       />
       <MainStack.Screen 
@@ -79,13 +80,9 @@ const MainNavigator: React.FC = () => {
         options={{
           headerShown: true,
           headerTitle: 'プロフィール編集',
-          headerStyle: {
-            backgroundColor: '#121212',
-          },
+          headerStyle: { backgroundColor: '#121212' },
           headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-          },
+          headerTitleStyle: { fontWeight: 'bold' },
         }}
       />
       <MainStack.Screen 
@@ -100,23 +97,20 @@ const MainNavigator: React.FC = () => {
   );
 };
 
-// 受け渡し用の最小データ型（サービス側の想定に合わせて必要なら項目を拡張してください）
+// 受け渡し用の最小データ型
 type SharedLinkData = {
   url: string;
   title?: string;
-  // description?: string; など必要に応じて
 };
 
 // wink://share?url=...&title=... / https://www.dot-wink.com/share?url=... に対応
 const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
   try {
     const parsed = Linking.parse(incomingUrl);
-    // クエリパラメータから取り出し
     const qp = parsed?.queryParams || {};
     const sharedUrl = typeof qp?.url === 'string' ? qp.url : '';
 
-    // URL本体が直接来る（例: wink://share/https://example.com）のようなパターンにも一応配慮
-    // path 末尾を URL として扱えるケースのみ利用（任意）
+    // URL本体が直接来る（例: wink://share/https://example.com）へのフォールバック
     const fallbackUrl =
       !sharedUrl && typeof parsed?.path === 'string' && parsed.path.startsWith('share/')
         ? parsed.path.replace(/^share\//, '')
@@ -135,7 +129,7 @@ const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
   }
 };
 
-// ★ 追加: 受け取り箱 → Firestore 取り込み用の小ヘルパ
+// ★ 受け取り箱 → Firestore 取り込み用ユーティリティ
 type InboxItem = { url: string; note?: string; title?: string; ts?: number };
 
 function normalizeUrl(u: string) {
@@ -165,6 +159,7 @@ async function linkExists(uid: string, url: string) {
 
 async function importSharedInboxOnce(uid: string) {
   const items: InboxItem[] = await readAndClearInbox();
+  console.log('[Importer] inbox items length =', items?.length || 0);
   if (!items || items.length === 0) return;
 
   const db = getFirestore();
@@ -188,8 +183,6 @@ async function importSharedInboxOnce(uid: string) {
         });
       })
   );
-
-  // TODO: 必要ならここでリスト再フェッチ or グローバルストア更新
 }
 
 const AppContent: React.FC = () => {
@@ -239,7 +232,35 @@ const AppContent: React.FC = () => {
     };
   }, [user]);
 
-  // ★ 追加: 受け取り箱（App Group）→ Firestore 自動取り込み
+  // ★ 追加：拡張が使うための「IDトークンをApp Groupへ保存」
+  useEffect(() => {
+    if (!user) return;
+
+    const saveToken = async (force = false) => {
+      try {
+        // Firebase Auth ユーザーから IDトークンと有効期限を取得
+        const res = await (user as any).getIdTokenResult(force);
+        const token: string = res.token;
+        const expMs = new Date(res.expirationTime).getTime();
+        await setAuthToken(token, expMs);
+        console.log('[AuthToken] saved to App Group. exp =', new Date(expMs).toISOString());
+      } catch (e) {
+        console.warn('[AuthToken] save failed', e);
+      }
+    };
+
+    // 初回（強制更新）
+    saveToken(true);
+
+    // フォアグラウンド復帰ごとに軽く更新
+    const sub = AppState.addEventListener('change', (s: AppStateStatus) => {
+      if (s === 'active') saveToken(false);
+    });
+
+    return () => sub.remove();
+  }, [user]);
+
+  // ★ 受け取り箱（App Group）→ Firestore 自動取り込み（フォールバックとして機能）
   useEffect(() => {
     if (!user) return;
 
@@ -247,14 +268,14 @@ const AppContent: React.FC = () => {
     const running = { current: false };
 
     const run = async () => {
-      if (!mounted || running.current) return;
+      if (!mounted || (running as any).current) return;
       try {
-        running.current = true;
+        (running as any).current = true;
         await importSharedInboxOnce(user.uid);
       } catch (e) {
         console.error('❌ 受け取り箱取り込みエラー:', e);
       } finally {
-        running.current = false;
+        (running as any).current = false;
       }
     };
 

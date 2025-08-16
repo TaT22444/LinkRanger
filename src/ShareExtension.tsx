@@ -1,12 +1,43 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { close, InitialProps } from 'expo-share-extension';
-import { saveToInbox } from './native/sharedInbox';
+import { saveToInbox, getAuthToken } from './native/sharedInbox';
+
+// あなたの Functions(onCall) 名に合わせる
+const FUNCTIONS_ENDPOINT =
+  'https://asia-northeast1-linkranger-b096e.cloudfunctions.net/saveSharedLink';
 
 function pickUrl(text?: string) {
   if (!text) return;
   const m = text.match(/https?:\/\/[^\s)]+/i);
   return m ? m[0] : undefined;
+}
+
+// onCall へ POST（body は { data: {...} }）
+async function postToFunctions(url: string): Promise<boolean> {
+  const auth = await getAuthToken();
+  const now = Date.now();
+  if (!auth?.token || (auth.exp && auth.exp <= now + 10_000)) {
+    return false; // トークン無し/期限切れはフォールバックへ
+  }
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const r = await fetch(FUNCTIONS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${auth.token}`,
+      },
+      body: JSON.stringify({ data: { url } }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    return r.ok;
+  } catch {
+    clearTimeout(t);
+    return false;
+  }
 }
 
 export default function ShareExtension(props: InitialProps) {
@@ -26,16 +57,18 @@ export default function ShareExtension(props: InitialProps) {
     }
     ran.current = true;
     setSaving(true);
+
     try {
-      console.log('[ShareExtension] onSave', sharedUrl);
-      await saveToInbox({ url: sharedUrl });
-      console.log('[ShareExtension] saved OK');
-      await close(); // 本体には遷移しない
+      // ① Functions(onCall) 直POST
+      let ok = await postToFunctions(sharedUrl);
+      // ② 失敗/オフライン/トークン無し → 受け取り箱にフォールバック
+      if (!ok) await saveToInbox({ url: sharedUrl });
     } catch (e) {
+      // どちらも失敗することは稀だが、念のため
       console.log('[ShareExtension] save failed', e);
-      ran.current = false;
-      setSaving(false);
-      Alert.alert('保存に失敗しました', String(e));
+    } finally {
+      // 成否に関わらず確実に閉じる
+      try { await close(); } catch { setTimeout(() => close().catch(()=>{}), 150); }
     }
   };
 

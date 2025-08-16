@@ -1,27 +1,41 @@
+// src/native/sharedInbox.ts
 import { NativeModules } from 'react-native';
 
-export const APP_GROUP_ID = 'group.com.tat22444.wink'; // ← あなたの値
-
-type InboxItem = { url: string; note?: string; title?: string; ts?: number };
-const M: any = NativeModules?.SharedInbox;
+const APP_GROUP_ID = 'group.com.tat22444.wink';
+const NATIVE = (NativeModules as any)?.SharedInbox;
 
 function ensureNative() {
-  if (!M || typeof M.save !== 'function' || typeof M.readAndClear !== 'function') {
-    throw new Error(
-      '[SharedInbox] native module not available in this target. ' +
-      'Check plugins order and that SharedInbox.m is added to BOTH app & ShareExtension targets.'
-    );
-  }
+  if (!NATIVE) throw new Error('[SharedInbox] native module not available. Run prebuild and check SharedInbox.m is added to App & Extension.');
 }
 
-export async function saveToInbox(item: InboxItem) {
+export type InboxItem = { url: string; note?: string; title?: string; ts?: number };
+export type AuthToken = { token?: string; exp?: number } | null;
+
+export async function saveToInbox(item: InboxItem): Promise<boolean> {
   ensureNative();
-  console.log('[SharedInbox] save start', { group: APP_GROUP_ID, item });
-  return M.save(APP_GROUP_ID, item);
+  return await NATIVE.save(APP_GROUP_ID, item);
 }
 
 export async function readAndClearInbox(): Promise<InboxItem[]> {
   ensureNative();
-  console.log('[SharedInbox] readAndClear', { group: APP_GROUP_ID });
-  return M.readAndClear(APP_GROUP_ID);
+  return await NATIVE.readAndClear(APP_GROUP_ID);
+}
+
+/** IDトークン保存（exp: ms epoch） */
+export async function setAuthToken(token: string, expMs: number): Promise<boolean> {
+  ensureNative();
+  return await NATIVE.setAuthToken(APP_GROUP_ID, token, expMs);
+}
+
+/** IDトークン取得 */
+export async function getAuthToken(): Promise<AuthToken> {
+  ensureNative();
+  const res = await NATIVE.getAuthToken(APP_GROUP_ID);
+  if (!res || !res.token) return null;
+  return { token: String(res.token), exp: typeof res.exp === 'number' ? res.exp : undefined };
+}
+
+export async function clearAuthToken(): Promise<boolean> {
+  ensureNative();
+  return await NATIVE.clearAuthToken(APP_GROUP_ID);
 }
