@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "41",
+      "buildNumber": "43",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -117,27 +117,6 @@
     },
     "plugins": [
       [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4"
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon.png",
-          "color": "#8A2BE2",
-          "defaultChannel": "default"
-        }
-      ],
-      "expo-background-fetch",
-      "expo-task-manager",
-      "expo-router",
-      [
-        "expo-build-properties",
-        { "ios": { "useFrameworks": "static" } }
-      ],
-      [
         "expo-share-extension",
         {
           "activationRules": [
@@ -157,6 +136,27 @@
             }
           }
         }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.823369241471-e83vfndlcmqok4dv31o9vd1k08d7eja4"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#8A2BE2",
+          "defaultChannel": "default"
+        }
+      ],
+      "expo-background-fetch",
+      "expo-task-manager",
+      "expo-router",
+      [
+        "expo-build-properties",
+        { "ios": { "useFrameworks": "static" } }
       ],
       "./app.shared-inbox.plugin",
       "./app.plugin"

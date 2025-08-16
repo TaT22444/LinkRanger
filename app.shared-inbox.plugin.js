@@ -160,29 +160,47 @@ const withSharedInboxXcode = (config) =>
     const mainGroupUuid = getMainGroupUuid(project);
     if (!mainGroupUuid) throw new Error('[shared-inbox.plugin] main PBXGroup not found');
 
-    // App
-    const app = project.getFirstTarget()?.firstTarget;
-    if (app?.uuid) {
-      const added = addSourceToTarget(project, app.uuid, NATIVE_FILE, mainGroupUuid);
-      console.log(`[shared-inbox.plugin] add to App target "${app.name}": ${added ? 'ADDED' : 'SKIPPED'}`);
-    }
-
-    // すべての app-extension に追加
+    // すべてのターゲットを取得して分類
     const native = project.pbxNativeTargetSection();
-    let count = 0;
+    let appTarget = null;
+    let extensionTarget = null;
+
+    console.log('[shared-inbox.plugin] Scanning targets...');
+    
     for (const uuid in native) {
       const t = native[uuid];
       if (typeof t !== 'object') continue;
+      
       const type = String(t.productType || '');
-      if (!type.includes('com.apple.product-type.app-extension')) continue;
       const name = String(t.name || '').replace(/"/g, '');
-      const added = addSourceToTarget(project, uuid, NATIVE_FILE, mainGroupUuid);
-      console.log(`[shared-inbox.plugin] add to Extension target "${name}": ${added ? 'ADDED' : 'SKIPPED'}`);
-      count++;
+      
+      console.log(`[shared-inbox.plugin] Found target: ${name} (${type})`);
+      
+      if (type.includes('com.apple.product-type.application')) {
+        appTarget = { uuid, name };
+        console.log(`[shared-inbox.plugin] Identified as App target: ${name}`);
+      } else if (type.includes('com.apple.product-type.app-extension')) {
+        extensionTarget = { uuid, name };
+        console.log(`[shared-inbox.plugin] Identified as Extension target: ${name}`);
+      }
     }
-    if (count === 0) {
-      console.warn('[shared-inbox.plugin] no app-extension target found. Is the share extension generated?');
+
+    // メインアプリにSharedInbox.mを追加
+    if (appTarget) {
+      const added = addSourceToTarget(project, appTarget.uuid, NATIVE_FILE, mainGroupUuid);
+      console.log(`[shared-inbox.plugin] App target "${appTarget.name}": ${added ? 'ADDED' : 'SKIPPED'} SharedInbox.m`);
+    } else {
+      console.warn('[shared-inbox.plugin] No app target found!');
     }
+
+    // Share ExtensionにSharedInbox.mを追加
+    if (extensionTarget) {
+      const added = addSourceToTarget(project, extensionTarget.uuid, NATIVE_FILE, mainGroupUuid);
+      console.log(`[shared-inbox.plugin] Extension target "${extensionTarget.name}": ${added ? 'ADDED' : 'SKIPPED'} SharedInbox.m`);
+    } else {
+      console.warn('[shared-inbox.plugin] No extension target found!');
+    }
+
     return cfg;
   });
 

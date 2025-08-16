@@ -47,12 +47,20 @@ export default function ShareExtension(props: InitialProps) {
 
   // 保存処理の統一化
   const onSave = async () => {
-    if (ran.current || saved) return;
+    console.log('[ShareExtension] onSave called'); // デバッグログ追加
+    
+    if (ran.current || saved) {
+      console.log('[ShareExtension] Already ran or saved, returning'); // デバッグログ追加
+      return;
+    }
+    
     if (!sharedUrl) {
+      console.log('[ShareExtension] No shared URL found'); // デバッグログ追加
       Alert.alert('URLが見つかりません', '共有データからURLを抽出できませんでした。');
       return;
     }
     
+    console.log('[ShareExtension] Starting save process...'); // デバッグログ追加
     ran.current = true;
     setSaving(true);
 
@@ -67,9 +75,10 @@ export default function ShareExtension(props: InitialProps) {
         preprocessingResults: props.preprocessingResults
       };
 
-      console.log('[ShareExtension] Saving to inbox:', shareData);
+      console.log('[ShareExtension] About to save to inbox:', shareData); // デバッグログ追加
       
       const success = await saveToInbox(shareData);
+      console.log('[ShareExtension] saveToInbox result:', success); // デバッグログ追加
 
       if (success) {
         setSaved(true);
