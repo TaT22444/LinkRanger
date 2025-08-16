@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "39",
+      "buildNumber": "40",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
