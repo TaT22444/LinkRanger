@@ -159,6 +159,14 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     }
   }, [isExpanded, visible, isVisible]);
 
+  // initialUrlが変更された際にURLフィールドを更新
+  useEffect(() => {
+    if (initialUrl && initialUrl !== url) {
+      console.log('AddLinkModal: initialUrl changed, updating URL field:', initialUrl);
+      setUrl(initialUrl);
+    }
+  }, [initialUrl]);
+
   // ジェスチャーハンドラー
   const onGestureEvent = Animated.event(
     [{ nativeEvent: { translationY: gestureTranslateY } }],

@@ -1,5 +1,5 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, AppState, AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
@@ -16,31 +16,18 @@ import { Tag } from './src/types';
 import { GOOGLE_SIGN_IN_CONFIG } from './src/config/auth';
 import { notificationService } from './src/services/notificationService';
 import { backgroundTaskService } from './src/services/backgroundTaskService';
-import { shareLinkService } from './src/services/shareLinkService';
 import { IapService } from './src/services/applePayService';
-
-// ★ 追加：App Group（受け取り箱 & トークン）
-import {
-  readAndClearInbox,
-  setAuthToken, // ← これを追加
-  getInboxItemCount,
-} from './src/native/sharedInbox';
-
-// ★ Firestore（取り込み時に使用）
-import {
-  getFirestore,
-  addDoc,
-  collection,
-  query,
-  where,
-  limit,
-  getDocs,
-} from 'firebase/firestore/lite';
-import { serverTimestamp } from 'firebase/firestore';
 
 type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
+};
+
+// 共有リンク用のデータ型
+type SharedLinkData = {
+  url: string;
+  title?: string;
+  source: 'deep-link';
 };
 
 type MainStackParamList = {
@@ -55,7 +42,7 @@ type MainStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
 
-const MainNavigator: React.FC = () => {
+const MainNavigator: React.FC<{ sharedLinkData: SharedLinkData | null }> = ({ sharedLinkData }) => {
   return (
     <MainStack.Navigator
       screenOptions={{
@@ -63,7 +50,7 @@ const MainNavigator: React.FC = () => {
         contentStyle: { backgroundColor: '#121212' },
       }}
     >
-      <MainStack.Screen name="Home" component={HomeScreen} />
+      <MainStack.Screen name="Home" component={() => <HomeScreen sharedLinkData={sharedLinkData} />} />
       <MainStack.Screen 
         name="Account" 
         component={AccountScreen}
@@ -98,12 +85,7 @@ const MainNavigator: React.FC = () => {
   );
 };
 
-// 受け渡し用の最小データ型
-type SharedLinkData = {
-  url: string;
-  title?: string;
-  source: 'deep-link' | 'share-extension';
-};
+
 
 // wink://share?url=...&title=... / https://www.dot-wink.com/share?url=... に対応
 const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
@@ -132,101 +114,9 @@ const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
   }
 };
 
-// ★ 受け取り箱 → Firestore 取り込み用ユーティリティ
-type InboxItem = { url: string; note?: string; title?: string; ts?: number };
-
-function normalizeUrl(u: string) {
-  try {
-    const url = new URL(u);
-    url.hash = '';
-    ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid','igshid'].forEach(k => url.searchParams.delete(k));
-    let s = url.toString();
-    if (s.endsWith('/')) s = s.slice(0, -1);
-    return s;
-  } catch {
-    return u;
-  }
-}
-
-async function linkExists(uid: string, url: string) {
-  const db = getFirestore();
-  const q = query(
-    collection(db, 'links'),
-    where('userId', '==', uid),
-    where('url', '==', url),
-    limit(1)
-  );
-  const snap = await getDocs(q);
-  return !snap.empty;
-}
-
-async function importSharedInboxOnce(uid: string): Promise<number> {
-  const items: InboxItem[] = await readAndClearInbox();
-  console.log('[Importer] inbox items length =', items?.length || 0);
-  if (!items || items.length === 0) return 0;
-
-  const db = getFirestore();
-  const now = Date.now();
-  let successCount = 0;
-
-  const results = await Promise.allSettled(
-    items
-      .filter((it) => !!it?.url)
-      .map(async (it) => {
-        try {
-          const norm = normalizeUrl(String(it.url));
-          const already = await linkExists(uid, norm);
-          if (already) {
-            console.log('[Importer] Link already exists:', norm);
-            return { success: true, skipped: true };
-          }
-
-          // 統一されたリンクデータ構造
-          const linkData = {
-            url: norm,
-            title: it.title || '共有されたリンク',
-            description: it.note || '',
-            userId: uid,
-            status: 'pending' as const, // AI処理待ち
-            tagIds: [],
-            isBookmarked: false,
-            isArchived: false,
-            priority: 'medium' as const,
-            isRead: false,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            source: 'share-extension',
-            importedAtMs: now,
-            shareExtensionData: {
-              originalTitle: it.title,
-              originalText: (it as any).text || '',
-              timestamp: (it as any).timestamp || it.ts || now
-            }
-          };
-
-          await addDoc(collection(db, 'links'), linkData);
-          console.log('[Importer] Link imported successfully:', norm);
-          return { success: true, skipped: false };
-        } catch (error) {
-          console.error('[Importer] Failed to import link:', it.url, error);
-          return { success: false, error };
-        }
-      })
-  );
-
-  // 結果の集計
-  results.forEach((result) => {
-    if (result.status === 'fulfilled' && result.value.success && !result.value.skipped) {
-      successCount++;
-    }
-  });
-
-  console.log(`[Importer] Import completed: ${successCount} successful, ${results.length - successCount} failed/skipped`);
-  return successCount;
-}
-
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
+  const [sharedLinkData, setSharedLinkData] = useState<SharedLinkData | null>(null);
 
   // Deep Link の初回URL & ランタイムイベントの両方を処理（既存）
   useEffect(() => {
@@ -242,7 +132,9 @@ const AppContent: React.FC = () => {
           const data = parseSharedLink(initialUrl);
           if (data) {
             console.log('🔗 初期URLから共有リンク受信:', data);
-            await shareLinkService.handleSharedLink(data, user);
+            setSharedLinkData(data);
+            // 5秒後にクリア（AddLinkModalが開かれるのを待つ）
+            setTimeout(() => setSharedLinkData(null), 5000);
           }
         }
       } catch (e) {
@@ -255,7 +147,9 @@ const AppContent: React.FC = () => {
           const data = parseSharedLink(url);
           if (data) {
             console.log('🔗 ランタイムURLから共有リンク受信:', data);
-            await shareLinkService.handleSharedLink(data, user);
+            setSharedLinkData(data);
+            // 5秒後にクリア（AddLinkModalが開かれるのを待つ）
+            setTimeout(() => setSharedLinkData(null), 5000);
           }
         } catch (e) {
           console.error('❌ 共有リンク処理エラー:', e);
@@ -272,89 +166,7 @@ const AppContent: React.FC = () => {
     };
   }, [user]);
 
-  // ★ 追加：拡張が使うための「IDトークンをApp Groupへ保存」
-  useEffect(() => {
-    if (!user) return;
 
-    const saveToken = async (force = false) => {
-      try {
-        // Firebase Auth ユーザーから IDトークンと有効期限を取得
-        const res = await (user as any).getIdTokenResult(force);
-        const token: string = res.token;
-        const expMs = new Date(res.expirationTime).getTime();
-        await setAuthToken(token, expMs);
-        console.log('[AuthToken] saved to App Group. exp =', new Date(expMs).toISOString());
-      } catch (e) {
-        console.warn('[AuthToken] save failed', e);
-      }
-    };
-
-    // 初回（強制更新）
-    saveToken(true);
-
-    // フォアグラウンド復帰ごとに軽く更新
-    const sub = AppState.addEventListener('change', (s: AppStateStatus) => {
-      if (s === 'active') saveToken(false);
-    });
-
-    return () => sub.remove();
-  }, [user]);
-
-  // ★ 受け取り箱（App Group）→ Firestore 自動取り込み（統一処理）
-  useEffect(() => {
-    if (!user) return;
-
-    let mounted = true;
-    const running = { current: false };
-
-    const run = async () => {
-      if (!mounted || (running as any).current) return;
-      
-      try {
-        (running as any).current = true;
-        
-        // 受け取り箱のアイテム数を確認
-        const itemCount = await getInboxItemCount();
-        if (itemCount > 0) {
-          console.log(` 受け取り箱に ${itemCount} 件のアイテムがあります`);
-          
-          // 受け取り箱から取り込み
-          const importedCount = await importSharedInboxOnce(user.uid);
-          
-          if (importedCount > 0) {
-            console.log(`✅ ${importedCount} 件のリンクを正常に取り込みました`);
-            
-            // 成功通知（オプション）
-            // await notificationService.showNotification({
-            //   title: 'リンク取り込み完了',
-            //   body: `${importedCount}件のリンクが追加されました`
-            // });
-          }
-        }
-      } catch (e) {
-        console.error('❌ 受け取り箱取り込みエラー:', e);
-      } finally {
-        (running as any).current = false;
-      }
-    };
-
-    // 起動直後に1回
-    run();
-
-    // フォアグラウンド復帰時に取り込み
-    const onChange = (s: AppStateStatus) => {
-      if (s === 'active') {
-        // 少し遅延させてから実行（他の処理の完了を待つ）
-        setTimeout(run, 1000);
-      }
-    };
-    const sub = AppState.addEventListener('change', onChange);
-
-    return () => {
-      mounted = false;
-      sub.remove();
-    };
-  }, [user]);
 
   if (loading) {
     return (
@@ -387,7 +199,7 @@ const AppContent: React.FC = () => {
         {!user ? (
           <Stack.Screen name="Auth" component={AuthScreen} />
         ) : (
-          <Stack.Screen name="Main" component={MainNavigator} />
+          <Stack.Screen name="Main" component={() => <MainNavigator sharedLinkData={sharedLinkData} />} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

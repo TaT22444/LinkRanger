@@ -11,11 +11,11 @@ const SHELL_SCRIPT = `export NODE_BINARY=node
 export ENTRY_FILE=index.share.js
 export BUNDLE_FILE="$CONFIGURATION_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.jsbundle"
 export ASSETS_DIR="$CONFIGURATION_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
-"$SRCROOT/../node_modules/react-native/scripts/react-native-xcode.sh" \
-  --entry-file "$ENTRY_FILE" \
-  --platform ios \
-  --dev false \
-  --bundle-output "$BUNDLE_FILE" \
+"$SRCROOT/../node_modules/react-native/scripts/react-native-xcode.sh" \\
+  --entry-file "$ENTRY_FILE" \\
+  --platform ios \\
+  --dev false \\
+  --bundle-output "$BUNDLE_FILE" \\
   --assets-dest "$ASSETS_DIR"
 `;
 
@@ -79,48 +79,6 @@ function removeDebugFromSwiftConditions(project, targetUuid) {
   }
 }
 
-// ③ ShareExtensionViewController.swift の openURL(_:) を extensionContext.open に置換
-function withPatchOpenURL(config) {
-  return withDangerousMod(config, [
-    'ios',
-    async (cfg) => {
-      const swiftPath = path.join(
-        cfg.modRequest.platformProjectRoot,
-        'WinkShareExtension',
-        'ShareExtensionViewController.swift'
-      );
-
-      if (!fs.existsSync(swiftPath)) {
-        console.warn('[app.plugin] ShareExtensionViewController.swift not found. Skipping openURL patch.');
-        return cfg;
-      }
-
-      const before = fs.readFileSync(swiftPath, 'utf-8');
-
-      // openURL 本体を差し替え（既存メソッドを置換）
-      const after = before.replace(
-        /@objc @discardableResult\s+private func openURL\(\s*_ url: URL\s*\)\s*->\s*Bool\s*\{[\s\S]*?\}/m,
-        `@objc @discardableResult private func openURL(_ url: URL) -> Bool {
-  // Share Extension では UIApplication ではなく extensionContext で開く
-  if let ctx = self.extensionContext {
-    ctx.open(url, completionHandler: nil)
-    return true
-  }
-  return false
-}`
-      );
-
-      if (after !== before) {
-        fs.writeFileSync(swiftPath, after);
-        console.log('[app.plugin] Patched openURL() to use extensionContext.open');
-      } else {
-        console.warn('[app.plugin] openURL() pattern not found; no changes applied');
-      }
-      return cfg;
-    },
-  ]);
-}
-
 const withShareExtensionConfig = (config) =>
   withXcodeProject(config, (cfg) => {
     const project = cfg.modResults;
@@ -167,11 +125,5 @@ const withShareExtensionConfig = (config) =>
     return cfg;
   });
 
-// すべて合成してエクスポート
-function withAll(config) {
-  const afterXcode = withShareExtensionConfig(config);
-  return withPatchOpenURL(afterXcode);
-}
-
-module.exports = withAll;
-module.exports.default = withAll;
+module.exports = withShareExtensionConfig;
+module.exports.default = withShareExtensionConfig; 

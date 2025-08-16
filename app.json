@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "43",
+      "buildNumber": "44",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -120,20 +120,13 @@
         "expo-share-extension",
         {
           "activationRules": [
-            { "type": "url",  "max": 1 },
+            { "type": "url", "max": 1 },
             { "type": "text" }
           ],
           "ios": {
             "extensionName": "WinkShareExtension",
             "bundleIdentifier": "com.tat22444.wink.ShareExtension",
-            "entryFile": "index.share.js",
-            "mainView": "./src/ShareExtension.tsx",
-            "googleServicesFile": "./GoogleService-Info-ShareExtension.plist",
-            "entitlements": {
-              "com.apple.security.application-groups": [
-                "group.com.tat22444.wink"
-              ]
-            }
+            "entryFile": "index.share.js"
           }
         }
       ],
@@ -158,7 +151,6 @@
         "expo-build-properties",
         { "ios": { "useFrameworks": "static" } }
       ],
-      "./app.shared-inbox.plugin",
       "./app.plugin"
     ],
     "extra": {

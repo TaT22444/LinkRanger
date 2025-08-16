@@ -43,7 +43,14 @@ import { AIStatusMonitor } from '../components/AIStatusMonitor';
 import { UpgradeModal } from '../components/UpgradeModal';
 
 
-export const HomeScreen: React.FC = () => {
+// 共有リンク用のデータ型
+type SharedLinkData = {
+  url: string;
+  title?: string;
+  source: 'deep-link';
+};
+
+export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = ({ sharedLinkData }) => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user } = useAuth();
   
@@ -74,6 +81,14 @@ export const HomeScreen: React.FC = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [selectedLink, setSelectedLink] = useState<Link | null>(null);
+  
+  // 共有リンクデータがある場合、AddLinkModalを自動で開く
+  useEffect(() => {
+    if (sharedLinkData?.url && !showAddModal) {
+      console.log('🔗 HomeScreen: 共有リンクデータを受信、AddLinkModalを自動で開く', sharedLinkData);
+      setShowAddModal(true);
+    }
+  }, [sharedLinkData, showAddModal]);
   
   // インライン検索用の状態
   const [searchQuery, setSearchQuery] = useState('');
@@ -1341,8 +1356,16 @@ export const HomeScreen: React.FC = () => {
 
           <AddLinkModal
             visible={showAddModal}
-            onClose={() => setShowAddModal(false)}
+            onClose={() => {
+              setShowAddModal(false);
+              // 共有リンクデータをクリア
+              if (sharedLinkData) {
+                console.log('🔗 HomeScreen: AddLinkModalを閉じる、共有リンクデータをクリア');
+                // route.paramsを直接変更できないため、別の方法でクリア
+              }
+            }}
             onSubmit={handleAddLink}
+            initialUrl={sharedLinkData?.url || ''}
             userId={user?.uid}
             availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
             onAddTag={handleAddTag}
