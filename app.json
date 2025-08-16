@@ -140,15 +140,15 @@
       [
         "expo-share-extension",
         {
+          "activationRules": [
+            { "type": "url",  "max": 1 },
+            { "type": "text" }
+          ],
           "ios": {
-            "bundleIdentifier": "com.tat22444.wink.ShareExtension",
             "extensionName": "WinkShareExtension",
-            "mainView": "./src/ShareExtension.tsx",
+            "bundleIdentifier": "com.tat22444.wink.ShareExtension",
             "entryFile": "index.share.js",
-            "activationRules": [
-              { "type": "url",  "max": 1 },
-              { "type": "text" }
-            ],
+            "mainView": "./src/ShareExtension.tsx",
             "googleServicesFile": "./GoogleService-Info-ShareExtension.plist",
             "entitlements": {
               "com.apple.security.application-groups": [
