@@ -1,8 +1,7 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
+import { getAuth, Auth, initializeAuth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getFunctions, Functions } from 'firebase/functions';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Firebase設定（環境変数優先、フォールバックあり）
 const getFirebaseConfig = () => {
@@ -47,12 +46,10 @@ try {
   app = initializeApp(firebaseConfig);
   console.log('✅ Firebase App初期化完了');
   
-  // Firebase Auth初期化（AsyncStorage永続化付き）
+  // Firebase Auth初期化
   try {
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage)
-    });
-    console.log('✅ Firebase Auth初期化完了（AsyncStorage永続化設定済み）');
+    auth = initializeAuth(app);
+    console.log('✅ Firebase Auth初期化完了');
   } catch (error: any) {
     // 既に初期化されている場合はgetAuthを使用
     if (error.code === 'auth/already-initialized') {

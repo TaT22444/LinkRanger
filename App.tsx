@@ -30,12 +30,12 @@ import {
   getFirestore,
   addDoc,
   collection,
-  serverTimestamp,
   query,
   where,
   limit,
   getDocs,
-} from 'firebase/firestore';
+} from 'firebase/firestore/lite';
+import { serverTimestamp } from 'firebase/firestore';
 
 type RootStackParamList = {
   Auth: undefined;
@@ -101,6 +101,7 @@ const MainNavigator: React.FC = () => {
 type SharedLinkData = {
   url: string;
   title?: string;
+  source: 'deep-link' | 'share-extension';
 };
 
 // wink://share?url=...&title=... / https://www.dot-wink.com/share?url=... に対応
@@ -122,6 +123,7 @@ const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
     return {
       url: finalUrl,
       title: typeof qp?.title === 'string' ? qp.title : undefined,
+      source: 'deep-link' as const,
     };
   } catch (e) {
     console.warn('parseSharedLink failed:', e);
@@ -309,16 +311,12 @@ const AppContent: React.FC = () => {
         prefixes: ['wink://', 'https://www.dot-wink.com'],
         config: {
           screens: {
-            Main: {
-              screens: {
-                Home: 'home',
-                ShareLink: 'share', // 例: wink://share?url=...
-              }
-            }
+            Main: 'main',
+            ShareLink: 'share', // 例: wink://share?url=...
           }
         }
       }}
-      onStateChange={(state) => {
+      onStateChange={(state: any) => {
         console.log('Navigation state changed:', state);
       }}
       onReady={() => {
@@ -369,10 +367,12 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <GestureHandlerRootView style={styles.container}>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={styles.container}>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </View>
     </GestureHandlerRootView>
   );
 };

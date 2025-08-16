@@ -68,7 +68,7 @@ export default function ShareExtension(props: InitialProps) {
       console.log('[ShareExtension] save failed', e);
     } finally {
       // 成否に関わらず確実に閉じる
-      try { await close(); } catch { setTimeout(() => close().catch(()=>{}), 150); }
+      try { await close(); } catch { setTimeout(() => { try { close(); } catch {} }, 150); }
     }
   };
 

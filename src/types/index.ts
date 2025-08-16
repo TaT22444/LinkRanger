@@ -124,6 +124,9 @@ export interface Link {
   isExpired?: boolean; // 期限切れ状態（非推奨）
   notificationsSent?: {
     unused3Days: boolean; // 3日間未アクセス通知送信済み
+    threeDays: boolean; // 3日間未アクセス通知送信済み
+    oneDay: boolean; // 1日間未アクセス通知送信済み
+    oneHour: boolean; // 1時間未アクセス通知送信済み
   };
 }
 

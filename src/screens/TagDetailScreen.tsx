@@ -225,7 +225,7 @@ export const TagDetailScreen: React.FC = () => {
   
   // プラン管理統一
   const planInfo = useMemo(() => PlanService.getDebugInfo(user), [user]);
-  const isProPlan = PlanService.canSaveAnalysis(user);
+  const isProPlan = PlanService.canSaveAnalysis();
   const currentPlan = PlanService.getUserPlan(user);
 
   // 🚀 AI分析確認アラート設定

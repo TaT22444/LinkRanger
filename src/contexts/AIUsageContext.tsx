@@ -143,7 +143,6 @@ export const AIUsageProvider: React.FC<AIUsageProviderProps> = ({ children }) =>
         remaining,
         renewalDate: renewalDate?.toISOString(),
         usageStats: {
-          currentPeriod: usageStats.currentPeriod,
           analysisUsage: usageStats.analysisUsage
         }
       });
