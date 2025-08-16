@@ -23,6 +23,7 @@ import { IapService } from './src/services/applePayService';
 import {
   readAndClearInbox,
   setAuthToken, // ← これを追加
+  getInboxItemCount,
 } from './src/native/sharedInbox';
 
 // ★ Firestore（取り込み時に使用）
@@ -159,32 +160,69 @@ async function linkExists(uid: string, url: string) {
   return !snap.empty;
 }
 
-async function importSharedInboxOnce(uid: string) {
+async function importSharedInboxOnce(uid: string): Promise<number> {
   const items: InboxItem[] = await readAndClearInbox();
   console.log('[Importer] inbox items length =', items?.length || 0);
-  if (!items || items.length === 0) return;
+  if (!items || items.length === 0) return 0;
 
   const db = getFirestore();
   const now = Date.now();
+  let successCount = 0;
 
-  await Promise.all(
+  const results = await Promise.allSettled(
     items
       .filter((it) => !!it?.url)
       .map(async (it) => {
-        const norm = normalizeUrl(String(it.url));
-        const already = await linkExists(uid, norm);
-        if (already) return;
+        try {
+          const norm = normalizeUrl(String(it.url));
+          const already = await linkExists(uid, norm);
+          if (already) {
+            console.log('[Importer] Link already exists:', norm);
+            return { success: true, skipped: true };
+          }
 
-        await addDoc(collection(db, 'links'), {
-          url: norm,
-          note: it.note ?? '',
-          userId: uid,                  // ★ Firestoreルール要件
-          createdAt: serverTimestamp(),
-          source: 'share-extension',    // 取り込み元メモ
-          importedAtMs: now,
-        });
+          // 統一されたリンクデータ構造
+          const linkData = {
+            url: norm,
+            title: it.title || '共有されたリンク',
+            description: it.note || '',
+            userId: uid,
+            status: 'pending' as const, // AI処理待ち
+            tagIds: [],
+            isBookmarked: false,
+            isArchived: false,
+            priority: 'medium' as const,
+            isRead: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            source: 'share-extension',
+            importedAtMs: now,
+            shareExtensionData: {
+              originalTitle: it.title,
+              originalText: (it as any).text || '',
+              timestamp: (it as any).timestamp || it.ts || now
+            }
+          };
+
+          await addDoc(collection(db, 'links'), linkData);
+          console.log('[Importer] Link imported successfully:', norm);
+          return { success: true, skipped: false };
+        } catch (error) {
+          console.error('[Importer] Failed to import link:', it.url, error);
+          return { success: false, error };
+        }
       })
   );
+
+  // 結果の集計
+  results.forEach((result) => {
+    if (result.status === 'fulfilled' && result.value.success && !result.value.skipped) {
+      successCount++;
+    }
+  });
+
+  console.log(`[Importer] Import completed: ${successCount} successful, ${results.length - successCount} failed/skipped`);
+  return successCount;
 }
 
 const AppContent: React.FC = () => {
@@ -262,7 +300,7 @@ const AppContent: React.FC = () => {
     return () => sub.remove();
   }, [user]);
 
-  // ★ 受け取り箱（App Group）→ Firestore 自動取り込み（フォールバックとして機能）
+  // ★ 受け取り箱（App Group）→ Firestore 自動取り込み（統一処理）
   useEffect(() => {
     if (!user) return;
 
@@ -271,9 +309,28 @@ const AppContent: React.FC = () => {
 
     const run = async () => {
       if (!mounted || (running as any).current) return;
+      
       try {
         (running as any).current = true;
-        await importSharedInboxOnce(user.uid);
+        
+        // 受け取り箱のアイテム数を確認
+        const itemCount = await getInboxItemCount();
+        if (itemCount > 0) {
+          console.log(` 受け取り箱に ${itemCount} 件のアイテムがあります`);
+          
+          // 受け取り箱から取り込み
+          const importedCount = await importSharedInboxOnce(user.uid);
+          
+          if (importedCount > 0) {
+            console.log(`✅ ${importedCount} 件のリンクを正常に取り込みました`);
+            
+            // 成功通知（オプション）
+            // await notificationService.showNotification({
+            //   title: 'リンク取り込み完了',
+            //   body: `${importedCount}件のリンクが追加されました`
+            // });
+          }
+        }
       } catch (e) {
         console.error('❌ 受け取り箱取り込みエラー:', e);
       } finally {
@@ -286,7 +343,10 @@ const AppContent: React.FC = () => {
 
     // フォアグラウンド復帰時に取り込み
     const onChange = (s: AppStateStatus) => {
-      if (s === 'active') run();
+      if (s === 'active') {
+        // 少し遅延させてから実行（他の処理の完了を待つ）
+        setTimeout(run, 1000);
+      }
     };
     const sub = AppState.addEventListener('change', onChange);
 

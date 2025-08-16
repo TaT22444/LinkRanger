@@ -1455,7 +1455,8 @@ async function updateUserSubscription(userId: string, planType: "plus" | "pro", 
 // ===================================================================
 
 /**
- * Share Extension経由でリンクを保存
+ * Share Extension経由でリンクを保存（フォールバック用）
+ * メインの保存処理はApp Group経由で行われる
  */
 export const saveSharedLink = onCall(
   {region: "asia-northeast1"},
@@ -1468,7 +1469,7 @@ export const saveSharedLink = onCall(
       throw new HttpsError("unauthenticated", "Authentication required");
     }
 
-    const {url, title} = data;
+    const {url, title, source} = data;
     if (!url || typeof url !== "string") {
       logger.error("❌ 無効なURL:", url);
       throw new HttpsError("invalid-argument", "Valid URL is required");
@@ -1478,10 +1479,11 @@ export const saveSharedLink = onCall(
       userId: auth.uid,
       url,
       title,
+      source,
     });
 
     try {
-      // リンクデータを作成
+      // リンクデータを作成（統一された構造）
       const linkData = {
         userId: auth.uid,
         url: url.trim(),
@@ -1495,17 +1497,20 @@ export const saveSharedLink = onCall(
         isRead: false,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
+        source: source || "share-extension",
+        importedAtMs: Date.now(),
       };
 
       // Firestoreに保存
       const docRef = await db.collection("links").add(linkData);
+
       logger.info("✅ Share Extension: リンク保存完了", {
         userId: auth.uid,
         linkId: docRef.id,
         url,
+        source,
       });
 
-      // 成功レスポンス（通知は返さず、クライアントが処理）
       return {
         success: true,
         linkId: docRef.id,

@@ -128,6 +128,15 @@ export interface Link {
     oneDay: boolean; // 1日間未アクセス通知送信済み
     oneHour: boolean; // 1時間未アクセス通知送信済み
   };
+  
+  // Share Extension関連フィールド
+  source?: 'manual' | 'share-extension' | 'deep-link' | 'import';
+  importedAtMs?: number;
+  shareExtensionData?: {
+    originalTitle?: string;
+    originalText?: string;
+    timestamp: number;
+  };
 }
 
 // AI分析結果保存型（Proプラン専用機能）
@@ -226,6 +235,27 @@ export interface SearchHistory {
   query: string;
   timestamp: Date;
   resultCount: number;
+}
+
+// Share Extension用の型定義
+export interface ShareExtensionData {
+  url: string;
+  title?: string;
+  text?: string;
+  source: 'share-extension';
+  timestamp: number;
+  preprocessingResults?: any;
+}
+
+// App Group受け取り箱用の型定義
+export interface InboxItem {
+  url: string;
+  title?: string;
+  text?: string;
+  source: 'share-extension';
+  timestamp: number;
+  note?: string;
+  ts?: number;
 }
 
 // アプリ設定型

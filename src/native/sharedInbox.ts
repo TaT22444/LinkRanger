@@ -8,17 +8,49 @@ function ensureNative() {
   if (!NATIVE) throw new Error('[SharedInbox] native module not available. Run prebuild and check SharedInbox.m is added to App & Extension.');
 }
 
-export type InboxItem = { url: string; note?: string; title?: string; ts?: number };
+// App Group受け取り箱用の型定義
+export interface InboxItem {
+  url: string;
+  title?: string;
+  text?: string;
+  source: 'share-extension';
+  timestamp: number;
+  note?: string;
+  ts?: number;
+}
+
 export type AuthToken = { token?: string; exp?: number } | null;
 
 export async function saveToInbox(item: InboxItem): Promise<boolean> {
   ensureNative();
-  return await NATIVE.save(APP_GROUP_ID, item);
+  
+  // タイムスタンプを確実に設定
+  const itemWithTimestamp: InboxItem = {
+    ...item,
+    ts: item.timestamp || Date.now(),
+    timestamp: item.timestamp || Date.now()
+  };
+  
+  try {
+    const result = await NATIVE.save(APP_GROUP_ID, itemWithTimestamp);
+    console.log('[SharedInbox] save result:', result);
+    return result === true;
+  } catch (error) {
+    console.error('[SharedInbox] save error:', error);
+    return false;
+  }
 }
 
 export async function readAndClearInbox(): Promise<InboxItem[]> {
   ensureNative();
-  return await NATIVE.readAndClear(APP_GROUP_ID);
+  try {
+    const items = await NATIVE.readAndClear(APP_GROUP_ID);
+    console.log('[SharedInbox] readAndClear result:', items);
+    return Array.isArray(items) ? items : [];
+  } catch (error) {
+    console.error('[SharedInbox] readAndClear error:', error);
+    return [];
+  }
 }
 
 /** IDトークン保存（exp: ms epoch） */
@@ -37,5 +69,22 @@ export async function getAuthToken(): Promise<AuthToken> {
 
 export async function clearAuthToken(): Promise<boolean> {
   ensureNative();
-  return await NATIVE.clearAuthToken(APP_GROUP_ID);
+  try {
+    return await NATIVE.clearAuthToken(APP_GROUP_ID);
+  } catch (error) {
+    console.error('[SharedInbox] clearAuthToken error:', error);
+    return false;
+  }
+}
+
+// 受け取り箱のアイテム数取得
+export async function getInboxItemCount(): Promise<number> {
+  ensureNative();
+  try {
+    const count = await NATIVE.getItemCount(APP_GROUP_ID);
+    return typeof count === 'number' ? count : 0;
+  } catch (error) {
+    console.error('[SharedInbox] getItemCount error:', error);
+    return 0;
+  }
 }
