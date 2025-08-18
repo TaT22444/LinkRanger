@@ -33,7 +33,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tat22444.wink",
-      "buildNumber": "44",
+      "buildNumber": "59",
       "googleServicesFile": "./GoogleService-Info.plist",
       "config": {
         "googleSignIn": {
@@ -45,23 +45,7 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
-        "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。",
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLName": "wink.share",
-            "CFBundleURLSchemes": [
-              "wink"
-            ],
-            "CFBundleURLIconFile": "icon"
-          },
-          {
-            "CFBundleURLName": "wink.universal",
-            "CFBundleURLSchemes": [
-              "https"
-            ],
-            "CFBundleURLIconFile": "icon"
-          }
-        ]
+        "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。"
       },
       "entitlements": {
         "com.apple.developer.applesignin": [
@@ -146,12 +130,18 @@
       ],
       "expo-background-fetch",
       "expo-task-manager",
-      "expo-router",
       [
         "expo-build-properties",
         { "ios": { "useFrameworks": "static" } }
       ],
-      "./app.plugin"
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "debugInformationFormat": "dwarf-with-dsym"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -149,7 +149,7 @@ const AppContent: React.FC = () => {
             console.log('🔗 ランタイムURLから共有リンク受信:', data);
             setSharedLinkData(data);
             // 5秒後にクリア（AddLinkModalが開かれるのを待つ）
-            setTimeout(() => setSharedLinkData(null), 5000);
+            setTimeout(() => setSharedLinkData(null), 15000);
           }
         } catch (e) {
           console.error('❌ 共有リンク処理エラー:', e);
@@ -179,15 +179,7 @@ const AppContent: React.FC = () => {
 
   return (
     <NavigationContainer
-      linking={{
-        prefixes: ['wink://', 'https://www.dot-wink.com'],
-        config: {
-          screens: {
-            Main: 'main',
-            ShareLink: 'share', // 例: wink://share?url=...
-          }
-        }
-      }}
+      linking={{ prefixes: ['wink://', 'https://www.dot-wink.com'] }}
       onStateChange={(state: any) => {
         console.log('Navigation state changed:', state);
       }}

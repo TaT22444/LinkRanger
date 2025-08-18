@@ -53,6 +53,8 @@ type SharedLinkData = {
 export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = ({ sharedLinkData }) => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user } = useAuth();
+  const [prefillUrl, setPrefillUrl] = useState<string>('');
+  const lastHandledSharedUrlRef = useRef<string | null>(null);
   
   // 🚀 最適化されたHooksの使用
   
@@ -83,12 +85,21 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const [selectedLink, setSelectedLink] = useState<Link | null>(null);
   
   // 共有リンクデータがある場合、AddLinkModalを自動で開く
-  useEffect(() => {
-    if (sharedLinkData?.url && !showAddModal) {
-      console.log('🔗 HomeScreen: 共有リンクデータを受信、AddLinkModalを自動で開く', sharedLinkData);
+    useEffect(() => {
+      const incoming = sharedLinkData?.url;
+      if (!incoming) return;
+      let normalized = incoming;
+      try {
+        normalized = decodeURIComponent(incoming);
+      } catch {}
+
+      // すでに同じURLを処理していて、かつモーダルが開いているなら無視
+      if (lastHandledSharedUrlRef.current === normalized && showAddModal) return;
+
+      lastHandledSharedUrlRef.current = normalized;
+      setPrefillUrl(normalized);
       setShowAddModal(true);
-    }
-  }, [sharedLinkData, showAddModal]);
+    }, [sharedLinkData?.url]); // URLの変化にのみ反応
   
   // インライン検索用の状態
   const [searchQuery, setSearchQuery] = useState('');
@@ -207,6 +218,12 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
           processAITagging(newLinkId, fullLinkData);
         }, 500);
       }
+
+      // 追加に成功したらモーダルは閉じ、入力をリセット
+      setShowAddModal(false);
+      setPrefillUrl('');
+      lastHandledSharedUrlRef.current = null;
+ 
 
     } catch (error) {
       Alert.alert('エラー', 'リンクの保存に失敗しました');
@@ -1352,20 +1369,27 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
             </Animated.View>
           </PanGestureHandler>
 
-          {isSelectionMode ? null : <FloatingActionButton onPress={() => setShowAddModal(true)} />}
+          {isSelectionMode ? null : (
+            <FloatingActionButton
+              onPress={() => {
+                setPrefillUrl('');      // 手動追加は空で開始
+                setShowAddModal(true);
+              }}
+            />
+          )}
 
           <AddLinkModal
+            key={prefillUrl}                 // URLが変われば入力欄をリセット
             visible={showAddModal}
             onClose={() => {
               setShowAddModal(false);
               // 共有リンクデータをクリア
-              if (sharedLinkData) {
-                console.log('🔗 HomeScreen: AddLinkModalを閉じる、共有リンクデータをクリア');
-                // route.paramsを直接変更できないため、別の方法でクリア
-              }
+              setPrefillUrl('');
+              // 同じURLをもう一度共有しても開けるように、ローカルの既処理記録はクリア
+              lastHandledSharedUrlRef.current = null;
             }}
             onSubmit={handleAddLink}
-            initialUrl={sharedLinkData?.url || ''}
+            initialUrl={prefillUrl}
             userId={user?.uid}
             availableTags={userTags.map(tag => ({ id: tag.id, name: tag.name }))}
             onAddTag={handleAddTag}
