@@ -56,22 +56,50 @@ const cacheUtils = {
   }
 };
 
+type UseLinksOptions = {
+  initialLimit?: number;         // 初回ロード件数（デフォルト20）
+  pageSize?: number;             // 追加ロード件数（デフォルト10）
+  forcePaginated?: boolean;      // trueでリアルタイム購読を使わず常にページング
+};
+
 // ===== リンク関連のHooks =====
 export const useLinks = (
   userId: string | null,
-  filter?: LinkFilter,
-  sort?: LinkSort
+  // 第2引数は LinkFilter でも UseLinksOptions でもOK
+  filterOrOptions?: LinkFilter | UseLinksOptions,
+  // 第3引数は LinkSort でも UseLinksOptions でもOK
+  sortOrOptions?: LinkSort | UseLinksOptions
 ) => {
+  // ★ 引数の解釈（後方互換）
+  const options: UseLinksOptions = {
+    ...(typeof filterOrOptions === 'object' && ('initialLimit' in filterOrOptions || 'pageSize' in filterOrOptions || 'forcePaginated' in filterOrOptions)
+      ? filterOrOptions as UseLinksOptions
+      : {}),
+    ...(typeof sortOrOptions === 'object' && ('initialLimit' in sortOrOptions || 'pageSize' in sortOrOptions || 'forcePaginated' in sortOrOptions)
+      ? sortOrOptions as UseLinksOptions
+      : {}),
+  };
+
+  const filter: LinkFilter | undefined =
+    (typeof filterOrOptions === 'object' && !('initialLimit' in filterOrOptions) && !('pageSize' in filterOrOptions) && !('forcePaginated' in filterOrOptions))
+      ? filterOrOptions as LinkFilter
+      : undefined;
+
+  const sort: LinkSort | undefined =
+    (typeof sortOrOptions === 'object' && !('initialLimit' in sortOrOptions) && !('pageSize' in sortOrOptions) && !('forcePaginated' in sortOrOptions))
+      ? sortOrOptions as LinkSort
+      : undefined;
+
+  // ✅ オプションで上書き（デフォルトは従来値）
+  const INITIAL_PAGE_SIZE = options.initialLimit ?? 20;
+  const LOAD_MORE_PAGE_SIZE = options.pageSize ?? 10;
+
   const [links, setLinks] = useState<Link[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-
-  // 🚀 段階的ローディング用の設定
-  const INITIAL_PAGE_SIZE = 20; // 初回ロード数を20に変更
-  const LOAD_MORE_PAGE_SIZE = 10; // 追加ロード数
 
   useEffect(() => {
     if (!userId) {
@@ -82,12 +110,20 @@ export const useLinks = (
       return;
     }
 
-    const cacheKey = `${userId}-${JSON.stringify(filter)}-${JSON.stringify(sort)}`;
-    console.log('🔄 useLinks: 初期化', {
+    // オプションもキャッシュキーに含める（初期/追加件数が違うキャッシュ混在を避ける）
+    const optionsKey = JSON.stringify({
+      il: INITIAL_PAGE_SIZE,
+      ps: LOAD_MORE_PAGE_SIZE,
+      fp: !!options.forcePaginated
+    });
+    const cacheKey = `${userId}-${JSON.stringify(filter)}-${JSON.stringify(sort)}-${optionsKey}`;
+
+    console.log('🔄 useLinks:init', {
       userId,
-      cacheKey: cacheKey.slice(0, 20) + '...',
+      initialPage: INITIAL_PAGE_SIZE,
+      loadMorePage: LOAD_MORE_PAGE_SIZE,
+      forcePaginated: !!options.forcePaginated,
       shouldUseRealtime: cacheUtils.shouldUseRealtime(),
-      activeSubscriptions: globalCache.activeSubscriptions.size
     });
 
     // キャッシュチェック
@@ -111,64 +147,29 @@ export const useLinks = (
     setHasMore(true);
     setNextCursor(undefined);
 
-    // リアルタイム監視 vs 一回限り読み取りの選択
-    if (cacheUtils.shouldUseRealtime()) {
-      console.log('📡 useLinks: リアルタイム監視開始', {
-        userId,
-        activeSubscriptions: globalCache.activeSubscriptions.size
-      });
+    const useRealtime = cacheUtils.shouldUseRealtime() && !options.forcePaginated;
 
+    if (useRealtime) {
+      console.log('📡 useLinks: subscribe realtime');
       const unsubscribe = linkService.subscribeToUserLinks(
         userId,
         (newLinks) => {
           setLinks(currentLinks => {
-            const previousCount = currentLinks.length;
-            const newCount = newLinks.length;
-            
-            console.log('📥 useLinks: リアルタイム更新受信', {
-              userId,
-              previousCount,
-              newCount,
-              hasNewLinks: newCount > previousCount,
-              timestamp: new Date().toISOString(),
-              firebaseIds: newLinks.map(l => l.id).slice(0, 5),
-              currentIds: currentLinks.map(l => l.id).slice(0, 5)
-            });
-            
-            // 🚀 オプティミスティック更新との重複を検知・解決
             const mergedLinks = newLinks.map(firebaseLink => {
-              // ローカルのオプティミスティック更新されたリンクを探す
-              const localLink = currentLinks.find(local => local.id === firebaseLink.id);
-              
-              if (localLink && localLink.status === 'processing' && firebaseLink.status === 'processing') {
-                // ローカルのオプティミスティック更新を保持（より新しい状態の可能性）
-                console.log('🔄 useLinks: オプティミスティック更新を保持', {
-                  id: firebaseLink.id,
-                  localTitle: localLink.title,
-                  firebaseTitle: firebaseLink.title
-                });
-                return localLink;
+              const local = currentLinks.find(l => l.id === firebaseLink.id);
+              if (local && local.status === 'processing' && firebaseLink.status === 'processing') {
+                return local;
               }
-              
               return firebaseLink;
             });
-            
-            console.log('📊 useLinks: リアルタイム更新統合完了', {
-              previousCount,
-              firebaseCount: newLinks.length,
-              mergedCount: mergedLinks.length
-            });
-            
             return mergedLinks;
           });
-          
+
           setLoading(false);
           setError(null);
-          // リアルタイム更新の場合、全データを取得するためhasMoreはfalse
           setHasMore(false);
           setNextCursor(undefined);
-          
-          // キャッシュ更新
+
           globalCache.links.set(cacheKey, {
             data: newLinks,
             timestamp: Date.now(),
@@ -180,44 +181,24 @@ export const useLinks = (
         sort
       );
 
-      // サブスクリプション管理
       globalCache.activeSubscriptions.set(cacheKey, unsubscribe);
-
-      // クリーンアップ
       return () => {
-        console.log('🧹 useLinks: リアルタイム監視停止', {
-          userId,
-          remainingSubscriptions: globalCache.activeSubscriptions.size - 1
-        });
         unsubscribe();
         globalCache.activeSubscriptions.delete(cacheKey);
       };
     } else {
-      // 一回限り読み取り（高負荷時）- 段階的ローディングで実装
-      console.log('📖 useLinks: 一回限り読み取り（高負荷対応）', {
-        userId,
-        activeSubscriptions: globalCache.activeSubscriptions.size,
-        threshold: CACHE_CONFIG.REALTIME_THRESHOLD,
-        initialPageSize: INITIAL_PAGE_SIZE
+      console.log('📖 useLinks: one-time read (paginated)', {
+        initialPage: INITIAL_PAGE_SIZE
       });
-
       const fetchLinks = async () => {
         try {
           const result = await linkService.getUserLinks(userId, filter, sort, INITIAL_PAGE_SIZE);
-          console.log('📥 useLinks: 一回限り読み取り完了', {
-            userId,
-            linksCount: result.data.length,
-            hasMore: result.hasMore,
-            strategy: 'one_time_read_paginated'
-          });
-          
           setLinks(result.data);
           setLoading(false);
           setError(null);
           setHasMore(result.hasMore);
           setNextCursor(result.nextCursor);
-          
-          // キャッシュ保存
+
           globalCache.links.set(cacheKey, {
             data: result.data,
             timestamp: Date.now(),
@@ -225,74 +206,43 @@ export const useLinks = (
           });
           cacheUtils.cleanupCache(globalCache.links);
         } catch (err) {
-          console.error('❌ useLinks: 読み取りエラー', err);
+          console.error('❌ useLinks: initial fetch error', err);
           setError(err instanceof Error ? err.message : 'リンクの読み込みに失敗しました');
           setLoading(false);
         }
       };
-
       fetchLinks();
     }
-  }, [userId, filter, sort]);
+  // 依存に options も入れる
+  }, [userId, JSON.stringify(filter), JSON.stringify(sort), options.initialLimit, options.pageSize, options.forcePaginated]);
 
-  // 🚀 無限スクロール用のloadMore関数
+  // 無限スクロール
   const loadMore = useCallback(async () => {
     if (!userId || !hasMore || isLoadingMore || loading) return;
 
-    console.log('📚 useLinks: loadMore開始', {
-      userId,
-      hasMore,
-      isLoadingMore,
-      currentLinksCount: links.length,
-      nextCursor
-    });
-
     setIsLoadingMore(true);
-
     try {
       const result = await linkService.getUserLinks(
-        userId, 
-        filter, 
-        sort, 
-        LOAD_MORE_PAGE_SIZE, 
+        userId,
+        filter,
+        sort,
+        LOAD_MORE_PAGE_SIZE,
         nextCursor
       );
-      
-      console.log('📥 useLinks: loadMore完了', {
-        userId,
-        newLinksCount: result.data.length,
-        hasMoreAfterLoad: result.hasMore,
-        totalLinksCount: links.length + result.data.length
-      });
-
-      setLinks(prevLinks => [...prevLinks, ...result.data]);
+      setLinks(prev => [...prev, ...result.data]);
       setHasMore(result.hasMore);
       setNextCursor(result.nextCursor);
     } catch (err) {
-      console.error('❌ useLinks: loadMoreエラー', err);
+      console.error('❌ useLinks: loadMore error', err);
       setError(err instanceof Error ? err.message : '追加読み込みに失敗しました');
     } finally {
       setIsLoadingMore(false);
     }
-  }, [userId, filter, sort, hasMore, isLoadingMore, loading, links.length, nextCursor]);
+  }, [userId, filter, sort, hasMore, isLoadingMore, loading, nextCursor, LOAD_MORE_PAGE_SIZE]);
 
-  const createLink = useCallback(async (linkData: Omit<Link, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const createLink = useCallback(/* 既存のまま */ async (linkData: Omit<Link, 'id'|'createdAt'|'updatedAt'>) => {
     try {
-      console.log('🚀 useLinks: createLink開始', {
-        url: linkData.url,
-        title: linkData.title,
-        currentLinksCount: links.length
-      });
-      
       const linkId = await linkService.createLink(linkData);
-      
-      console.log('✅ useLinks: createLink完了', {
-        linkId,
-        url: linkData.url,
-        title: linkData.title
-      });
-      
-      // 🚀 即座にローカル状態を更新（オプティミスティック更新）
       const optimisticLink: Link = {
         ...linkData,
         id: linkId,
@@ -301,61 +251,27 @@ export const useLinks = (
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         isRead: false,
         isExpired: false,
-        notificationsSent: {
-          threeDays: false,
-          oneDay: false,
-          oneHour: false,
-        },
+        notificationsSent: { unused3Days: false, threeDays: false, oneDay: false, oneHour: false },
       };
-      
-      console.log('🔄 useLinks: オプティミスティック更新実行', {
-        linkId: optimisticLink.id,
-        currentCount: links.length,
-        newCount: links.length + 1
+      setLinks(prev => {
+        if (prev.some(l => l.id === linkId)) return prev;
+        return [optimisticLink, ...prev];
       });
-      
-      // ローカル状態を即座に更新
-      setLinks(prevLinks => {
-        // 既に存在するかチェック（重複防止）
-        const exists = prevLinks.some(link => link.id === linkId);
-        if (exists) {
-          console.log('⚠️ useLinks: リンクが既に存在するため、重複追加をスキップ', { linkId });
-          return prevLinks;
-        }
-        
-        const newLinks = [optimisticLink, ...prevLinks];
-        console.log('📝 useLinks: ローカル状態更新完了', {
-          previousCount: prevLinks.length,
-          newCount: newLinks.length,
-          addedLinkId: linkId
-        });
-        return newLinks;
-      });
-      
       return linkId;
     } catch (err) {
-      console.error('❌ useLinks: createLink エラー', err);
       setError(err instanceof Error ? err.message : 'Failed to create link');
-      throw err;
-    }
-  }, [links]);
-
-  const updateLink = useCallback(async (linkId: string, updates: Partial<Link>) => {
-    try {
-      await linkService.updateLink(linkId, updates);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update link');
       throw err;
     }
   }, []);
 
-  const deleteLink = useCallback(async (linkId: string, userId: string) => {
-    try {
-      await linkService.deleteLink(linkId, userId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete link');
-      throw err;
-    }
+  const updateLink = useCallback(/* 既存のまま */ async (linkId: string, updates: Partial<Link>) => {
+    try { await linkService.updateLink(linkId, updates); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Failed to update link'); throw err; }
+  }, []);
+
+  const deleteLink = useCallback(/* 既存のまま */ async (linkId: string, userId: string) => {
+    try { await linkService.deleteLink(linkId, userId); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Failed to delete link'); throw err; }
   }, []);
 
   return {
@@ -365,7 +281,6 @@ export const useLinks = (
     createLink,
     updateLink,
     deleteLink,
-    // 🚀 段階的ローディング用の新しいプロパティ
     hasMore,
     isLoadingMore,
     loadMore,
@@ -713,7 +628,7 @@ export const usePaginatedLinks = (
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       isRead: false,
       isExpired: false,
-      notificationsSent: { threeDays: false, oneDay: false, oneHour: false },
+              notificationsSent: { unused3Days: false, threeDays: false, oneDay: false, oneHour: false },
     };
     
     setLinks(prevLinks => [optimisticLink, ...prevLinks]);

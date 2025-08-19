@@ -109,6 +109,20 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const [viewMode, setViewMode] = useState<LinkViewMode>('list');
   const [expandedTagIds, setExpandedTagIds] = useState<Set<string>>(new Set());
   
+  // 🚀 段階的タグ表示用の状態
+  const [visibleTagCount, setVisibleTagCount] = useState(8); // 初期表示タグ数
+  const [isLoadingMoreTags, setIsLoadingMoreTags] = useState(false);
+  
+  // 🚀 タグモード切り替え時の初期展開設定
+  useEffect(() => {
+    if (viewMode === 'tag' && userTags.length > 0) {
+      // 初期状態では全てのタグを閉じた状態にする
+      setExpandedTagIds(new Set());
+      // 段階的表示をリセット
+      setVisibleTagCount(8);
+    }
+  }, [viewMode, userTags]);
+  
   // 選択モード関連の状態
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
@@ -594,15 +608,69 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   };
 
   const selectAllTags = () => {
-    if (viewMode === 'tag' && groupedData.tagGroups) {
-      const allTagIds = new Set(groupedData.tagGroups.map(group => group?.tag.id).filter(Boolean) as string[]);
+    if (viewMode === 'tag' && (groupedData as any).tagGroups) {
+      const allTagIds = new Set((groupedData as any).tagGroups.map((group: any) => group?.tag.id).filter(Boolean) as string[]);
       setSelectedTagIdsForDeletion(allTagIds);
     }
   };
 
+  // 追加: 安定したrenderItemを用意
+  const renderTagGroupItem = React.useCallback(
+    ({ item }: { item: { tag: any; links: Link[] } }) => {
+      const { tag, links } = item;
+      return (
+        <TagGroupCard
+          key={tag.id}
+          tag={tag}
+          links={links}
+          isExpanded={expandedTagIds.has(tag.id)}
+          onToggleExpanded={() => toggleTagExpansion(tag.id)}
+          onPress={(link) => {
+            if (isSwipeActive) return;
+            if (isSelectionMode) {
+              toggleLinkSelection(link.id);
+            } else {
+              setSelectedLink(link);
+              setShowDetailModal(true);
+            }
+          }}
+          onMarkAsRead={async (linkId: string) => {
+            try { await linkService.markAsRead(linkId); } catch {}
+          }}
+          isSelectionMode={isSelectionMode}
+          isSelected={selectedTagIdsForDeletion.has(tag.id)}
+          onToggleSelection={() => toggleTagSelection(tag.id)}
+          selectedLinkIds={selectedLinkIds}
+          onToggleLinkSelection={toggleLinkSelection}
+        />
+      );
+    },
+    [
+      expandedTagIds,
+      isSwipeActive,
+      isSelectionMode,
+      selectedTagIdsForDeletion,
+      selectedLinkIds,
+      toggleLinkSelection,
+    ]
+  );
+
   const clearTagSelection = () => {
     setSelectedTagIdsForDeletion(new Set());
   };
+
+  // 🚀 タグの追加読み込み関数
+  const loadMoreTags = useCallback(() => {
+    if (isLoadingMoreTags || visibleTagCount >= userTags.length) return;
+    
+    setIsLoadingMoreTags(true);
+    
+    // 次の8個のタグを追加表示
+    setTimeout(() => {
+      setVisibleTagCount(prev => Math.min(prev + 8, userTags.length));
+      setIsLoadingMoreTags(false);
+    }, 100); // 軽い遅延でスムーズな表示
+  }, [isLoadingMoreTags, visibleTagCount, userTags.length]);
 
   // ViewModeHeader コンポーネント
   const renderViewModeHeader = () => {
@@ -612,15 +680,14 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       if (viewMode === 'list') {
         return {
           label: 'リンク',
-          count: filteredLinks.length,
+          count: links.length, // Firebaseに保存されている実際のリンク数
           items: filteredLinks
         };
       } else if (viewMode === 'tag') {
         // タグモードでの表示用データを計算
-        const tagGroups = groupedData.tagGroups || [];
         return {
           label: 'タグ',
-          count: tagGroups.length, // タグの総数を表示（リンク数ではなく）
+          count: userTags.length, // Firebaseに保存されている実際のタグ数
           items: filteredLinks
         };
       }
@@ -689,13 +756,13 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                   : `${selectedLinkIds.size}件選択中`
                 }
               </Text>
-              {((viewMode === 'tag' && groupedData.tagGroups && groupedData.tagGroups.length > 0) ||
+              {((viewMode === 'tag' && (groupedData as any).tagGroups && (groupedData as any).tagGroups.length > 0) ||
                 (viewMode !== 'tag' && filteredLinks.length > 0)) && (
                 <TouchableOpacity 
                   style={styles.selectAllButton}
                   onPress={() => {
                     if (viewMode === 'tag') {
-                      const allTagsSelected = groupedData.tagGroups?.length === selectedTagIdsForDeletion.size;
+                      const allTagsSelected = (groupedData as any).tagGroups?.length === selectedTagIdsForDeletion.size;
                       if (allTagsSelected) {
                         clearTagSelection();
                       } else {
@@ -713,7 +780,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                 >
                   <Text style={styles.selectAllButtonText}>
                     {viewMode === 'tag' 
-                      ? (groupedData.tagGroups?.length === selectedTagIdsForDeletion.size ? 'すべて解除' : 'すべて選択')
+                      ? ((groupedData as any).tagGroups?.length === selectedTagIdsForDeletion.size ? 'すべて解除' : 'すべて選択')
                       : (selectedLinkIds.size === filteredLinks.length ? 'すべて解除' : 'すべて選択')
                     }
                   </Text>
@@ -953,95 +1020,42 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const renderMainContent = () => {
     if (viewMode === 'tag') {
       return (
-        <ScrollView
+        <FlatList
           style={styles.scrollView}
-          contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100 }}
+          contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100, paddingHorizontal: 16 }}
+          data={(groupedData as any).tagGroups ?? []}               // ← グループ配列をそのまま渡す
+          keyExtractor={(item) => item.tag.id}
+          renderItem={renderTagGroupItem}
           showsVerticalScrollIndicator={false}
-          onScroll={handleScroll}
-          scrollEventThrottle={8}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8A2BE2" />}
-        >
-          {renderViewModeHeader()}
-          <View style={styles.tagGroupsContainer}>
-            {groupedData.tagGroups?.map((group) => {
-              if (!group) return null;
-              const { tag, links } = group;
-              return (
-                <TagGroupCard
-                  key={tag.id}
-                  tag={tag}
-                  links={links}
-                  isExpanded={expandedTagIds.has(tag.id)}
-                  onToggleExpanded={() => toggleTagExpansion(tag.id)}
-                  onPress={(link) => {
-                    if (isSwipeActive) {
-                      console.log('🚫 TagGroupCard tap blocked by active swipe gesture');
-                      return;
-                    }
-                    if (isSelectionMode) {
-                      toggleLinkSelection(link.id);
-                    } else {
-                      setSelectedLink(link);
-                      setShowDetailModal(true);
-                    }
-                  }}
-                  onMarkAsRead={async (linkId: string) => {
-                    try {
-                      await linkService.markAsRead(linkId);
-                    } catch (error) {
-                      //
-                    }
-                  }}
-                  isSelectionMode={isSelectionMode}
-                  isSelected={selectedTagIdsForDeletion.has(tag.id)}
-                  onToggleSelection={() => toggleTagSelection(tag.id)}
-                  selectedLinkIds={selectedLinkIds}
-                  onToggleLinkSelection={toggleLinkSelection}
-                />
-              );
-            })}
-          </View>
-
-          {groupedData.untaggedLinks && groupedData.untaggedLinks.length > 0 && (
-            <View style={styles.untaggedSection}>
-              <Text style={styles.sectionTitle}>タグなしのリンク</Text>
-              {groupedData.untaggedLinks.map(link => (
-                <View key={link.id} style={styles.linkItem}>
-                  <LinkCard
-                    link={link}
-                    tags={userTags}
-                    onPress={() => {
-                      if (isSwipeActive) {
-                        console.log('🚫 Untagged LinkCard tap blocked by active swipe gesture');
-                        return;
-                      }
-                      if (isSelectionMode) {
-                        toggleLinkSelection(link.id);
-                      } else {
-                        setSelectedLink(link);
-                        setShowDetailModal(true);
-                      }
-                    }}
-                    onToggleBookmark={() => {
-                      //
-                    }}
-                    onDelete={() => handleDeleteLink(link)}
-                    onMarkAsRead={async () => {
-                      try {
-                        await linkService.markAsRead(link.id);
-                      } catch (error) {
-                        //
-                      }
-                    }}
-                    isSelectionMode={isSelectionMode}
-                    isSelected={selectedLinkIds.has(link.id)}
-                    onToggleSelection={() => toggleLinkSelection(link.id)}
-                  />
+          // 検索ヘッダなど
+          ListHeaderComponent={renderViewModeHeader}
+          // フッター（無限スクロール用のみ）
+          ListFooterComponent={() => (
+            <View style={styles.bottomSpacer}>
+              {isLoadingMore && (
+                <View style={styles.loadMoreContainer}>
+                  <Text style={styles.loadMoreText}>さらに読み込み中...</Text>
                 </View>
-              ))}
+              )}
             </View>
           )}
-        </ScrollView>
+          // パフォーマンス設定
+          initialNumToRender={8}
+          maxToRenderPerBatch={12}
+          windowSize={21}
+          updateCellsBatchingPeriod={16}
+          removeClippedSubviews
+          onEndReached={() => {
+            // 🚀 タグ用の追加読み込み
+            if (visibleTagCount < userTags.length && !isLoadingMoreTags) {
+              loadMoreTags();
+            }
+          }}
+          onEndReachedThreshold={0.3}
+          // 検索時ヘッダのアニメ適用（必要なときだけ）
+          onScroll={isSearchMode ? handleScroll : undefined}
+          scrollEventThrottle={isSearchMode ? 8 : 16}
+        />
       );
     }
 
@@ -1072,7 +1086,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       <FlatList
         style={styles.scrollView}
         contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100 }}
-        data={groupedData.listLinks}
+        data={(groupedData as any).listLinks}
         keyExtractor={(item) => item.id}
         renderItem={renderLinkItem}
         showsVerticalScrollIndicator={false}
@@ -1152,29 +1166,58 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
     </View>
   );
 
-  // タグ別グループ化の最適化されたメモ化
+  // タグ別グループ化の最適化されたメモ化（段階的表示対応）
   const tagGroupData = useMemo(() => {
     if (viewMode !== 'tag') return null;
+    
+    // 🚀 全タグを事前にソート（リンク数順）
+    const sortedTags = [...userTags].sort((a, b) => {
+      // 各タグに付与されているリンク数を計算
+      const aLinkCount = filteredLinks.filter(link => 
+        link.tagIds && link.tagIds.includes(a.id)
+      ).length;
+      const bLinkCount = filteredLinks.filter(link => 
+        link.tagIds && link.tagIds.includes(b.id)
+      ).length;
+      
+      // リンク数の多い順、同じ場合は名前順
+      if (bLinkCount !== aLinkCount) {
+        return bLinkCount - aLinkCount;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    
+    // 🚀 段階的表示: ソート済みタグから表示中のタグのみ処理
+    const visibleTags = sortedTags.slice(0, visibleTagCount);
     
     const tagGroups = new Map<string, Link[]>();
     const untaggedLinks: Link[] = [];
     
-    // タグMapを効率的に初期化
-    userTags.forEach(tag => {
+    // 表示中のタグのみ初期化
+    visibleTags.forEach(tag => {
       tagGroups.set(tag.id, []);
     });
     
-    // リンクを効率的に分類
+    // 表示中のタグのリンクのみ分類（大幅に軽量化）
     filteredLinks.forEach(link => {
       if (!link.tagIds || link.tagIds.length === 0) {
         untaggedLinks.push(link);
       } else {
-        link.tagIds.forEach(tagId => {
-          const tagLinks = tagGroups.get(tagId);
-          if (tagLinks) {
-            tagLinks.push(link);
-          }
-        });
+        // 表示中のタグに属するリンクのみ処理
+        const hasVisibleTag = link.tagIds.some(tagId => 
+          visibleTags.some(t => t.id === tagId)
+        );
+        
+        if (hasVisibleTag) {
+          link.tagIds.forEach(tagId => {
+            if (visibleTags.some(t => t.id === tagId)) {
+              const tagLinks = tagGroups.get(tagId);
+              if (tagLinks) {
+                tagLinks.push(link);
+              }
+            }
+          });
+        }
       }
     });
     
@@ -1183,16 +1226,11 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         const tag = userTags.find(t => t.id === tagId);
         return tag ? { tag, links } : null;
       })
-      .filter(Boolean)
-      .sort((a, b) => {
-        if (b!.links.length !== a!.links.length) {
-          return b!.links.length - a!.links.length;
-        }
-        return a!.tag.name.localeCompare(b!.tag.name);
-      });
+      .filter(Boolean);
     
+    // ソートは既に完了しているので、表示順序はそのまま
     return { tagGroups: tagGroupsArray, untaggedLinks };
-  }, [viewMode, filteredLinks, userTags]);
+  }, [viewMode, filteredLinks, userTags, visibleTagCount]); // visibleTagCountを依存に追加
 
   const groupedData = useMemo(() => {
     if (viewMode === 'folder') {
