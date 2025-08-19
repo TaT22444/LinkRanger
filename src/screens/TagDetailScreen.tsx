@@ -1261,7 +1261,7 @@ export const TagDetailScreen: React.FC = () => {
       const excludeWords = ['とは', 'について', 'の', 'と', 'は', 'が', 'を', 'に', 'で', 'から', '?', '？', '!', '！'];
       
       // 🔧 アルファベットと日本語を適切に分割
-      let themeWords = [];
+      let themeWords: string[] = [];
       
       // アルファベット部分を抽出（例：MCP）
       const alphabetMatches = suggestionLower.match(/[a-zA-Z]+/g);
@@ -1565,7 +1565,7 @@ export const TagDetailScreen: React.FC = () => {
               const metadata = await Promise.race([metadataPromise, timeoutPromise]);
               return {
                 ...link,
-                enhancedMetadata: metadata
+                enhancedMetadata: metadata as import('../services/metadataService').LinkMetadata
               };
             } catch (error) {
               console.warn(`Failed to fetch content for ${link.url}:`, error);
