@@ -5,8 +5,6 @@ import { getTestAccountPlan, isTestAccount as isTestAccountUtil } from '../utils
 interface PlanLimits {
   maxTags: number;
   maxLinks: number;
-  aiUsageLimit: number;
-  aiDailyLimit: number;
   hasBasicAlerts: boolean;
   hasCustomReminders: boolean;
   hasAdvancedSearch: boolean;
@@ -20,8 +18,6 @@ export class PlanService {
     'free': {
       maxTags: 500,
       maxLinks: 15,
-      aiUsageLimit: 5,
-      aiDailyLimit: 5,
       hasBasicAlerts: true,
       hasCustomReminders: false,
       hasAdvancedSearch: false,
@@ -30,8 +26,6 @@ export class PlanService {
     'plus': {
       maxTags: 500,
       maxLinks: 50,
-      aiUsageLimit: 50,
-      aiDailyLimit: 10,
       hasBasicAlerts: true,
       hasCustomReminders: true,
       hasAdvancedSearch: false,
@@ -40,8 +34,6 @@ export class PlanService {
     'pro': {
       maxTags: 3000,
       maxLinks: 200,
-      aiUsageLimit: 150,
-      aiDailyLimit: 50,
       hasBasicAlerts: true,
       hasCustomReminders: true,
       hasAdvancedSearch: true,
@@ -166,70 +158,7 @@ export class PlanService {
     return finalDate;
   }
 
-  // AI使用回数のリセット日を計算
-  static getAIUsageResetDate(user: User | null): Date | null {
-    if (!user) return null;
 
-    let startDate = this.getPlanStartDate(user);
-    
-    // startDateが無効な場合のフォールバック処理を改善
-    if (!startDate || isNaN(startDate.getTime())) {
-      console.log('📅 Invalid startDate, trying alternative approaches...');
-      
-      // フォールバック1: 現在の月の11日を基準にする（多くのユーザーが8/11登録のため）
-      const now = new Date();
-      let fallbackDate = new Date(now.getFullYear(), now.getMonth(), 11);
-      
-      // 今月の11日が過ぎていれば来月の11日
-      if (fallbackDate <= now) {
-        fallbackDate = new Date(now.getFullYear(), now.getMonth() + 1, 11);
-      }
-      
-      console.log('📅 Using fallback date (11th of month):', fallbackDate);
-      return fallbackDate;
-    }
-
-    console.log('📅 Start date for reset calculation:', startDate);
-    const now = new Date();
-    
-    // 開始日と同じ日付の次の月を計算
-    let nextReset = new Date(now.getFullYear(), now.getMonth(), startDate.getDate());
-    console.log('📅 Initial next reset (same month):', nextReset);
-    
-    // 既に今月のリセット日を過ぎている場合は、来月の同日にする
-    if (nextReset <= now) {
-      nextReset = new Date(now.getFullYear(), now.getMonth() + 1, startDate.getDate());
-      console.log('📅 Reset date passed, using next month:', nextReset);
-    }
-    
-    // 月末の調整（例：1/31登録 → 2/28リセット）
-    if (nextReset.getDate() !== startDate.getDate()) {
-      // 指定した日付が存在しない場合（例：2/31）は月末に調整
-      nextReset = new Date(nextReset.getFullYear(), nextReset.getMonth() + 1, 0);
-      console.log('📅 Adjusted for month end:', nextReset);
-    }
-    
-    console.log('📅 Final reset date:', nextReset);
-    return nextReset;
-  }
-
-  // AI使用回数リセット日のテキストを生成
-  static getAIUsageResetDateText(user: User | null): string {
-    // テストアカウントは表示しない
-    if (this.isTestAccount(user)) {
-      return '';
-    }
-
-    const resetDate = this.getAIUsageResetDate(user);
-    if (!resetDate) return '毎月1日にリセット';
-
-    const options: Intl.DateTimeFormatOptions = { 
-      month: 'long', 
-      day: 'numeric' 
-    };
-    const formattedDate = resetDate.toLocaleDateString('ja-JP', options);
-    return `${formattedDate}にリセット`;
-  }
 
   // プラン開始日のテキストを生成（従来の機能）
   static getPlanStartDateText(user: User | null): string {
@@ -349,7 +278,6 @@ export class PlanService {
           ...limits,
           maxTags: -1, // 無制限
           maxLinks: -1, // 無制限
-          aiUsageLimit: 999999, // 実質無制限
         };
       }
       
@@ -369,13 +297,7 @@ export class PlanService {
     return this.getPlanLimits(user).maxLinks;
   }
 
-  static getAIUsageLimit(user: User | null): number {
-    return this.getPlanLimits(user).aiUsageLimit;
-  }
 
-  static getAIDailyLimit(user: User | null): number {
-    return this.getPlanLimits(user).aiDailyLimit;
-  }
 
   // 制限チェック関数
   static canCreateTag(user: User | null, currentTagCount: number): boolean {
@@ -388,10 +310,7 @@ export class PlanService {
     return maxLinks === -1 || currentLinkCount < maxLinks;
   }
 
-  static canUseAI(user: User | null, currentUsage: number): boolean {
-    const limit = this.getAIUsageLimit(user);
-    return limit === -1 || limit === 999999 || currentUsage < limit;
-  }
+
 
   // 機能チェック関数
   static hasCustomReminders(user: User | null): boolean {
@@ -478,8 +397,7 @@ export class PlanService {
       features.push(`リンク保存 ${limits.maxLinks}個まで`);
     }
     
-    // AI使用制限
-    features.push(`AI解説機能 月に${limits.aiUsageLimit}回（1日${limits.aiDailyLimit}回まで）`);
+
     
     // 基本機能
     if (limits.hasBasicAlerts) {
@@ -503,7 +421,7 @@ export class PlanService {
   }
 
   // 制限超過メッセージ取得
-  static getLimitExceededMessage(user: User | null, type: 'tags' | 'links' | 'ai' | 'ai_daily'): string {
+  static getLimitExceededMessage(user: User | null, type: 'tags' | 'links'): string {
     const limits = this.getPlanLimits(user);
     
     switch (type) {
@@ -511,10 +429,6 @@ export class PlanService {
         return `タグの上限（${limits.maxTags.toLocaleString()}個）に達しました。上位プランにアップグレードしてください。`;
       case 'links':
         return `リンクの上限（${limits.maxLinks}個）に達しました。上位プランにアップグレードしてください。`;
-      case 'ai':
-        return `今月のAI解説回数（${limits.aiUsageLimit}回）に達しました。来月まで待つか、上位プランにアップグレードしてください。`;
-      case 'ai_daily':
-        return `今日のAI解説回数（${limits.aiDailyLimit}回）に達しました。明日まで待つか、上位プランにアップグレードしてください。`;
       default:
         return 'プランの制限に達しました。';
     }

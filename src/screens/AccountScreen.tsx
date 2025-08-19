@@ -8,7 +8,6 @@ import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
 import { isUnlimitedTestAccount } from '../utils/testAccountUtils';
 import { UpgradeModal } from '../components/UpgradeModal';
-import { AIUsageManager } from '../services/aiUsageService';
 import { deleteUserAccount } from '../services/authService';
 import * as Application from 'expo-application';
 
@@ -33,81 +32,14 @@ export const AccountScreen: React.FC = () => {
   // Freeプランかどうか
   const isFree = userPlan === 'free';
 
-  // AI使用回数リセット日テキストの生成
-  const aiResetDateText = useMemo(() => {
-    return PlanService.getAIUsageResetDateText(user);
-  }, [user]);
 
-  // AI使用状況の状態
-  const [aiUsage, setAiUsage] = useState({
-    used: 0,
-    limit: 0,
-    remaining: 0,
-  });
-
-  // AIタグ付与設定の状態
-  const [aiTagSettings, setAiTagSettings] = useState({
-    autoTagging: false,
-    manualTagging: true,
-  });
 
   // UpgradeModal表示状態
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  // AI使用状況を取得
-  useEffect(() => {
-    const fetchAIUsage = async () => {
-      if (!user?.uid) return;
-      
-      try {
-        // 無制限テストアカウントの場合は特別扱い
-        if (isUnlimitedTest) {
-          setAiUsage({ used: 0, limit: 999999, remaining: 999999 });
-          return;
-        }
-        
-        const limit = planLimits.aiUsageLimit > 0 ? planLimits.aiUsageLimit : 1;
-        
-        const aiUsageManager = AIUsageManager.getInstance();
-        const usageStats = await aiUsageManager.getUserUsageStats(user.uid);
-        
-        // AI解説機能（analysis）の使用回数を取得
-        const used = usageStats.analysisUsage || 0;
-        const remaining = Math.max(0, limit - used);
-        
-        console.log('🔍 AI使用状況取得:', {
-          userId: user.uid,
-          plan: userPlan,
-          limit,
-          used,
-          remaining,
-          analysisUsage: usageStats.analysisUsage,
-          monthlyStats: usageStats.currentMonth
-        });
-        
-        setAiUsage({ used, limit, remaining });
 
-      } catch (error) {
-        console.error('Failed to fetch AI usage:', error);
-        const limit = planLimits.aiUsageLimit > 0 ? planLimits.aiUsageLimit : 1;
-        setAiUsage({ used: 0, limit, remaining: limit });
-      }
-    };
 
-    fetchAIUsage();
-  }, [user?.uid, userPlan, planLimits.aiUsageLimit, isUnlimitedTest]);
 
-  // AIタグ付与設定を切り替える
-  const toggleAutoTagging = async (enabled: boolean) => {
-    try {
-      setAiTagSettings(prev => ({ ...prev, autoTagging: enabled }));
-      // TODO: 実際の設定保存処理
-      console.log('AI auto tagging setting changed:', enabled);
-    } catch (error) {
-      console.error('Failed to update AI tagging setting:', error);
-      Alert.alert('エラー', '設定の更新に失敗しました');
-    }
-  };
 
   // 各アクションのハンドラ（仮実装）
   const handleUpgrade = () => {
@@ -222,17 +154,7 @@ export const AccountScreen: React.FC = () => {
           {PlanService.getPlanDisplayName(user)}プラン
         </Text>
       
-        <View style={styles.aiUsageRow}>
-          <Text style={styles.aiUsageLabel}>AI解説機能</Text>
-          {aiResetDateText && (
-            <Text style={styles.renewalDateText}>
-              {aiResetDateText}
-            </Text>
-          )}
-          <Text style={styles.aiUsageValue}>
-            {isUnlimitedTest ? '無制限' : `${aiUsage.remaining} / ${aiUsage.limit}回`}
-          </Text>
-        </View>
+
 
         {/* プラン制限情報 */}
         <View style={styles.planLimitsContainer}>
@@ -413,25 +335,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
   },
-  aiUsageRow: {
-    marginTop: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  aiUsageLabel: {
-    fontSize: 14,
-    color: '#E5E5EA',
-  },
-  aiUsageValue: {
-    fontSize: 14,
-    color: '#E5E5EA',
-    fontWeight: '600',
-  },
-  renewalDateText: {
-    fontSize: 12,
-    color: '#8E8E93',
-  },
+
   planLimitsContainer: {
     marginTop: 16,
     paddingTop: 16,
@@ -474,223 +378,7 @@ const styles = StyleSheet.create({
   avatarIcon: {
     fontSize: 32,
   },
-  // AI使用状況の洗練されたスタイル
-  aiSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    gap: 8,
-    backgroundColor: '#fff',
-  },
-  aiPlanBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2A2A2A',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  aiPlanText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#8A2BE2',
-  },
-  aiUsageDisplay: {
-    backgroundColor: '#2A2A2A',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-  },
-  aiProgressContainer: {
-    marginBottom: 16,
-  },
-  aiProgressBar: {
-    height: 4,
-    backgroundColor: '#333',
-    borderRadius: 2,
-    marginTop: 4,
-  },
-  aiProgressFill: {
-    height: '100%',
-    backgroundColor: '#8A2BE2',
-    borderRadius: 2,
-  },
-  aiRemainingLabel: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 6,
-    textAlign: 'right',
-  },
-  aiSettingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  aiSettingTitle: {
-    fontSize: 14,
-    color: '#FFF',
-    fontWeight: '500',
-  },
-  aiToggleButton: {
-    backgroundColor: '#444',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    minWidth: 48,
-  },
-  aiToggleButtonActive: {
-    backgroundColor: '#8A2BE2',
-  },
-  aiToggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFF',
-    textAlign: 'center',
-  },
-  aiToggleTextActive: {
-    color: '#FFF',
-  },
-  aiWarningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 152, 0, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    gap: 8,
-    marginTop: 8,
-  },
-  aiWarningText: {
-    fontSize: 12,
-    color: '#FF9800',
-    flex: 1,
-  },
-  aiErrorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 82, 82, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    gap: 8,
-    marginTop: 8,
-  },
-  aiErrorText: {
-    fontSize: 12,
-    color: '#FF5252',
-    flex: 1,
-  },
-  aiFeatureDescription: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  aiFeatureText: {
-    fontSize: 13,
-    color: '#AAA',
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  aiUsageStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  aiUsageStat: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  aiUsageNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFF',
-    marginBottom: 4,
-  },
-  // aiUsageLabel: {
-  //   fontSize: 14,
-  //   color: '#CCC',
-  // },
-  aiUsageDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#444',
-    marginHorizontal: 8,
-  },
 
-  aiWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3A2E00',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  // aiWarningText: {
-  //   fontSize: 12,
-  //   color: '#FF9800',
-  //   flex: 1,
-  // },
-  aiErrorWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3A1A1A',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginTop: 12,
-    gap: 8,
-  },
-  // aiErrorText: {
-  //   fontSize: 11,
-  //   color: '#FF5252',
-  //   marginTop: 4,
-  // },
-  aiSettingsSection: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-  },
-  aiSettingsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFF',
-    marginBottom: 12,
-  },
-  aiSettingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  aiSettingInfo: {
-    flex: 1,
-    marginRight: 16,
-  },
-  aiSettingLabel: {
-    fontSize: 14,
-    color: '#FFF',
-    marginBottom: 4,
-  },
-  aiSettingDescription: {
-    fontSize: 12,
-    color: '#AAA',
-    lineHeight: 16,
-  },
-  aiSettingStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  aiSettingStatusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
   planContainer: {
     flexDirection: 'row',
     alignItems: 'center',

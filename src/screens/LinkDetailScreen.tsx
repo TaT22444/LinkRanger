@@ -6,8 +6,10 @@ import {
   ScrollView,
   SafeAreaView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Linking,
   Alert,
+  Modal,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Link, UserPlan } from '../types';
@@ -41,6 +43,7 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
   onDelete,
 }) => {
   const [showTagModal, setShowTagModal] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
 
   const handleTagsChange = async (newTags: string[]) => {
     if (onUpdateLink) {
@@ -132,8 +135,11 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
           <Feather name="arrow-left" size={24} color="#FFF" />
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.openButton} onPress={handleOpenExternalLink}>
-          <Feather name="external-link" size={20} color="#8A2BE2" />
+        <TouchableOpacity
+          style={styles.optionsButton}
+          onPress={() => setShowOptionsMenu(true)}
+        >
+          <Feather name="more-vertical" size={20} color="#FFF" />
         </TouchableOpacity>
       </View>
 
@@ -186,14 +192,52 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
 
         {/* アクション */}
         <View style={styles.actionSection}>
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Feather name="trash-2" size={18} color="#FF6B6B" />
-            <Text style={styles.deleteButtonText}>削除</Text>
+          <TouchableOpacity style={styles.openLinkButton} onPress={handleOpenExternalLink}>
+            <Feather name="external-link" size={18} color="#FFF" />
+            <Text style={styles.openLinkButtonText}>リンクを開く</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      {/* オプションメニューモーダル */}
+      <Modal
+        visible={showOptionsMenu}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowOptionsMenu(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowOptionsMenu(false)}>
+          <View style={styles.optionsOverlay}>
+            <View style={styles.optionsMenu}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setShowOptionsMenu(false);
+                  handleOpenExternalLink();
+                }}
+              >
+                <Feather name="external-link" size={20} color="#8A2BE2" />
+                <Text style={styles.optionText}>リンクを開く</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.optionSeparator} />
+              
+              <TouchableOpacity
+                style={[styles.optionItem, styles.deleteOption]}
+                onPress={() => {
+                  setShowOptionsMenu(false);
+                  handleDelete();
+                }}
+              >
+                <Feather name="trash-2" size={20} color="#FF6B6B" />
+                <Text style={[styles.optionText, { color: '#FF6B6B' }]}>リンクを削除</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       {/* タグ管理モーダル */}
       {onCreateTag && (
@@ -348,19 +392,66 @@ tag: {
     borderTopColor: '#333',
     backgroundColor: '#1A1A1A',
   },
-  deleteButton: {
+  openLinkButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FF6B6B',
+    backgroundColor: '#8A2BE2',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
   },
-  deleteButtonText: {
+  openLinkButtonText: {
     fontSize: 14,
     color: '#FFF',
     marginLeft: 8,
+  },
+  
+  // オプションメニュー関連のスタイル
+  optionsButton: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 100,
+    paddingRight: 16,
+  },
+  optionsMenu: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+    paddingVertical: 8,
+    minWidth: 160,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#FFF',
+    fontWeight: '500',
+  },
+  optionSeparator: {
+    height: 1,
+    backgroundColor: '#333',
+    marginHorizontal: 16,
+  },
+  deleteOption: {
+    // Additional styling for delete option if needed
   },
   
   // 底部の余白

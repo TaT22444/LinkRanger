@@ -139,32 +139,7 @@ export interface Link {
   };
 }
 
-// AI分析結果保存型（Proプラン専用機能）
-export interface SavedAnalysis {
-  id: string;
-  userId: string;
-  tagId: string;
-  tagName: string;
-  title: string; // 分析のタイトル（例: "Reactタグの深掘り分析（3件対象）"）
-  result: string; // 分析結果テキスト
-  selectedLinks: {
-    id: string;
-    title: string;
-    url: string;
-    description?: string;
-  }[]; // 分析対象リンクの簡略版
-  tokensUsed: number;
-  cost: number;
-  createdAt: Date;
-  updatedAt: Date;
-  // メタデータ
-  metadata?: {
-    model: string; // 使用したAIモデル
-    linkCount: number; // 分析対象リンク数
-    analysisType: 'tag_summary' | 'custom'; // 分析種別
-    processingTime: number; // 処理時間（ms）
-  };
-}
+
 
 // タグ型（新設計）
 export interface Tag {

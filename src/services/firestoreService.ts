@@ -29,8 +29,7 @@ import {
   LinkFilter,
   LinkSort,
   PaginatedResponse,
-  LinkWithTags,
-  SavedAnalysis
+  LinkWithTags
 } from '../types';
 
 import { getDefaultPlatformTags } from '../utils/platformDetector';
@@ -43,7 +42,7 @@ const COLLECTIONS = {
   FOLDERS: 'folders',
   SEARCH_HISTORY: 'searchHistory',
   APP_SETTINGS: 'appSettings',
-  SAVED_ANALYSES: 'savedAnalyses', // AI分析結果保存（Proプラン専用）
+
 } as const;
 
 // Firestoreデータを安全なLinkオブジェクトに変換
@@ -195,8 +194,7 @@ export const userService = {
     const settingsRef = doc(db, COLLECTIONS.APP_SETTINGS, userId);
     batch.delete(settingsRef);
 
-    // Delete saved analyses
-    await savedAnalysisService.deleteAllUserAnalyses(userId);
+
 
     await batch.commit();
   },
@@ -845,162 +843,6 @@ export const batchService = {
   },
 };
 
-// Firestoreデータを安全なSavedAnalysisオブジェクトに変換
-const convertToSavedAnalysis = (doc: any): SavedAnalysis => {
-  const data = doc.data();
-  return {
-    id: doc.id,
-    userId: data.userId,
-    tagId: data.tagId,
-    tagName: data.tagName,
-    title: data.title,
-    result: data.result,
-    selectedLinks: data.selectedLinks || [],
-    tokensUsed: data.tokensUsed,
-    cost: data.cost,
-    createdAt: data.createdAt?.toDate() || new Date(),
-    updatedAt: data.updatedAt?.toDate() || new Date(),
-    metadata: data.metadata,
-  };
-};
 
-// AI分析結果管理サービス（Proプラン専用機能）
-export const savedAnalysisService = {
-  // AI分析結果を保存
-  async saveAnalysis(
-    userId: string,
-    tagId: string,
-    tagName: string,
-    title: string,
-    result: string,
-    selectedLinks: { id: string; title: string; url: string; description?: string }[],
-    tokensUsed: number,
-    cost: number,
-    metadata?: SavedAnalysis['metadata']
-  ): Promise<string> {
-    console.log('🔄 savedAnalysisService.saveAnalysis 開始:', {
-      userId,
-      tagId,
-      tagName,
-      title,
-      resultLength: result.length,
-      selectedLinksCount: selectedLinks.length,
-      tokensUsed,
-      cost,
-      metadata
-    });
 
-    const analysisData = {
-      userId,
-      tagId,
-      tagName,
-      title,
-      result,
-      selectedLinks,
-      tokensUsed,
-      cost,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      metadata,
-    };
-
-    console.log('📝 Firestore保存データ:', {
-      ...analysisData,
-      createdAt: 'serverTimestamp()',
-      updatedAt: 'serverTimestamp()'
-    });
-
-    try {
-      const docRef = await addDoc(collection(db, COLLECTIONS.SAVED_ANALYSES), analysisData);
-      console.log('✅ Firestore保存成功:', {
-        docId: docRef.id,
-        collection: COLLECTIONS.SAVED_ANALYSES
-      });
-      return docRef.id;
-    } catch (error) {
-      console.error('❌ Firestore保存エラー:', {
-        error,
-        errorMessage: error instanceof Error ? error.message : String(error),
-        errorCode: error instanceof Error && 'code' in error ? error.code : undefined,
-        collection: COLLECTIONS.SAVED_ANALYSES,
-        analysisData: {
-          ...analysisData,
-          result: `${result.slice(0, 100)}...`,
-          createdAt: 'serverTimestamp()',
-          updatedAt: 'serverTimestamp()'
-        }
-      });
-      throw error;
-    }
-  },
-
-  // ユーザーのAI分析結果一覧を取得
-  async getUserAnalyses(userId: string, limitCount?: number): Promise<SavedAnalysis[]> {
-    let q = query(
-      collection(db, COLLECTIONS.SAVED_ANALYSES),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-
-    if (limitCount) {
-      q = query(q, limit(limitCount));
-    }
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(convertToSavedAnalysis);
-  },
-
-  // 特定のタグのAI分析結果を取得
-  async getAnalysesByTag(userId: string, tagId: string): Promise<SavedAnalysis[]> {
-    const q = query(
-      collection(db, COLLECTIONS.SAVED_ANALYSES),
-      where('userId', '==', userId),
-      where('tagId', '==', tagId),
-      orderBy('createdAt', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(convertToSavedAnalysis);
-  },
-
-  // AI分析結果を削除
-  async deleteAnalysis(analysisId: string): Promise<void> {
-    await deleteDoc(doc(db, COLLECTIONS.SAVED_ANALYSES, analysisId));
-  },
-
-  // ユーザーの全AI分析結果を削除（アカウント削除時など）
-  async deleteAllUserAnalyses(userId: string): Promise<void> {
-    const q = query(
-      collection(db, COLLECTIONS.SAVED_ANALYSES),
-      where('userId', '==', userId)
-    );
-
-    const snapshot = await getDocs(q);
-    const batch = writeBatch(db);
-
-    snapshot.docs.forEach(doc => {
-      batch.delete(doc.ref);
-    });
-
-    await batch.commit();
-  },
-
-  // AI分析結果をリアルタイムで監視（特定タグ）
-  subscribeToTagAnalyses(
-    userId: string,
-    tagId: string,
-    callback: (analyses: SavedAnalysis[]) => void
-  ): () => void {
-    const q = query(
-      collection(db, COLLECTIONS.SAVED_ANALYSES),
-      where('userId', '==', userId),
-      where('tagId', '==', tagId),
-      orderBy('createdAt', 'desc')
-    );
-
-    return onSnapshot(q, snapshot => {
-      const analyses = snapshot.docs.map(convertToSavedAnalysis);
-      callback(analyses);
-    });
-  },
-}; 
+ 

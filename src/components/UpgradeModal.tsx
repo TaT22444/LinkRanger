@@ -23,7 +23,7 @@ interface UpgradeModalProps {
   currentPlan?: UserPlan;
   heroTitle?: string;
   heroDescription?: string;
-  sourceContext?: 'link_limit' | 'tag_limit' | 'ai_limit' | 'account' | 'general';
+  sourceContext?: 'link_limit' | 'tag_limit' | 'account' | 'general';
 }
 
 interface PlanFeature {
@@ -122,13 +122,6 @@ AI機能をさらに活用しましょう`,
             icon: 'link',
           },
           {
-            title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
-            description: sourceContext === 'ai_limit' ? 
-              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）` : 
-              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）`,
-            icon: 'cpu',
-          },
-          {
             title: '基本リマインド機能',
             description: '固定期間でのリマインド',
             icon: 'bell',
@@ -149,13 +142,6 @@ AI機能をさらに活用しましょう`,
               'さらに多くの重要リンクを整理' : 
               'Freeプランより多くのリンクを保存',
             icon: 'link',
-          },
-          {
-            title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
-            description: sourceContext === 'ai_limit' ? 
-              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）` : 
-              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）`,
-            icon: 'cpu',
           },
           {
             title: 'カスタムリマインド機能',
@@ -186,14 +172,7 @@ AI機能をさらに活用しましょう`,
             description: sourceContext === 'link_limit' ? 
               '大規模なリンクライブラリを構築' : 
               '豊富なリンクライブラリ',
-            icon: 'link',
-          },
-          {
-            title: `AI解説機能 月に${details.limits.aiUsageLimit}回`,
-            description: sourceContext === 'ai_limit' ? 
-              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）` : 
-              `保存したリンクの内容をAIが解説（1日${details.limits.aiDailyLimit}回まで）`,
-            icon: 'cpu',
+                        icon: 'link',
           }
         );
       }
@@ -207,7 +186,7 @@ AI機能をさらに活用しましょう`,
           (pricing.price === 0 ? '¥0' : `¥${pricing.price.toLocaleString()}`),
         period: pricing.price === 0 ? '無料' : '月額',
         description: planType === 'free' ? '基本機能をお試し' :
-                    planType === 'plus' ? 'Freeプランに加えて、より多くのリンクとAI解説' :
+                    planType === 'plus' ? 'Freeプランに加えて、より多くのリンクとカスタム機能' :
                     'Plusプランに加えて、大量データと高度機能',
         features,
         recommended: planType === 'pro',

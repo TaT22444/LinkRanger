@@ -42,7 +42,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
   onToggleLinkSelection,
 }) => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const [showAllLinks, setShowAllLinks] = useState(false);
+
 
 
   const getRecentLink = () => {
@@ -56,11 +56,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
 
   const recentLink = getRecentLink();
   const unreadCount = getUnreadCount();
-  const displayLinks = showAllLinks ? links : links.slice(0, 3);
-
-  const handleShowMore = () => {
-    setShowAllLinks(!showAllLinks);
-  };
+  const displayLinks = links.slice(0, 3);
 
   const handleLinkPress = async (link: Link) => {
     // 選択モードの場合は選択状態を切り替え
@@ -213,14 +209,14 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
               
               {links.length > 3 && (
                 <TouchableOpacity
-                  style={styles.showMoreButton}
-                  onPress={handleShowMore}
+                  style={styles.showAllButton}
+                  onPress={handleOpenTagDetail}
                 >
-                  <Text style={styles.showMoreText}>
-                    {showAllLinks ? '折りたたむ' : `他 ${links.length - 3}件を表示`}
+                  <Text style={styles.showAllText}>
+                    すべて見る
                   </Text>
                   <Feather 
-                    name={showAllLinks ? 'chevron-up' : 'arrow-right'} 
+                    name="arrow-right" 
                     size={12} 
                     color="#8A2BE2" 
                   />
@@ -376,14 +372,14 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     opacity: 0.7,
   },
-  showMoreButton: {
+  showAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
     marginTop: 4,
   },
-  showMoreText: {
+  showAllText: {
     fontSize: 12,
     color: '#8A2BE2',
     fontWeight: '500',

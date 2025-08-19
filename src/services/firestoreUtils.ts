@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase/firestore';
-import { Link, SavedAnalysis } from '../types';
+import { Link } from '../types';
 
 // コレクション名
 export const COLLECTIONS = {
@@ -9,7 +9,7 @@ export const COLLECTIONS = {
   FOLDERS: 'folders',
   SEARCH_HISTORY: 'searchHistory',
   APP_SETTINGS: 'appSettings',
-  SAVED_ANALYSES: 'savedAnalyses', // AI分析結果保存（Proプラン専用）
+
 } as const;
 
 // Firestoreデータを安全なLinkオブジェクトに変換
@@ -58,21 +58,3 @@ export const convertToLink = (doc: any): Link => {
   } as Link;
 };
 
-// Firestoreデータを安全なSavedAnalysisオブジェクトに変換
-export const convertToSavedAnalysis = (doc: any): SavedAnalysis => {
-  const data = doc.data();
-  return {
-    id: doc.id,
-    userId: data.userId,
-    tagId: data.tagId,
-    tagName: data.tagName,
-    title: data.title,
-    result: data.result,
-    selectedLinks: data.selectedLinks || [],
-    tokensUsed: data.tokensUsed,
-    cost: data.cost,
-    createdAt: data.createdAt?.toDate() || new Date(),
-    updatedAt: data.updatedAt?.toDate() || new Date(),
-    metadata: data.metadata,
-  };
-};
