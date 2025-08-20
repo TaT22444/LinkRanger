@@ -18,6 +18,42 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../config/firebase';
 import { notificationService } from './notificationService';
 
+/**
+ * 3日間未読リンクの通知処理を実行する共通関数
+ */
+const processUnusedLinksNotifications = async (unusedLinks: Array<{
+  id: string;
+  title: string;
+  url: string;
+  userId: string;
+  lastAccessedAt?: Date;
+  createdAt: Date;
+}>) => {
+  // ローカル通知を送信
+  for (const link of unusedLinks) {
+    await notificationService.scheduleUnusedLinkNotification({
+      id: link.id,
+      title: link.title,
+      url: link.url,
+      userId: link.userId,
+      lastAccessedAt: link.lastAccessedAt || link.createdAt,
+      createdAt: link.createdAt,
+      // 他の必要なプロパティはデフォルト値を設定
+      description: '',
+      status: 'pending' as const,
+      isBookmarked: false,
+      isArchived: false,
+      isRead: false,
+      priority: 'medium' as const,
+      tagIds: [],
+      updatedAt: new Date(),
+      notificationsSent: { 
+        unused3Days: false
+      }
+    });
+  }
+};
+
 // バックグラウンドタスクの定義
 const UNUSED_LINKS_CHECK_TASK = 'unused-links-check-task';
 
@@ -39,57 +75,38 @@ const isBackgroundTaskAvailable = () => {
 };
 
 // バックグラウンドタスクの定義（Development buildではスキップ）
-if (isBackgroundTaskAvailable() && TaskManager) {
+if (isBackgroundTaskAvailable()) {
   TaskManager.defineTask(UNUSED_LINKS_CHECK_TASK, async () => {
-  try {
-    console.log('🔍 バックグラウンドタスク開始: 3日間未読リンクチェック');
-    
-    // Cloud Functionを呼び出して3日間未読リンクをチェック
-    const result = await checkUnusedLinksFunction();
-    const data = result.data as { 
-      unusedLinks: Array<{
-        id: string;
-        title: string;
-        url: string;
-        userId: string;
-        lastAccessedAt?: Date;
-        createdAt: Date;
-      }>;
-      notificationsSent: number;
-    };
-    
-    console.log('📊 3日間未読リンクチェック結果:', {
-      unusedLinksCount: data.unusedLinks.length,
-      notificationsSent: data.notificationsSent
-    });
-
-    // ローカル通知を送信
-    for (const link of data.unusedLinks) {
-      await notificationService.scheduleUnusedLinkNotification({
-        id: link.id,
-        title: link.title,
-        url: link.url,
-        userId: link.userId,
-        lastAccessedAt: link.lastAccessedAt || link.createdAt,
-        createdAt: link.createdAt,
-        // 他の必要なプロパティはデフォルト値を設定
-        description: '',
-        status: 'pending' as const,
-        isBookmarked: false,
-        isArchived: false,
-        isRead: false,
-        priority: 'medium' as const,
-        tagIds: [],
-        updatedAt: new Date(),
-        notificationsSent: { unused3Days: false }
+    try {
+      console.log('🔍 バックグラウンドタスク開始: 3日間未読リンクチェック');
+      
+      // Cloud Functionsで3日間未読リンクをチェック
+      const result = await checkUnusedLinksFunction();
+      const data = result.data as { 
+        unusedLinks: Array<{
+          id: string;
+          title: string;
+          url: string;
+          userId: string;
+          lastAccessedAt?: Date;
+          createdAt: Date;
+        }>;
+        notificationsSent: number;
+      };
+      
+      console.log('📊 3日間未読リンクチェック結果:', {
+        unusedLinksCount: data.unusedLinks.length,
+        notificationsSent: data.notificationsSent
       });
-    }
 
-    return BackgroundFetch.BackgroundFetchResult.NewData;
-  } catch (error) {
-    console.error('❌ バックグラウンドタスクエラー:', error);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
-  }
+      // 共通関数を使用して通知処理を実行
+      await processUnusedLinksNotifications(data.unusedLinks);
+
+      return (BackgroundFetch as any).BackgroundFetchResult.NewData;
+    } catch (error) {
+      console.error('❌ バックグラウンドタスクエラー:', error);
+      return (BackgroundFetch as any).BackgroundFetchResult.Failed;
+    }
   });
 } else {
   console.log('⚠️ Development build: TaskManagerタスク定義をスキップ');
@@ -123,7 +140,7 @@ class BackgroundTaskService {
 
       // バックグラウンドフェッチを登録
       const status = await BackgroundFetch.registerTaskAsync(UNUSED_LINKS_CHECK_TASK, {
-        minimumInterval: 24 * 60 * 60 * 1000, // 24時間ごと
+        minimumInterval: 6 * 60 * 60 * 1000, // 6時間ごと（より正確な3日間チェック）
         stopOnTerminate: false,
         startOnBoot: true,
       });
@@ -131,7 +148,7 @@ class BackgroundTaskService {
       console.log('📅 バックグラウンドタスク登録完了:', {
         taskName: UNUSED_LINKS_CHECK_TASK,
         status,
-        interval: '24時間ごと'
+        interval: '6時間ごと（より正確な3日間チェック）'
       });
 
       this.isRegistered = true;
@@ -165,7 +182,7 @@ class BackgroundTaskService {
   async getBackgroundTaskStatus(): Promise<{
     isRegistered: boolean;
     isAvailable: boolean;
-    status?: BackgroundFetch.BackgroundFetchStatus;
+    status?: any;
   }> {
     try {
       if (!isBackgroundTaskAvailable()) {
@@ -199,6 +216,8 @@ class BackgroundTaskService {
     try {
       console.log('🔍 手動チェック開始: 3日間未読リンク');
       
+      // 手動チェックで3日間未読リンクをチェック
+      // 認証されたユーザーIDはCloud Functions側で自動取得されます
       const result = await checkUnusedLinksFunction();
       const data = result.data as { 
         unusedLinks: Array<{
@@ -212,40 +231,31 @@ class BackgroundTaskService {
         notificationsSent: number;
       };
       
+      // ログ出力を簡潔にする
       console.log('📊 手動チェック結果:', {
         unusedLinksCount: data.unusedLinks.length,
-        notificationsSent: data.notificationsSent,
-        links: data.unusedLinks.map(link => ({
-          title: link.title.slice(0, 30) + '...',
-          daysSinceLastAccess: Math.floor(
-            (new Date().getTime() - (link.lastAccessedAt || link.createdAt).getTime()) / 
-            (1000 * 60 * 60 * 24)
-          )
-        }))
+        notificationsSent: data.notificationsSent
       });
 
-      // ローカル通知を送信
-      for (const link of data.unusedLinks) {
-        await notificationService.scheduleUnusedLinkNotification({
-          id: link.id,
-          title: link.title,
-          url: link.url,
-          userId: link.userId,
-          lastAccessedAt: link.lastAccessedAt || link.createdAt,
-          createdAt: link.createdAt,
-          description: '',
-          status: 'pending' as const,
-          isBookmarked: false,
-          isArchived: false,
-          isRead: false,
-          priority: 'medium' as const,
-          tagIds: [],
-          updatedAt: new Date(),
-          notificationsSent: { unused3Days: false }
-        });
-      }
+      // 共通関数を使用して通知処理を実行
+      await processUnusedLinksNotifications(data.unusedLinks);
+      
+      console.log('✅ 手動チェック完了');
     } catch (error) {
       console.error('❌ 手動チェックエラー:', error);
+    }
+  }
+
+  // データ移行関数を呼び出す
+  async migrateNotificationStructure(): Promise<void> {
+    try {
+      console.log('🔄 通知構造の移行を開始します...');
+      const migrateFunction = httpsCallable(functions, 'migrateNotificationStructure');
+      const result = await migrateFunction();
+      console.log('✅ 通知構造の移行が完了しました:', result.data);
+    } catch (error) {
+      console.error('❌ 通知構造の移行に失敗しました:', error);
+      throw error;
     }
   }
 }

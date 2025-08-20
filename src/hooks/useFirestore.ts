@@ -251,7 +251,7 @@ export const useLinks = (
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         isRead: false,
         isExpired: false,
-        notificationsSent: { unused3Days: false, threeDays: false, oneDay: false, oneHour: false },
+        notificationsSent: { unused3Days: false },
       };
       setLinks(prev => {
         if (prev.some(l => l.id === linkId)) return prev;
@@ -628,7 +628,7 @@ export const usePaginatedLinks = (
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       isRead: false,
       isExpired: false,
-              notificationsSent: { unused3Days: false, threeDays: false, oneDay: false, oneHour: false },
+              notificationsSent: { unused3Days: false },
     };
     
     setLinks(prevLinks => [optimisticLink, ...prevLinks]);

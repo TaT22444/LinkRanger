@@ -38,6 +38,7 @@ import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
 import { PlanService } from '../services/planService';
 import { notificationService } from '../services/notificationService';
+import { backgroundTaskService } from '../services/backgroundTaskService';
 
 import { AIStatusMonitor } from '../components/AIStatusMonitor';
 import { UpgradeModal } from '../components/UpgradeModal';
@@ -128,7 +129,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
   const [selectedTagIdsForDeletion, setSelectedTagIdsForDeletion] = useState<Set<string>>(new Set());
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeModalContext, setUpgradeModalContext] = useState<'link_limit' | 'tag_limit' | 'ai_limit' | 'account' | 'general'>('general');
+  const [upgradeModalContext, setUpgradeModalContext] = useState<'link_limit' | 'tag_limit' | 'account' | 'general'>('general');
 
   // スワイプジェスチャー用の状態
   const swipeGestureRef = useRef<PanGestureHandler>(null);
@@ -728,6 +729,23 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                 </TouchableOpacity>
               </>
             )}
+            
+            {/* 未読リンク手動チェック機能 */}
+            <TouchableOpacity 
+              style={styles.tagActionButton}
+              onPress={async () => {
+                try {
+                  Alert.alert('未読リンクチェック', '3日間未読のリンクをチェックしています...');
+                  await backgroundTaskService.checkUnusedLinksManually();
+                  Alert.alert('完了', '3日間未読のリンクのチェックが完了しました');
+                } catch (error) {
+                  Alert.alert('エラー', '未読リンクのチェックに失敗しました');
+                  console.error('手動チェックエラー:', error);
+                }
+              }}
+            >
+              <Feather name="clock" size={16} color="#FF6B6B" />
+            </TouchableOpacity>
             
             <TouchableOpacity 
               style={[

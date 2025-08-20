@@ -51,9 +51,7 @@ export const convertToLink = (doc: any): Link => {
     isRead: data.isRead || false,
     isExpired: data.isExpired || false,
     notificationsSent: data.notificationsSent || {
-      threeDays: false,
-      oneDay: false,
-      oneHour: false,
+      unused3Days: false,
     },
   } as Link;
 };

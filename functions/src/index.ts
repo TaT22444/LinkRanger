@@ -666,7 +666,16 @@ export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, asyn
       },
     };
   } catch (error) {
-    logger.error("Failed to fetch enhanced metadata", {url, error});
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    const errorType = error?.constructor?.name || "Unknown";
+
+    logger.error("Failed to fetch enhanced metadata", {
+      url,
+      error: errorMessage,
+      errorStack,
+      errorType,
+    });
 
     // フォールバック: URLからドメイン名を抽出
     try {
@@ -686,6 +695,219 @@ export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, asyn
     } catch {
       throw new HttpsError("invalid-argument", "無効なURLです");
     }
+  }
+});
+
+// ===================================================================
+//
+// 未読リンク通知機能
+//
+// ===================================================================
+
+/**
+ * 既存の古い通知構造を新しい構造に移行
+ */
+export const migrateNotificationStructure = onCall({timeoutSeconds: 60, memory: "512MiB"}, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
+  const userId = request.auth.uid;
+
+  try {
+    logger.info(`🔄 Starting notification structure migration for user: ${userId}`);
+
+    // 古い構造を持つリンクを検索
+    const oldStructureQuery = db.collection("links")
+      .where("userId", "==", userId)
+      .where("notificationsSent.threeDays", "in", [true, false]);
+
+    const oldStructureSnapshot = await oldStructureQuery.get();
+    logger.info(`📊 Found ${oldStructureSnapshot.size} links with old notification structure`);
+
+    if (oldStructureSnapshot.empty) {
+      logger.info("✅ No links need migration");
+      return {migratedCount: 0, message: "No links need migration"};
+    }
+
+    const batch = db.batch();
+    let migratedCount = 0;
+
+    for (const doc of oldStructureSnapshot.docs) {
+      const linkData = doc.data();
+      const notificationsSent = linkData.notificationsSent || {};
+
+      // 新しい構造に移行
+      const newNotificationsSent = {
+        unused3Days: notificationsSent.threeDays || false,
+        // 古いフィールドも保持（互換性のため）
+        oneHour: notificationsSent.oneHour || false,
+        threeDays: notificationsSent.threeDays || false,
+        oneDay: notificationsSent.oneDay || false,
+      };
+
+      const linkRef = db.collection("links").doc(doc.id);
+      batch.update(linkRef, {
+        "notificationsSent": newNotificationsSent,
+        "updatedAt": FieldValue.serverTimestamp(),
+      });
+
+      migratedCount++;
+    }
+
+    if (migratedCount > 0) {
+      await batch.commit();
+      logger.info(`✅ Successfully migrated ${migratedCount} links`);
+    }
+
+    return {
+      migratedCount,
+      message: `Successfully migrated ${migratedCount} links`,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("Failed to migrate notification structure", {
+      userId,
+      error: errorMessage,
+    });
+    throw new HttpsError("internal", "通知構造の移行に失敗しました");
+  }
+});
+
+/**
+ * 3日間未読のリンクをチェックして通知対象を特定
+ */
+export const checkUnusedLinks = onCall({timeoutSeconds: 30, memory: "512MiB"}, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "認証が必要です");
+  const userId = request.auth.uid; // 認証されたユーザーIDを使用
+
+  try {
+    logger.info(`🔍 Checking unused links for user: ${userId}`);
+
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000); // 3日前
+
+    // デバッグ: 全リンク数を確認
+    const allLinksQuery = db.collection("links").where("userId", "==", userId);
+    const allLinksSnapshot = await allLinksQuery.get();
+    logger.info(`📊 Total links for user: ${allLinksSnapshot.size}`);
+
+    // デバッグ: 各条件でのフィルタリング結果を確認
+    const isReadFalseQuery = db.collection("links")
+      .where("userId", "==", userId)
+      .where("isRead", "==", false);
+    const isReadFalseSnapshot = await isReadFalseQuery.get();
+    logger.info(`📊 Links with isRead=false: ${isReadFalseSnapshot.size}`);
+
+    const isArchivedFalseQuery = db.collection("links")
+      .where("userId", "==", userId)
+      .where("isArchived", "==", false);
+    const isArchivedFalseSnapshot = await isArchivedFalseQuery.get();
+    logger.info(`📊 Links with isArchived=false: ${isArchivedFalseSnapshot.size}`);
+
+    // デバッグ: notificationsSentフィールドの存在確認
+    const sampleLinks = allLinksSnapshot.docs.slice(0, 3);
+    for (const doc of sampleLinks) {
+      const data = doc.data();
+      logger.info(`🔍 Sample link ${doc.id}:`, {
+        isRead: data.isRead,
+        isArchived: data.isArchived,
+        hasNotificationsSent: !!data.notificationsSent,
+        notificationsSentValue: data.notificationsSent,
+        createdAt: data.createdAt?.toDate?.() || data.createdAt,
+        threeDaysAgo: threeDaysAgo,
+      });
+    }
+
+    // 3日間未読のリンクを検索
+    // 古い構造（threeDays）と新しい構造（unused3Days）の両方に対応
+    const unusedLinksQuery = db.collection("links")
+      .where("userId", "==", userId)
+      .where("isRead", "==", false)
+      .where("isArchived", "==", false)
+      .where("createdAt", "<=", threeDaysAgo);
+
+    const unusedLinksSnapshot = await unusedLinksQuery.get();
+    logger.info(`📊 Links after basic filters: ${unusedLinksSnapshot.size}`);
+
+    const unusedLinks: Array<{
+      id: string;
+      title: string;
+      url: string;
+      userId: string;
+      lastAccessedAt?: Date;
+      createdAt: Date;
+    }> = [];
+
+    let notificationsSent = 0;
+
+    // バッチ処理で通知送信フラグを更新
+    const batch = db.batch();
+
+    for (const doc of unusedLinksSnapshot.docs) {
+      const linkData = doc.data();
+
+      // 最終アクセス時刻がない場合は作成時刻を使用
+      const lastAccessTime = linkData.lastAccessedAt?.toDate() || linkData.createdAt.toDate();
+
+      // 3日間経過しているかチェック
+      if (lastAccessTime <= threeDaysAgo) {
+        // 通知送信済みかチェック（古い構造と新しい構造の両方に対応）
+        const isAlreadyNotified =
+          (linkData.notificationsSent?.unused3Days === true) ||
+          (linkData.notificationsSent?.threeDays === true);
+
+        if (!isAlreadyNotified) {
+          unusedLinks.push({
+            id: doc.id,
+            title: linkData.title || "無題のリンク",
+            url: linkData.url,
+            userId: linkData.userId,
+            lastAccessedAt: linkData.lastAccessedAt?.toDate(),
+            createdAt: linkData.createdAt.toDate(),
+          });
+
+          // 通知送信フラグを更新（古い構造と新しい構造の両方に設定）
+          const linkRef = db.collection("links").doc(doc.id);
+          batch.update(linkRef, {
+            "notificationsSent.unused3Days": true,
+            "notificationsSent.threeDays": true, // 古い構造との互換性
+            "updatedAt": FieldValue.serverTimestamp(),
+          });
+
+          notificationsSent++;
+        }
+      }
+    }
+
+    // バッチ処理を実行
+    if (notificationsSent > 0) {
+      await batch.commit();
+      logger.info(`✅ Batch update completed for ${notificationsSent} links`);
+    }
+
+    logger.info("📊 Unused links check completed:", {
+      userId,
+      totalUnusedLinks: unusedLinks.length,
+      notificationsSent,
+      checkTime: now.toISOString(),
+    });
+
+    return {
+      unusedLinks,
+      notificationsSent,
+      checkTime: now.toISOString(),
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    const errorType = error?.constructor?.name || "Unknown";
+
+    logger.error("Failed to check unused links", {
+      userId,
+      error: errorMessage,
+      errorStack,
+      errorType,
+    });
+
+    throw new HttpsError("internal", "未読リンクのチェックに失敗しました");
   }
 });
 

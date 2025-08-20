@@ -59,9 +59,7 @@ const convertToLink = (doc: any): Link => {
     isRead: data.isRead || false,
     isExpired: data.isExpired || false,
     notificationsSent: data.notificationsSent || {
-      threeDays: false,
-      oneDay: false,
-      oneHour: false,
+      unused3Days: false,
     },
   } as Link;
 };
@@ -214,9 +212,7 @@ export const linkService = {
       isRead: false,
       isExpired: false,
       notificationsSent: {
-        threeDays: false,
-        oneDay: false,
-        oneHour: false,
+        unused3Days: false,
       },
     });
     
@@ -279,9 +275,7 @@ export const linkService = {
       expiresAt: Timestamp.fromDate(newExpiresAt),
       updatedAt: serverTimestamp(),
       notificationsSent: {
-        threeDays: false,
-        oneDay: false,
-        oneHour: false,
+        unused3Days: false,
       },
     });
   },
@@ -295,51 +289,7 @@ export const linkService = {
     });
   },
 
-  // 期限切れ対象のリンクを取得（Cloud Functions用）
-  async getLinksForExpiration(): Promise<Link[]> {
-    const now = new Date();
-    const q = query(
-      collection(db, COLLECTIONS.LINKS),
-      where('isRead', '==', false),
-      where('isExpired', '==', false),
-      where('expiresAt', '<=', Timestamp.fromDate(now))
-    );
-    
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(convertToLink);
-  },
 
-  // 通知対象のリンクを取得（Cloud Functions用）
-  async getLinksForNotification(hoursBeforeExpiry: number): Promise<Link[]> {
-    const now = new Date();
-    const targetTime = new Date(now.getTime() + hoursBeforeExpiry * 60 * 60 * 1000);
-    
-    let notificationField: string;
-    switch (hoursBeforeExpiry) {
-      case 72: // 3日前
-        notificationField = 'notificationsSent.threeDays';
-        break;
-      case 24: // 1日前
-        notificationField = 'notificationsSent.oneDay';
-        break;
-      case 1: // 1時間前
-        notificationField = 'notificationsSent.oneHour';
-        break;
-      default:
-        return [];
-    }
-    
-    const q = query(
-      collection(db, COLLECTIONS.LINKS),
-      where('isRead', '==', false),
-      where('isExpired', '==', false),
-      where(notificationField, '==', false),
-      where('expiresAt', '<=', Timestamp.fromDate(targetTime))
-    );
-    
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(convertToLink);
-  },
 
   async updateLink(linkId: string, updates: Partial<Link>): Promise<void> {
     const linkRef = doc(db, COLLECTIONS.LINKS, linkId);

@@ -123,10 +123,7 @@ export interface Link {
   expiresAt?: Date; // 期限切れ日時（非推奨）
   isExpired?: boolean; // 期限切れ状態（非推奨）
   notificationsSent?: {
-    unused3Days: boolean; // 3日間未アクセス通知送信済み
-    threeDays: boolean; // 3日間未アクセス通知送信済み
-    oneDay: boolean; // 1日間未アクセス通知送信済み
-    oneHour: boolean; // 1時間未アクセス通知送信済み
+    unused3Days: boolean; // 3日間未読通知送信済み
   };
   
   // Share Extension関連フィールド

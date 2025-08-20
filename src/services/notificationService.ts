@@ -3,14 +3,11 @@
  * リンクの未アクセス通知を管理
  */
 
-import { Platform, Alert } from 'react-native';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../config/firebase';
 import { Link } from '../types';
-import { linkService } from './firestoreService';
 
 // expo-notificationsの安全なimport（Development build対応）
 let Notifications: any = null;
+
 try {
   Notifications = require('expo-notifications');
 } catch (error) {
@@ -19,18 +16,16 @@ try {
 
 // expo-notifications の型定義（フォールバック）
 interface NotificationPermissionStatus {
-  status: 'granted' | 'denied' | 'undetermined';
   granted: boolean;
-  canAskAgain: boolean;
+  status: string;
 }
 
 // 通知機能が利用可能かチェック
 const isNotificationAvailable = () => {
   try {
-    // Development buildでネイティブモジュールが利用可能かチェック
-    return typeof Notifications !== 'undefined' && 
+    return typeof Notifications !== 'undefined' &&
            Notifications !== null &&
-           typeof Notifications.getExpoPushTokenAsync === 'function';
+           typeof Notifications.scheduleNotificationAsync === 'function';
   } catch {
     console.log('⚠️ Development build: expo-notifications無効化');
     return false;
@@ -56,7 +51,8 @@ const setupNotificationHandler = () => {
 
 class NotificationService {
   private static instance: NotificationService;
-  private pushToken: string | null = null;
+
+  private constructor() {}
 
   static getInstance(): NotificationService {
     if (!NotificationService.instance) {
@@ -73,9 +69,8 @@ class NotificationService {
       if (!isNotificationAvailable()) {
         console.log('⚠️ 通知機能は利用できません（expo-notificationsが未インストール）');
         return {
-          status: 'denied',
           granted: false,
-          canAskAgain: false,
+          status: 'unavailable'
         };
       }
 
@@ -83,48 +78,63 @@ class NotificationService {
       console.log('📱 通知権限リクエスト結果:', status);
       
       return {
-        status: status as 'granted' | 'denied' | 'undetermined',
         granted: status === 'granted',
-        canAskAgain: status !== 'denied',
+        status
       };
     } catch (error) {
       console.error('❌ 通知権限リクエストエラー:', error);
       return {
-        status: 'denied',
         granted: false,
-        canAskAgain: false,
+        status: 'error'
       };
     }
   }
 
   /**
-   * プッシュトークンを取得
+   * リンク作成時に3日間後の通知をスケジュール
    */
-  async registerForPushNotifications(): Promise<string | null> {
+  async schedule3DayReminder(link: Link): Promise<string | null> {
     try {
       if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません');
+        console.log('⚠️ 通知機能は利用できません - 3日間リマインダーをスキップ');
         return null;
       }
 
-      // 通知権限をリクエスト
-      const permissions = await this.requestPermissions();
-      if (!permissions.granted) {
-        console.log('⚠️ 通知権限が許可されていません');
-        return null;
-      }
+      // 3日間後の正確な時刻を計算
+      const threeDaysLater = new Date(link.createdAt.getTime() + 3 * 24 * 60 * 60 * 1000);
+      
+      // 現在時刻より過去の場合は即座通知
+      const notificationDate = threeDaysLater > new Date() ? threeDaysLater : new Date();
 
-      // プッシュトークンを取得
-      const token = await Notifications.getExpoPushTokenAsync({
-        projectId: '44836b1a-e184-475c-b67f-08f7fd1d68e1', // app.jsonのprojectIdと同じ
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '📖 未読のリンクがあります',
+          body: `「${link.title}」を3日間確認していません。確認してみませんか？`,
+          data: {
+            type: 'unused_link_3day_reminder',
+            linkId: link.id,
+            linkUrl: link.url,
+            linkTitle: link.title,
+            scheduledFor: threeDaysLater.toISOString(),
+          },
+          sound: true,
+        },
+        trigger: {
+          date: notificationDate,
+        },
       });
-      
-      this.pushToken = token.data;
-      console.log('📱 プッシュトークン取得完了');
-      
-      return token.data;
+
+      console.log('📅 3日間リマインダー設定完了:', {
+        linkId: link.id,
+        linkTitle: link.title.slice(0, 30) + '...',
+        createdAt: link.createdAt.toLocaleString(),
+        scheduledFor: notificationDate.toLocaleString(),
+        notificationId,
+      });
+
+      return notificationId;
     } catch (error) {
-      console.error('❌ プッシュトークン取得エラー:', error);
+      console.error('❌ 3日間リマインダー設定エラー:', error);
       return null;
     }
   }
@@ -139,9 +149,9 @@ class NotificationService {
         return null;
       }
 
-      // 即座通知を送信（リンク作成時ではなく3日間未読チェック時に呼ばれる）
+      // 3日間未読チェック時に即座通知を送信
       const notificationDate = new Date();
-      notificationDate.setSeconds(notificationDate.getSeconds() + 5); // 5秒後に即座通知
+      notificationDate.setSeconds(notificationDate.getSeconds() + 5); // 5秒後に即座通知（即座性を保つ）
 
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
@@ -187,7 +197,7 @@ class NotificationService {
       // スケジュール済み通知からlinkIdに関連するものを検索してキャンセル
       const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
       const targetNotifications = scheduledNotifications.filter(
-        (notification) => notification.content.data?.linkId === linkId
+        (notification: any) => notification.content.data?.linkId === linkId
       );
 
       for (const notification of targetNotifications) {
@@ -207,44 +217,41 @@ class NotificationService {
    */
   async handleLinkAccess(link: Link): Promise<void> {
     try {
+      console.log('🔗 リンクアクセス処理開始:', {
+        linkId: link.id,
+        linkTitle: link.title.slice(0, 30) + '...',
+        notificationStatus: isNotificationAvailable() ? 'アクティブ' : '通知機能無効化'
+      });
+
       // 1. 通知をキャンセル
       await this.cancelNotificationForLink(link.id);
 
-      // 2. 最終アクセス時間を更新
-      const now = new Date();
-      await updateDoc(doc(db, 'links', link.id), {
-        lastAccessedAt: now,
-        isRead: true,
-        updatedAt: now,
+      // 2. 最終アクセス時間を更新（Firestore更新は呼び出し元で実行）
+      console.log('✅ リンクアクセス処理完了:', {
+        linkId: link.id,
+        notificationCancelled: true,
+        lastAccessedAt: new Date().toISOString()
       });
 
       // 3. リンクアクセス時は即座の新しい通知スケジュールは行わない
       // バックグラウンドタスクが3日後にチェックして通知する
-      // const updatedLink = { ...link, lastAccessedAt: now, isRead: true };
       // await this.scheduleUnusedLinkNotification(updatedLink);
-
-      console.log('✅ リンクアクセス処理完了:', {
-        linkId: link.id,
-        linkTitle: link.title.slice(0, 30) + '...',
-        accessedAt: now.toLocaleString(),
-        notificationStatus: isNotificationAvailable() ? 'アクティブ' : '通知機能無効化'
-      });
     } catch (error) {
       console.error('❌ リンクアクセス処理エラー:', error);
     }
   }
 
   /**
-   * アプリ起動時の初期化処理
+   * 通知サービスを初期化
    */
   async initializeNotifications(): Promise<void> {
     try {
-      // プッシュトークンを登録
-      await this.registerForPushNotifications();
-
+      // 通知権限をリクエスト
+      await this.requestPermissions();
+      
       // 通知リスナーを設定
       this.setupNotificationListeners();
-
+      
       console.log('✅ 通知サービス初期化完了');
     } catch (error) {
       console.error('❌ 通知サービス初期化エラー:', error);
@@ -256,61 +263,25 @@ class NotificationService {
    */
   private setupNotificationListeners(): void {
     if (!isNotificationAvailable()) {
-      console.log('⚠️ 通知機能が利用できないため、リスナー設定をスキップ');
+      console.log('⚠️ 通知機能は利用できません - リスナー設定をスキップ');
       return;
     }
 
-    // 通知受信時の処理
-    Notifications.addNotificationReceivedListener((notification) => {
-      console.log('📨 通知受信:', notification);
-    });
-
-    // 通知タップ時の処理
-    Notifications.addNotificationResponseReceivedListener((response) => {
-      console.log('👆 通知タップ:', response);
-      const data = response.notification.request.content.data as any;
-      
-      if (data?.type === 'unused_link_reminder' && data?.linkUrl) {
-        // リンクを開く処理をここに実装
-        // navigation.navigate() や Linking.openURL() などを使用
-        console.log('🔗 未使用リンク通知タップ:', data.linkUrl);
-      }
-    });
-
-    // 通知ハンドラーの設定
+    // 通知ハンドラーを設定
     setupNotificationHandler();
-  }
 
-  /**
-   * デバッグ用：すべてのスケジュール済み通知を取得
-   */
-  async getScheduledNotifications(): Promise<Notifications.NotificationRequest[]> {
-    try {
-      if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません');
-        return [];
-      }
-      return await Notifications.getAllScheduledNotificationsAsync();
-    } catch (error) {
-      console.error('❌ スケジュール済み通知取得エラー:', error);
-      return [];
-    }
-  }
+    // 通知受信時のリスナー
+    const notificationListener = Notifications.addNotificationReceivedListener((notification: any) => {
+      console.log('📱 通知受信:', notification);
+    });
 
-  /**
-   * デバッグ用：すべての通知をクリア
-   */
-  async clearAllNotifications(): Promise<void> {
-    try {
-      if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません');
-        return;
-      }
-      await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('🗑️ すべての通知をクリアしました');
-    } catch (error) {
-      console.error('❌ 通知クリアエラー:', error);
-    }
+    // 通知タップ時のリスナー
+    const responseListener = Notifications.addNotificationResponseReceivedListener((response: any) => {
+      console.log('👆 通知タップ:', response);
+    });
+
+    // リスナーのクリーンアップ関数を保存（必要に応じて）
+    console.log('📱 通知リスナー設定完了');
   }
 }
 

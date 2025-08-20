@@ -297,10 +297,27 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
             timeoutPromise
           ]);
           
+          // デバッグログ: 取得したメタデータの詳細
+          console.log('🔍 AddLinkModal: 取得したメタデータ', {
+            url: url.trim(),
+            metadataTitle: metadata.title,
+            metadataDescription: metadata.description,
+            metadataImageUrl: metadata.imageUrl,
+            metadataSiteName: metadata.siteName,
+            metadataDomain: metadata.domain
+          });
+          
           finalTitle = metadata.title || url.trim();
           if (!finalDescription && metadata.description) {
             finalDescription = metadata.description;
           }
+          
+          // デバッグログ: 最終的に使用される値
+          console.log('🔍 AddLinkModal: 最終的なリンクデータ', {
+            finalTitle,
+            finalDescription,
+            url: url.trim()
+          });
         } catch (error) {
           console.warn('⚠️ AddLinkModal: メタデータ取得失敗、URLをタイトルに使用', error);
           finalTitle = url.trim();
