@@ -70,11 +70,16 @@ export class IapService {
       isDevelopment: __DEV__
     });
 
-    // Development環境での特別処理
-    if (__DEV__) {
-      console.log('🛒 Development mode detected - using mock IAP functionality');
+    // Development環境またはTestFlight環境での特別処理
+    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
+                                     (global as any).__DEV__ === true ||
+                                     !(global as any).HermesInternal);
+    
+    if (__DEV__ || isTestFlight) {
+      console.log('🛒 Development/TestFlight mode detected - using mock IAP functionality');
+      console.log('🛒 Init Environment:', { __DEV__, isTestFlight, NODE_ENV: process.env.NODE_ENV });
       this.initialized = true;
-      // 開発環境では初期化成功として扱う
+      // 開発環境・TestFlight環境では初期化成功として扱う
       return;
     }
     
@@ -112,7 +117,6 @@ export class IapService {
       
         // Development Buildでは初期化失敗を許容
         if (error.code === 'E_IAP_NOT_AVAILABLE') {
-          console.warn('⚠️ IAP not available in development build - continuing with limited functionality');
           this.initialized = true; // 開発環境では初期化成功として扱う
           return;
         }
@@ -185,7 +189,7 @@ export class IapService {
       }
     } else if (Platform.OS === 'android') {
       // TODO: Implement Google Play validation
-      console.warn('⚠️ Google Play receipt validation is not implemented yet.');
+      
     }
   }
 
@@ -198,9 +202,16 @@ export class IapService {
       throw new Error('IAP service is not initialized. Call initialize() first.');
     }
     
-    // Development環境では模擬的なプロダクトを返す
-    if (__DEV__) {
-      console.log('🛒 Development mode - returning mock products');
+    // Development環境またはTestFlight環境では模擬的なプロダクトを返す
+    // __DEV__ = false でもTestFlightでは課金が制限されることがある
+    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
+                                     (global as any).__DEV__ === true ||
+                                     !(global as any).HermesInternal);
+    
+    if (__DEV__ || isTestFlight) {
+      console.log('🛒 Development/TestFlight mode - returning mock products');
+      console.log('🛒 Environment:', { __DEV__, isTestFlight, NODE_ENV: process.env.NODE_ENV });
+      
       const mockProducts = [
         {
           productId: 'com.tat22444.wink.plus.monthly',
@@ -216,7 +227,7 @@ export class IapService {
           localizedPrice: '¥1,280',
           currency: 'JPY',
           title: 'LinkRanger Pro Monthly',
-          description: 'Pro プラン - 月額',
+          description: 'Plus プラン - 月額',
         }
       ] as (Product | Subscription)[];
       
@@ -245,8 +256,8 @@ export class IapService {
           count: fetchedProducts.length,
           products: fetchedProducts.map(p => ({
             productId: p.productId,
-            price: p.price,
-            localizedPrice: p.localizedPrice
+            price: (p as any).price,
+            localizedPrice: (p as any).localizedPrice
           }))
         });
       } else {
@@ -256,15 +267,14 @@ export class IapService {
           count: fetchedProducts.length,
           products: fetchedProducts.map(p => ({
             productId: p.productId,
-            price: p.price,
-            localizedPrice: p.localizedPrice
+            price: (p as any).price,
+            localizedPrice: (p as any).localizedPrice
           }))
         });
       }
 
       if (fetchedProducts.length === 0) {
-        console.warn('⚠️ No products found in store. Check Product IDs in App Store Connect.');
-        console.warn('⚠️ Expected SKUs:', productSkus);
+
       }
 
       this.products = fetchedProducts;
@@ -308,12 +318,23 @@ export class IapService {
       isDevelopment: __DEV__
     });
     
-    // Development環境では模擬的な購入成功
-    if (__DEV__) {
-      console.log('🛒 Development mode - simulating successful purchase');
-      // 実際のアプリでは購入処理のモックを行う
-      // 開発中はAlertなどでユーザーに通知することも可能
-      return Promise.resolve();
+    // Development環境またはTestFlight環境では模擬的な購入成功
+    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
+                                     (global as any).__DEV__ === true ||
+                                     !(global as any).HermesInternal);
+                                     
+    if (__DEV__ || isTestFlight) {
+      console.log('🛒 Development/TestFlight mode - simulating successful purchase');
+      console.log('🛒 Purchase Environment:', { __DEV__, isTestFlight });
+      
+      // TestFlight/Development用の模擬購入処理
+      // 実際のユーザーサブスクリプション更新はスキップ
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          console.log('🛒 ✅ Mock purchase completed successfully');
+          resolve();
+        }, 1000); // 1秒の擬似的な処理時間
+      });
     }
     
     try {
@@ -327,7 +348,7 @@ export class IapService {
         // } else {
         //   throw new Error('No subscription offer found for Android');
         // }
-        console.warn('⚠️ Android purchase is not implemented yet.');
+
       }
     } catch (error) {
       console.error(`❌ Purchase request failed for SKU: ${sku}`, error);
@@ -347,9 +368,13 @@ export class IapService {
       isDevelopment: __DEV__
     });
     
-    // Development環境では模擬的なリストア処理
-    if (__DEV__) {
-      console.log('🛒 Development mode - simulating restore purchases (no purchases found)');
+    // Development環境またはTestFlight環境では模擬的なリストア処理
+    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
+                                     (global as any).__DEV__ === true ||
+                                     !(global as any).HermesInternal);
+    
+    if (__DEV__ || isTestFlight) {
+      console.log('🛒 Development/TestFlight mode - simulating restore purchases (no purchases found)');
       return Promise.resolve();
     }
     

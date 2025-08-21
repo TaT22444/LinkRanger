@@ -29,15 +29,51 @@ const processUnusedLinksNotifications = async (unusedLinks: Array<{
   lastAccessedAt?: Date;
   createdAt: Date;
 }>) => {
-  // ローカル通知を送信
+  console.log('📱 processUnusedLinksNotifications開始:', { count: unusedLinks.length });
+  
+  // ローカル通知を送信（追加の安全チェック付き）
   for (const link of unusedLinks) {
+    // 🔧 データ形式修正: createdAtをDateオブジェクトに変換
+    let linkCreatedAt: Date;
+    try {
+      if (link.createdAt instanceof Date) {
+        linkCreatedAt = link.createdAt;
+      } else if (typeof link.createdAt === 'string') {
+        linkCreatedAt = new Date(link.createdAt);
+      } else if (link.createdAt && typeof link.createdAt === 'object' && 'seconds' in link.createdAt) {
+        // Firebase Timestamp形式の場合
+        linkCreatedAt = new Date((link.createdAt as any).seconds * 1000);
+      } else {
+        console.error('⚠️ 無効なcreatedAt形式:', { linkId: link.id, createdAt: link.createdAt, type: typeof link.createdAt });
+        continue;
+      }
+    } catch (error) {
+      console.error('⚠️ createdAt変換エラー:', { linkId: link.id, createdAt: link.createdAt, error });
+      continue;
+    }
+
+    // 🔒 安全チェック: 作成から最低3時間経過していないリンクは通知しない
+    const now = new Date();
+    const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+    
+    if (linkCreatedAt > threeHoursAgo) {
+
+      continue; // この新しいリンクの通知をスキップ
+    }
+    
+    console.log('📱 通知送信:', {
+      linkId: link.id,
+      title: link.title.slice(0, 30) + '...',
+      createdAt: linkCreatedAt.toISOString()
+    });
+    
     await notificationService.scheduleUnusedLinkNotification({
       id: link.id,
       title: link.title,
       url: link.url,
       userId: link.userId,
-      lastAccessedAt: link.lastAccessedAt || link.createdAt,
-      createdAt: link.createdAt,
+      lastAccessedAt: link.lastAccessedAt || linkCreatedAt,
+      createdAt: linkCreatedAt,
       // 他の必要なプロパティはデフォルト値を設定
       description: '',
       status: 'pending' as const,
@@ -52,6 +88,8 @@ const processUnusedLinksNotifications = async (unusedLinks: Array<{
       }
     });
   }
+  
+  console.log('✅ processUnusedLinksNotifications完了');
 };
 
 // バックグラウンドタスクの定義

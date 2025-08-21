@@ -48,7 +48,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   currentPlan = 'free',
   heroTitle = 'プランをアップグレード',
   heroDescription = `より多くのリンクとタグを保存し、
-AI機能をさらに活用しましょう`,
+効率的な情報管理を実現しましょう`,
   sourceContext = 'general',
 }) => {
   const { user } = useAuth();
@@ -88,14 +88,14 @@ AI機能をさらに活用しましょう`,
   }, [visible, iapService]);
 
   const generatePlanOptions = (): PlanOption[] => {
-    const planTypes: UserPlan[] = ['free', 'plus', 'pro'];
+    const planTypes: UserPlan[] = ['free', 'plus'];
     
     return planTypes.map((planType): PlanOption => {
       const details = PlanService.getPlanDetails(planType);
       // Apple Store Connectから取得した商品情報を使用
       const product = products.find(p => {
         if (planType === 'plus') return p.productId === 'com.tat22444.wink.plus.monthly';
-        if (planType === 'pro') return p.productId === 'com.tat22444.wink.pro.monthly';
+        // pro プランは削除済み
         return false;
       });
 
@@ -108,13 +108,6 @@ AI機能をさらに活用しましょう`,
       if (planType === 'free') {
         features.push(
           {
-            title: `タグ保持数 ${details.limits.maxTags.toLocaleString()}個まで`,
-            description: sourceContext === 'tag_limit' ? 
-              'タグの整理で思考を構造化' : 
-              '基本的なタグ管理機能',
-            icon: 'tag',
-          },
-          {
             title: `リンク保持数 ${details.limits.maxLinks}個まで`,
             description: sourceContext === 'link_limit' ? 
               '重要なリンクをしっかり保存' : 
@@ -122,8 +115,15 @@ AI機能をさらに活用しましょう`,
             icon: 'link',
           },
           {
-            title: '基本リマインド機能',
-            description: '固定期間でのリマインド',
+            title: `タグ保持数 ${details.limits.maxTags.toLocaleString()}個まで`,
+            description: sourceContext === 'tag_limit' ? 
+              'タグの整理で思考を構造化' : 
+              '基本的なタグ管理機能',
+            icon: 'tag',
+          },
+          {
+            title: 'リマインド機能',
+            description: '3日間未読のリンクはリマインド！',
             icon: 'bell',
           }
         );
@@ -132,33 +132,11 @@ AI機能をさらに活用しましょう`,
       if (planType === 'plus') {
         features.push(
           {
-            title: 'Freeプランの全機能',
-            description: '基本機能はそのまま利用可能',
-            icon: 'check',
-          },
-          {
             title: `リンク保持数 ${details.limits.maxLinks}個まで`,
             description: sourceContext === 'link_limit' ? 
               'さらに多くの重要リンクを整理' : 
               'Freeプランより多くのリンクを保存',
             icon: 'link',
-          },
-          {
-            title: 'カスタムリマインド機能',
-            description: sourceContext === 'account' ? 
-              '独自のリマインド設定が可能' : 
-              '独自のリマインド設定が可能',
-            icon: 'clock',
-          }
-        );
-      }
-      
-      if (planType === 'pro') {
-        features.push(
-          {
-            title: 'Plusプランの全機能',
-            description: 'これまでの機能はそのまま利用可能',
-            icon: 'check',
           },
           {
             title: `タグ保持数 ${details.limits.maxTags.toLocaleString()}個まで`,
@@ -168,11 +146,9 @@ AI機能をさらに活用しましょう`,
             icon: 'tag',
           },
           {
-            title: `リンク保持数 ${details.limits.maxLinks}個まで`,
-            description: sourceContext === 'link_limit' ? 
-              '大規模なリンクライブラリを構築' : 
-              '豊富なリンクライブラリ',
-                        icon: 'link',
+            title: 'リマインド機能',
+            description: '3日間未読のリンクはリマインド！',
+            icon: 'bell',
           }
         );
       }
@@ -186,10 +162,10 @@ AI機能をさらに活用しましょう`,
           (pricing.price === 0 ? '¥0' : `¥${pricing.price.toLocaleString()}`),
         period: pricing.price === 0 ? '無料' : '月額',
         description: planType === 'free' ? '基本機能をお試し' :
-                    planType === 'plus' ? 'Freeプランに加えて、より多くのリンクとカスタム機能' :
+                    planType === 'plus' ? 'Freeプランに加えて、より多くのリンクとタグを保存可能' :
                     'Plusプランに加えて、大量データと高度機能',
         features,
-        recommended: planType === 'pro',
+        recommended: planType === 'plus',
       };
     });
   };
@@ -210,9 +186,19 @@ AI機能をさらに活用しましょう`,
 
       await iapService.purchasePlan(planName);
       
+      // TestFlight環境での表示メッセージを改善
+      const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
+                                       (global as any).__DEV__ === true);
+                                       
+      const message = isTestFlight 
+        ? `[TestFlight] ${planName.toUpperCase()}プランの模擬購入が完了しました。\n\n実際のアプリでは、ここでプランがアップグレードされます。`
+        : '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。';
+        
+      const title = isTestFlight ? 'TestFlight 模擬購入完了' : '購入処理中';
+      
       Alert.alert(
-        '購入処理中',
-        '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。',
+        title,
+        message,
         [{ text: 'OK', onPress: onClose }]
       );
 
@@ -321,7 +307,7 @@ AI機能をさらに活用しましょう`,
           <SafeAreaView style={{ flex: 1 }}>
             <View style={styles.header}>
               <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Feather name="x" size={24} color="#FFF" />
+                <Feather name="x" size={20} color="#FFF" />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>プランをアップグレード</Text>
               <View style={styles.headerSpacer} />
@@ -377,7 +363,12 @@ const styles = StyleSheet.create({
     borderBottomColor: '#333',
   },
   closeButton: {
-    padding: 8,
+    paddingHorizontal: 12,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
   },
   headerTitle: {
     fontSize: 18,

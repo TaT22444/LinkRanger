@@ -50,7 +50,7 @@ const convertFirebaseTimestamp = (timestamp: any): Date => {
       return new Date(timestamp);
     }
     
-    console.warn('Unsupported timestamp format in authService:', timestamp);
+
     return new Date();
   } catch (error) {
     console.error('Timestamp conversion error in authService:', error);

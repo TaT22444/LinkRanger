@@ -44,7 +44,7 @@ export const convertToLink = (doc: any): Link => {
     title: data.title || data.url || 'タイトルなし', // フォールバック
     url: data.url || '', // 必須フィールド
     tagIds: data.tagIds || [], // tagIdsが未定義の場合は空配列に
-    createdAt: data.createdAt?.toDate() || new Date(),
+    createdAt: data.createdAt?.toDate() || new Date(), // serverTimestamp未解決時のフォールバック
     updatedAt: data.updatedAt?.toDate() || new Date(),
     lastAccessedAt: data.lastAccessedAt?.toDate(),
     expiresAt: data.expiresAt?.toDate() || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // デフォルト7日後

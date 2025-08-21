@@ -9,8 +9,8 @@ export {
   searchService, 
   settingsService, 
   batchService, 
-  savedAnalysisService 
+
 } from './firestoreService';
 
 // 共通ユーティリティ
-export { COLLECTIONS, convertToLink, convertToSavedAnalysis } from './firestoreUtils';
+export { COLLECTIONS, convertToLink } from './firestoreUtils';

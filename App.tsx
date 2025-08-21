@@ -133,8 +133,6 @@ const AppContent: React.FC = () => {
           if (data) {
             console.log('🔗 初期URLから共有リンク受信:', data);
             setSharedLinkData(data);
-            // 5秒後にクリア（AddLinkModalが開かれるのを待つ）
-            setTimeout(() => setSharedLinkData(null), 10000);
           }
         }
       } catch (e) {
@@ -148,8 +146,6 @@ const AppContent: React.FC = () => {
           if (data) {
             console.log('🔗 ランタイムURLから共有リンク受信:', data);
             setSharedLinkData(data);
-            // 5秒後にクリア（AddLinkModalが開かれるのを待つ）
-            setTimeout(() => setSharedLinkData(null), 10000);
           }
         } catch (e) {
           console.error('❌ 共有リンク処理エラー:', e);

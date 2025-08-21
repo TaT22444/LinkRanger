@@ -172,7 +172,7 @@ export const AccountScreen: React.FC = () => {
           </View>
         </View>
         {/* アップグレードボタン */}
-        {!isTestAccount && userPlan !== 'pro' && (
+        {!isTestAccount && userPlan !== 'plus' && (
           <TouchableOpacity style={styles.upgradeItem} onPress={handleUpgrade}>
             <Feather name="star" size={18} color="#FFF" style={styles.itemIcon} />
             <Text style={styles.upgradeItemText}>
@@ -223,7 +223,7 @@ export const AccountScreen: React.FC = () => {
         onClose={() => setShowUpgradeModal(false)}
         currentPlan={userPlan}
         heroTitle="より理想的なリンク管理を"
-        heroDescription="AI解説機能が多く使える「Proプラン」がおすすめ！"
+        heroDescription="Plusプランでより多くのリンクとタグを保存可能に！"
         sourceContext="account"
       />
     </ScrollView>

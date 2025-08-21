@@ -95,11 +95,11 @@ export const AIUsageDashboard: React.FC<AIUsageDashboardProps> = ({
         ];
       case 'free':
         return [
-          'Proプランで月100回まで利用可能です',
+          'Plusプランで月50回まで利用可能です',
           'キャッシュ機能により効率的にAI機能を活用しています',
           '類似コンテンツは自動的にキャッシュから取得されます',
         ];
-      case 'pro':
+      case 'plus':
         return [
           '十分な使用量の余裕があります',
           'AI機能を積極的にご活用ください',
@@ -180,7 +180,7 @@ export const AIUsageDashboard: React.FC<AIUsageDashboardProps> = ({
                   <Feather name="star" size={20} color="#8A2BE2" />
                   <Text style={styles.planTitle}>
                     {usageData.plan === 'guest' ? 'ゲスト' : 
-                     usageData.plan === 'free' ? 'Freeプラン' : 'Proプラン'}
+                     usageData.plan === 'free' ? 'Freeプラン' : 'Plusプラン'}
                   </Text>
                 </View>
                 {usageData.plan === 'guest' && (
@@ -271,10 +271,10 @@ export const AIUsageDashboard: React.FC<AIUsageDashboardProps> = ({
                 <View style={styles.upgradeSection}>
                   <View style={styles.upgradeHeader}>
                     <Feather name="zap" size={20} color="#8A2BE2" />
-                    <Text style={styles.upgradeTitle}>Proプランのご案内</Text>
+                    <Text style={styles.upgradeTitle}>Plusプランのご案内</Text>
                   </View>
                   <Text style={styles.upgradeDescription}>
-                    • 月100回のAI処理{'\n'}
+                    • 月50回のAI処理{'\n'}
                     • 高度なAI分析機能{'\n'}
                     • 優先サポート{'\n'}
                     • データエクスポート機能

@@ -1,5 +1,5 @@
 // ユーザープラン型
-export type UserPlan = 'free' | 'plus' | 'pro';
+export type UserPlan = 'free' | 'plus';
 
 // リンク表示モード型
 export type LinkViewMode = 'list' | 'folder' | 'tag';
@@ -14,11 +14,22 @@ export interface LinkViewSettings {
 // ユーザープラン情報型
 export interface UserSubscription {
   plan: UserPlan;
+  status: 'active' | 'canceled' | 'expired'; // サブスクリプション状態
   startDate: Date;
-  endDate?: Date; // pro/premiumの場合の有効期限
+  expirationDate?: Date; // サブスクリプション有効期限
+  endDate?: Date; // pro/premiumの場合の有効期限（互換性のため残存）
   isActive: boolean;
   downgradeTo?: UserPlan; // ダウングレード先のプラン
   downgradeEffectiveDate?: Date; // ダウングレード有効日
+  canceledAt?: Date; // 解約日時
+  source?: 'apple_app_store' | 'google_play' | 'manual'; // 購入元
+  lastValidatedAt?: Date; // 最後にレシートを検証した日時
+  appleTransactionInfo?: {
+    transactionId?: string;
+    originalTransactionId?: string;
+    purchaseDate?: string;
+    expiresDate?: string;
+  };
   features: {
     maxLinks: number; // -1 = unlimited
     autoAISummary: boolean; // 自動AI要約

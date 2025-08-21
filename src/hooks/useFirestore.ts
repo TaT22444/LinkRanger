@@ -131,12 +131,14 @@ export const useLinks = (
     if (cacheUtils.isValid(cachedEntry)) {
       console.log('💾 useLinks: キャッシュヒット', {
         linksCount: cachedEntry!.data.length,
-        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60))
+        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60)),
+        isSubscribed: cachedEntry!.isSubscribed,
+        cacheKey
       });
+      
       setLinks(cachedEntry!.data);
       setLoading(false);
       setError(null);
-      // キャッシュデータの場合、hasMoreをfalseに設定
       setHasMore(false);
       setNextCursor(undefined);
       return;
@@ -154,14 +156,27 @@ export const useLinks = (
       const unsubscribe = linkService.subscribeToUserLinks(
         userId,
         (newLinks) => {
+          console.log('📡 useLinks: リアルタイム更新受信', {
+            newLinksCount: newLinks.length,
+            userId
+          });
+          
           setLinks(currentLinks => {
             const mergedLinks = newLinks.map(firebaseLink => {
               const local = currentLinks.find(l => l.id === firebaseLink.id);
               if (local && local.status === 'processing' && firebaseLink.status === 'processing') {
+                console.log('🔄 useLinks: ローカル処理中状態を保持', { linkId: firebaseLink.id });
                 return local;
               }
               return firebaseLink;
             });
+            
+            console.log('📊 useLinks: マージ結果', {
+              before: currentLinks.length,
+              after: mergedLinks.length,
+              firebase: newLinks.length
+            });
+            
             return mergedLinks;
           });
 
@@ -242,7 +257,11 @@ export const useLinks = (
 
   const createLink = useCallback(/* 既存のまま */ async (linkData: Omit<Link, 'id'|'createdAt'|'updatedAt'>) => {
     try {
+
+      
       const linkId = await linkService.createLink(linkData);
+
+      
       const optimisticLink: Link = {
         ...linkData,
         id: linkId,
@@ -253,26 +272,61 @@ export const useLinks = (
         isExpired: false,
         notificationsSent: { unused3Days: false },
       };
+      
       setLinks(prev => {
-        if (prev.some(l => l.id === linkId)) return prev;
-        return [optimisticLink, ...prev];
+        if (prev.some(l => l.id === linkId)) {
+          return prev;
+        }
+
+        const newLinks = [optimisticLink, ...prev];
+        
+
+
+        
+        return newLinks;
       });
+      
       return linkId;
     } catch (err) {
+      console.error('❌ useLinks: createLink失敗', err);
       setError(err instanceof Error ? err.message : 'Failed to create link');
       throw err;
     }
-  }, []);
+  }, [userId, filter, sort, options]);
 
-  const updateLink = useCallback(/* 既存のまま */ async (linkId: string, updates: Partial<Link>) => {
-    try { await linkService.updateLink(linkId, updates); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Failed to update link'); throw err; }
-  }, []);
+  const updateLink = useCallback(async (linkId: string, updates: Partial<Link>) => {
+    // Optimistic Update: 即座にUIのリンクを更新
+    const originalLinks = links;
+    setLinks(prev => prev.map(link => 
+      link.id === linkId 
+        ? { ...link, ...updates, updatedAt: new Date() }
+        : link
+    ));
+    
+    try {
+      await linkService.updateLink(linkId, updates);
+    } catch (err) {
+      // エラー時にロールバック
+      setLinks(originalLinks);
+      setError(err instanceof Error ? err.message : 'Failed to update link');
+      throw err;
+    }
+  }, [links]);
 
-  const deleteLink = useCallback(/* 既存のまま */ async (linkId: string, userId: string) => {
-    try { await linkService.deleteLink(linkId, userId); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Failed to delete link'); throw err; }
-  }, []);
+  const deleteLink = useCallback(async (linkId: string, userId: string) => {
+    // Optimistic Update: 即座にUIからリンクを削除
+    const originalLinks = links;
+    setLinks(prev => prev.filter(link => link.id !== linkId));
+    
+    try {
+      await linkService.deleteLink(linkId, userId);
+    } catch (err) {
+      // エラー時にロールバック
+      setLinks(originalLinks);
+      setError(err instanceof Error ? err.message : 'Failed to delete link');
+      throw err;
+    }
+  }, [links]);
 
   return {
     links,
@@ -426,13 +480,19 @@ export const useTags = (userId: string | null) => {
   const deleteTag = useCallback(async (tagId: string) => {
     if (!userId) return;
     
+    // Optimistic Update: 即座にUIからタグを削除
+    const originalTags = tags;
+    setTags(prev => prev.filter(tag => tag.id !== tagId));
+    
     try {
       await tagService.deleteTag(userId, tagId);
     } catch (err) {
+      // エラー時にロールバック
+      setTags(originalTags);
       setError(err instanceof Error ? err.message : 'Failed to delete tag');
       throw err;
     }
-  }, [userId]);
+  }, [userId, tags]);
 
   const generateRecommendedTags = useCallback(async () => {
     if (!userId) return [];

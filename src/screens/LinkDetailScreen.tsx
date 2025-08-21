@@ -132,7 +132,7 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
       {/* ヘッダー */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={onClose}>
-          <Feather name="arrow-left" size={24} color="#FFF" />
+          <Text style={styles.backButtonText}>閉じる</Text>
         </TouchableOpacity>
         
         <TouchableOpacity
@@ -172,7 +172,7 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
         <View style={styles.tagSection}>
           <View style={styles.tagHeader}>
             <Text style={styles.tagTitle}>タグ</Text>
-            <TouchableOpacity onPress={() => setShowTagModal(true)}>
+            <TouchableOpacity style={styles.tagEditButton} onPress={() => setShowTagModal(true)}>
               <Feather name="edit-2" size={16} color="#8A2BE2" />
             </TouchableOpacity>
           </View>
@@ -272,19 +272,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
-    backgroundColor: '#1A1A1A',
+    // backgroundColor: '#1A1A1A',
   },
   backButton: {
-    width: 36,
-    height: 36,
+    paddingHorizontal: 16,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  openButton: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
+  backButtonText: {
+    fontSize: 14,
+    color: '#fff',
   },
   
   // コンテンツ
@@ -362,6 +362,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFF',
   },
+  tagEditButton: {
+    paddingHorizontal: 16,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
+  },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -409,10 +417,12 @@ tag: {
   
   // オプションメニュー関連のスタイル
   optionsButton: {
-    width: 36,
-    height: 36,
+    paddingHorizontal: 12,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
   },
   optionsOverlay: {
     flex: 1,

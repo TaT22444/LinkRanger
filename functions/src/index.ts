@@ -38,7 +38,7 @@ const db = getFirestore();
 
 const AI_LIMITS = {
   free: {maxTagsPerRequest: 5, costPerRequest: 0.025},
-  pro: {maxTagsPerRequest: 8, costPerRequest: 0.025},
+  plus: {maxTagsPerRequest: 8, costPerRequest: 0.025},
 } as const;
 
 // ===================================================================
@@ -77,7 +77,7 @@ async function generateTagsLogic(
   // 3. 最終的な分析用データを決定（メタデータ優先、フォールバック付き）
   const analysisTitle = pageContent.pageTitle || title || "";
   const analysisDescription = pageContent.pageDescription || description || "";
-  const analysisContent = pageContent.fullContent || combinedText;
+  const analysisContent = combinedText; // 本文取得を廃止、タイトル+説明のみ使用
   const maxTags = AI_LIMITS[userPlan]?.maxTagsPerRequest || 5;
 
   // 4. プラットフォーム検出とドメインベースタグ生成
@@ -592,45 +592,7 @@ export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, asyn
     const urlObj = new URL(url);
     const domain = urlObj.hostname;
 
-    // Extract full content for AI analysis
-    $("script, style, nav, header, footer, aside, .advertisement, .ad, .sidebar").remove();
-
-    // Try to find main content areas
-    const mainContent = $("main, article, .content, .post, .entry, .article-body, .story-body").first();
-    let fullContent = "";
-
-    if (mainContent.length) {
-      fullContent = mainContent.text();
-    } else {
-      // Fallback to body content
-      fullContent = $("body").text();
-    }
-
-    // Clean and limit content
-    fullContent = fullContent
-      .replace(/\s+/g, " ")
-      .trim();
-
-    // Dynamic content limiting with cost estimation
-    const originalLength = fullContent.length;
-    const maxChars = 8000; // Increased base limit
-    const costThreshold = 0.01; // $0.01 threshold for safety
-
-    if (fullContent.length > maxChars) {
-      const estimatedTokens = Math.ceil(fullContent.length / 4);
-      const estimatedInputCost = (estimatedTokens / 1000000) * 0.075;
-
-      if (estimatedInputCost > costThreshold) {
-        fullContent = fullContent.slice(0, maxChars);
-        logger.info(`📊 Content limited: ${originalLength} → ${maxChars} chars (est. cost: $${estimatedInputCost.toFixed(6)})`);
-      } else {
-        logger.info(`📊 Full content preserved: ${originalLength} chars (est. cost: $${estimatedInputCost.toFixed(6)})`);
-      }
-    } else {
-      logger.info(`📊 Content within limits: ${originalLength} chars`);
-    }
-
-    // Extract headings for structure
+    // Extract headings for structure (本文取得は削除)
     const headings: string[] = [];
     $("h1, h2, h3, h4").each((_, el) => {
       const heading = $(el).text().trim();
@@ -639,14 +601,13 @@ export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, asyn
       }
     });
 
-    // Determine content type
-    const contentType = analyzeContentType($, fullContent, title, description, domain);
+    // Determine content type (本文なしで分析)
+    const contentType = analyzeContentType($, "", title, description, domain);
 
     logger.info("🌐 Enhanced metadata extracted:", {
       url,
       titleLength: title.length,
       descriptionLength: description.length,
-      fullContentLength: fullContent.length,
       headingsCount: headings.length,
       contentType,
     });
@@ -657,7 +618,7 @@ export const fetchMetadata = onCall({timeoutSeconds: 30, memory: "512MiB"}, asyn
       imageUrl: imageUrl.trim(),
       siteName: siteName.trim(),
       domain,
-      fullContent,
+      fullContent: "", // 本文取得を廃止
       headings: headings.slice(0, 10), // Limit to first 10 headings
       keywords,
       contentType: {
@@ -849,6 +810,18 @@ export const checkUnusedLinks = onCall({timeoutSeconds: 30, memory: "512MiB"}, a
 
       // 3日間経過しているかチェック
       if (lastAccessTime <= threeDaysAgo) {
+        // 🔒 安全チェック: 作成から最低6時間経過していないリンクは除外
+        const createdTime = linkData.createdAt.toDate();
+        const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+
+        if (createdTime > sixHoursAgo) {
+          logger.info(`⏭️ 新しいリンクをスキップ (作成から6時間未満): ${doc.id}`, {
+            createdAt: createdTime.toISOString(),
+            sixHoursAgo: sixHoursAgo.toISOString(),
+            title: linkData.title,
+          });
+          continue; // この新しいリンクをスキップ
+        }
         // 通知送信済みかチェック（古い構造と新しい構造の両方に対応）
         const isAlreadyNotified =
           (linkData.notificationsSent?.unused3Days === true) ||
@@ -913,7 +886,7 @@ export const checkUnusedLinks = onCall({timeoutSeconds: 30, memory: "512MiB"}, a
 
 // Simple content type analysis
 function analyzeContentType($: any, content: string, title: string, description: string, domain: string): string {
-  const text = `${title} ${description} ${content}`.toLowerCase();
+  const text = `${title} ${description}`.toLowerCase(); // contentは使用しない
 
   // Domain-based detection
   if (domain.includes("github")) return "documentation";
@@ -921,12 +894,12 @@ function analyzeContentType($: any, content: string, title: string, description:
   if (domain.includes("qiita") || domain.includes("zenn")) return "article";
   if (domain.includes("blog")) return "blog";
 
-  // Content-based detection
+  // Content-based detection (title + descriptionのみ)
   if (text.includes("tutorial") || text.includes("how to") || text.includes("step")) return "tutorial";
   if (text.includes("documentation") || text.includes("api") || text.includes("reference")) return "documentation";
   if ($("pre, code").length > 3) return "tutorial";
   if (text.includes("news") || text.includes("breaking")) return "news";
-  if (content.length > 2000) return "article";
+  // 本文長での判定は削除（content.length > 2000）
 
   return "other";
 }
@@ -981,12 +954,8 @@ async function fetchPageContent(url: string) {
   const pageDescription = $("meta[property='og:description']").attr("content") || $("meta[name='description']").attr("content") || "";
   const keywords = ($("meta[name='keywords']").attr("content") || "").split(",").map((k) => k.trim());
 
-
-  $("script, style, nav, header, footer, aside").remove();
-  const mainContent = $("main, article, .content, .post").first();
-  const fullContent = (mainContent.length ? mainContent.text() : $("body").text()).trim().slice(0, 2000);
-
-  return {fullContent, pageTitle, pageDescription, keywords};
+  // 本文取得を削除 - OGPメタデータのみ使用
+  return {fullContent: "", pageTitle, pageDescription, keywords};
 }
 
 function extractKeyTerms(title: string, description?: string): Set<string> {
@@ -1416,7 +1385,6 @@ export const checkAIUsageLimit = onCall(async (request) => {
     const planLimits: Record<string, {monthlyLimit: number, dailyLimit: number}> = {
       "free": {monthlyLimit: 5, dailyLimit: 5},
       "plus": {monthlyLimit: 50, dailyLimit: 10},
-      "pro": {monthlyLimit: 150, dailyLimit: 50},
     };
 
     const limits = planLimits[plan] || planLimits["free"];
@@ -1647,10 +1615,14 @@ async function attemptReceiptValidation(receiptData: string, url: string): Promi
 async function updateUserSubscription(userId: string, planType: "plus" | "pro", validationResult: AppleReceiptResponse): Promise<void> {
   const userRef = db.collection("users").doc(userId);
 
+  // レシート情報から期限日を計算
+  const expirationDate = calculateSubscriptionExpirationDate(validationResult);
+
   const subscriptionData = {
     plan: planType,
     status: "active",
     startDate: FieldValue.serverTimestamp(),
+    expirationDate: expirationDate, // サブスクリプション有効期限
     lastValidatedAt: FieldValue.serverTimestamp(),
     source: "apple_app_store",
     // Apple レシートから取得した情報も保存
@@ -1658,6 +1630,7 @@ async function updateUserSubscription(userId: string, planType: "plus" | "pro", 
       transactionId: validationResult.receipt.in_app?.[0]?.transaction_id,
       originalTransactionId: validationResult.receipt.in_app?.[0]?.original_transaction_id,
       purchaseDate: validationResult.receipt.in_app?.[0]?.purchase_date_ms,
+      expiresDate: validationResult.receipt.in_app?.[0]?.expires_date_ms,
     } : null,
   };
 
@@ -1668,6 +1641,88 @@ async function updateUserSubscription(userId: string, planType: "plus" | "pro", 
   }, {merge: true});
 
   logger.info("✅ ユーザープラン更新完了:", {userId, planType, subscriptionData});
+}
+
+// サブスクリプション解約時の処理（WebhookまたはApp Store Server Notifications用）
+export const handleSubscriptionCancellation = onCall(async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "認証が必要です");
+    }
+
+    const userId = request.auth.uid;
+    const userRef = db.collection("users").doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "ユーザーが見つかりません");
+    }
+
+    const userData = userDoc.data();
+    const subscription = userData?.subscription;
+
+    if (!subscription || !subscription.expirationDate) {
+      throw new HttpsError("failed-precondition", "有効なサブスクリプションが見つかりません");
+    }
+
+    // 現在の有効期限をダウングレード日として設定
+    const downgradeDate = subscription.expirationDate;
+
+    await userRef.set({
+      subscription: {
+        ...subscription,
+        status: "canceled", // キャンセル済み
+        downgradeTo: "free", // Freeプランにダウングレード
+        downgradeEffectiveDate: downgradeDate, // 既存の有効期限がダウングレード日
+        canceledAt: FieldValue.serverTimestamp(),
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+
+    logger.info("✅ サブスクリプション解約処理完了:", {
+      userId,
+      downgradeDate: downgradeDate,
+      originalExpiration: subscription.expirationDate,
+    });
+
+    return {
+      success: true,
+      downgradeEffectiveDate: downgradeDate.toISOString(),
+    };
+  } catch (error) {
+    logger.error("❌ サブスクリプション解約処理エラー:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "解約処理に失敗しました");
+  }
+});
+
+// レシートから有効期限を計算
+function calculateSubscriptionExpirationDate(validationResult: AppleReceiptResponse): Date {
+  try {
+    // Apple レシートから有効期限を取得
+    const latestReceiptInfo = validationResult.latest_receipt_info?.[0];
+    if (latestReceiptInfo?.expires_date_ms) {
+      return new Date(parseInt(latestReceiptInfo.expires_date_ms));
+    }
+
+    // フォールバック: 現在時刻から1ヶ月後
+    const now = new Date();
+    const expirationDate = new Date(now);
+    expirationDate.setMonth(expirationDate.getMonth() + 1);
+
+    logger.warn("⚠️ レシートから有効期限が取得できないため、1ヶ月後を設定", {expirationDate});
+    return expirationDate;
+  } catch (error) {
+    logger.error("❌ 有効期限計算エラー:", error);
+
+    // エラー時のフォールバック
+    const now = new Date();
+    const fallbackDate = new Date(now);
+    fallbackDate.setMonth(fallbackDate.getMonth() + 1);
+    return fallbackDate;
+  }
 }
 
 // ===================================================================

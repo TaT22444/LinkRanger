@@ -51,6 +51,9 @@ const setupNotificationHandler = () => {
 
 class NotificationService {
   private static instance: NotificationService;
+  private onNotificationTapCallback?: (linkId: string) => void;
+  private notificationListener?: any;
+  private responseListener?: any;
 
   private constructor() {}
 
@@ -59,6 +62,14 @@ class NotificationService {
       NotificationService.instance = new NotificationService();
     }
     return NotificationService.instance;
+  }
+
+  /**
+   * 通知タップ時のコールバックを設定
+   */
+  setNotificationTapCallback(callback: (linkId: string) => void): void {
+    this.onNotificationTapCallback = callback;
+    console.log('📱 通知タップコールバック設定完了');
   }
 
   /**
@@ -100,11 +111,64 @@ class NotificationService {
         return null;
       }
 
+      // 🚫 Development build制限: 長期スケジュール通知を無効化
+      if (__DEV__) {
+        console.log('🚫 Development build: 3日間通知スケジュールを無効化（TestFlightで正常動作）', {
+          linkId: link.id,
+          title: link.title.slice(0, 30) + '...',
+          reason: 'expo-dev-client制限によりバックグラウンド処理のみで通知'
+        });
+        return null;
+      }
+
+      // 🔍 デバッグログ: createdAtの詳細確認
+      console.log('🔍 schedule3DayReminder: デバッグ開始', {
+        linkId: link.id,
+        createdAt: link.createdAt,
+        createdAtType: typeof link.createdAt,
+        createdAtConstructor: link.createdAt.constructor.name,
+        createdAtString: link.createdAt.toString(),
+        createdAtISO: link.createdAt.toISOString(),
+        currentTime: new Date().toISOString()
+      });
+
       // 3日間後の正確な時刻を計算
       const threeDaysLater = new Date(link.createdAt.getTime() + 3 * 24 * 60 * 60 * 1000);
       
-      // 現在時刻より過去の場合は即座通知
-      const notificationDate = threeDaysLater > new Date() ? threeDaysLater : new Date();
+      // 🔍 詳細な計算ログ
+      console.log('🔍 schedule3DayReminder: 日時計算', {
+        createdAtTime: link.createdAt.getTime(),
+        threeDaysInMs: 3 * 24 * 60 * 60 * 1000,
+        threeDaysLater: threeDaysLater.toISOString(),
+        currentTime: new Date().toISOString(),
+        isPastDate: threeDaysLater <= new Date()
+      });
+      
+      // 3日後の日時が過去の場合は通知しない（データ整合性エラー）
+      if (threeDaysLater <= new Date()) {
+
+        return null;
+      }
+      
+      const notificationDate = threeDaysLater;
+
+      // 🔍 実際の通知スケジュール前の最終確認
+      console.log('🔍 schedule3DayReminder: 通知スケジュール実行前', {
+        linkId: link.id,
+        notificationDate: notificationDate.toISOString(),
+        trigger: { date: notificationDate },
+        willScheduleIn: (notificationDate.getTime() - new Date().getTime()) / 1000 / 60 + ' minutes'
+      });
+
+      // 🔧 修正: secondsベースのtriggerに変更（expo-notificationsの既知問題対応）
+      const secondsFromNow = Math.floor((notificationDate.getTime() - new Date().getTime()) / 1000);
+      
+      console.log('🔧 schedule3DayReminder: trigger修正', {
+        notificationDate: notificationDate.toISOString(),
+        secondsFromNow,
+        minutesFromNow: secondsFromNow / 60,
+        hoursFromNow: secondsFromNow / 3600
+      });
 
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
@@ -120,16 +184,23 @@ class NotificationService {
           sound: true,
         },
         trigger: {
-          date: notificationDate,
+          seconds: secondsFromNow,
         },
       });
 
+      // 🔍 スケジュール完了後の検証ログ
+      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      const ourNotification = scheduledNotifications.find((n: any) => n.identifier === notificationId);
+      
       console.log('📅 3日間リマインダー設定完了:', {
         linkId: link.id,
         linkTitle: link.title.slice(0, 30) + '...',
         createdAt: link.createdAt.toLocaleString(),
         scheduledFor: notificationDate.toLocaleString(),
         notificationId,
+        actuallyScheduled: !!ourNotification,
+        scheduledTime: ourNotification?.trigger?.dateComponents || ourNotification?.trigger,
+        totalScheduledNotifications: scheduledNotifications.length
       });
 
       return notificationId;
@@ -146,6 +217,15 @@ class NotificationService {
     try {
       if (!isNotificationAvailable()) {
         console.log('⚠️ 通知機能は利用できません - スケジュールをスキップ');
+        return null;
+      }
+
+      // 🔒 最終安全チェック: 作成から最低2時間経過していないリンクは通知しない
+      const now = new Date();
+      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+      
+      if (link.createdAt > twoHoursAgo) {
+
         return null;
       }
 
@@ -242,6 +322,23 @@ class NotificationService {
   }
 
   /**
+   * 全通知をクリア（デバッグ用）
+   */
+  async clearAllNotifications(): Promise<void> {
+    try {
+      if (!isNotificationAvailable()) {
+        console.log('⚠️ 通知機能は利用できません - クリアをスキップ');
+        return;
+      }
+
+      await Notifications.cancelAllScheduledNotificationsAsync();
+      console.log('🗑️ 全てのスケジュール済み通知をクリアしました');
+    } catch (error) {
+      console.error('❌ 通知クリアエラー:', error);
+    }
+  }
+
+  /**
    * 通知サービスを初期化
    */
   async initializeNotifications(): Promise<void> {
@@ -259,6 +356,25 @@ class NotificationService {
   }
 
   /**
+   * 通知サービスをクリーンアップ
+   */
+  cleanup(): void {
+    try {
+      if (this.notificationListener) {
+        this.notificationListener.remove();
+        this.notificationListener = undefined;
+      }
+      if (this.responseListener) {
+        this.responseListener.remove();
+        this.responseListener = undefined;
+      }
+      console.log('🗑️ 通知サービスクリーンアップ完了');
+    } catch (error) {
+      console.error('❌ 通知サービスクリーンアップエラー:', error);
+    }
+  }
+
+  /**
    * 通知リスナーの設定
    */
   private setupNotificationListeners(): void {
@@ -267,21 +383,32 @@ class NotificationService {
       return;
     }
 
+    // 既存のリスナーをクリーンアップ
+    this.cleanup();
+
     // 通知ハンドラーを設定
     setupNotificationHandler();
 
     // 通知受信時のリスナー
-    const notificationListener = Notifications.addNotificationReceivedListener((notification: any) => {
+    this.notificationListener = Notifications.addNotificationReceivedListener((notification: any) => {
       console.log('📱 通知受信:', notification);
     });
 
     // 通知タップ時のリスナー
-    const responseListener = Notifications.addNotificationResponseReceivedListener((response: any) => {
+    this.responseListener = Notifications.addNotificationResponseReceivedListener((response: any) => {
       console.log('👆 通知タップ:', response);
+      
+      // 通知データからlinkIdを取得
+      const notificationData = response?.notification?.request?.content?.data;
+      if (notificationData?.linkId && this.onNotificationTapCallback) {
+        console.log('🔗 通知タップ - リンクID検出:', notificationData.linkId);
+        this.onNotificationTapCallback(notificationData.linkId);
+      } else {
+        console.log('⚠️ 通知タップ - リンクIDが見つからないか、コールバックが設定されていません');
+      }
     });
 
-    // リスナーのクリーンアップ関数を保存（必要に応じて）
-    console.log('📱 通知リスナー設定完了');
+    console.log('�� 通知リスナー設定完了');
   }
 }
 

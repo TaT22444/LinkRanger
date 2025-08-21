@@ -184,7 +184,7 @@ export class AIUsageManager {
     }
 
     if (usagePercentage > 50 && plan === 'free') {
-      recommendations.push('より多くのAI機能をご利用いただくには、Proプランがお得です。');
+      recommendations.push('より多くのAI機能をご利用いただくには、Plusプランがお得です。');
     }
 
     return recommendations;

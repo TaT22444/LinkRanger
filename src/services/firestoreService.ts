@@ -29,40 +29,13 @@ import {
   LinkFilter,
   LinkSort,
   PaginatedResponse,
-  LinkWithTags
+  LinkWithTags 
 } from '../types';
+import { COLLECTIONS, convertToLink } from './firestoreUtils';
 
 import { getDefaultPlatformTags } from '../utils/platformDetector';
 
-// コレクション名
-const COLLECTIONS = {
-  USERS: 'users',
-  LINKS: 'links',
-  TAGS: 'tags',
-  FOLDERS: 'folders',
-  SEARCH_HISTORY: 'searchHistory',
-  APP_SETTINGS: 'appSettings',
-
-} as const;
-
-// Firestoreデータを安全なLinkオブジェクトに変換
-const convertToLink = (doc: any): Link => {
-  const data = doc.data();
-  return {
-    ...data,
-    id: doc.id,
-    tagIds: data.tagIds || [], // tagIdsが未定義の場合は空配列に
-    createdAt: data.createdAt?.toDate() || new Date(),
-    updatedAt: data.updatedAt?.toDate() || new Date(),
-    lastAccessedAt: data.lastAccessedAt?.toDate(),
-    expiresAt: data.expiresAt?.toDate() || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // デフォルト7日後
-    isRead: data.isRead || false,
-    isExpired: data.isExpired || false,
-    notificationsSent: data.notificationsSent || {
-      unused3Days: false,
-    },
-  } as Link;
-};
+// 重複削除: COLLECTIONS と convertToLink は firestoreUtils.ts から import済み
 
 // ===== ユーザー関連 =====
 export const userService = {

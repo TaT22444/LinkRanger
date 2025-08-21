@@ -130,8 +130,8 @@ export const metadataService = {
    * コンテンツタイプを分析
    */
   analyzeContentType(metadata: LinkMetadata): ContentType {
-    const { title = '', description = '', fullContent = '', domain = '', headings = [] } = metadata;
-    const text = `${title} ${description} ${fullContent} ${headings.join(' ')}`.toLowerCase();
+    const { title = '', description = '', domain = '', headings = [] } = metadata;
+    const text = `${title} ${description} ${headings.join(' ')}`.toLowerCase(); // fullContentは使用しない
     
     // ドメインベース分析
     const domainIndicators = this.getDomainTypeIndicators(domain);

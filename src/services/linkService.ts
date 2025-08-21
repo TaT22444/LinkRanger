@@ -32,11 +32,7 @@ import { notificationService } from './notificationService';
 // ===== リンク関連 =====
 export const linkService = {
   async createLink(linkData: Omit<Link, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    console.log('📝 linkService: リンク作成開始', {
-      userId: linkData.userId,
-      title: linkData.title,
-      url: linkData.url
-    });
+
     
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7日後
@@ -53,31 +49,43 @@ export const linkService = {
       },
     });
     
-    console.log('✅ linkService: リンク作成完了', {
-      id: docRef.id,
-      userId: linkData.userId,
-      title: linkData.title,
-      status: linkData.status,
-      timestamp: new Date().toISOString()
-    });
+
     
     // 作成直後にドキュメントを読み取って確認
     try {
+      // serverTimestamp()の解決を待つため、少し待機してから読み取り
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       const createdDoc = await getDoc(docRef);
       if (createdDoc.exists()) {
         const data = createdDoc.data();
-        console.log('🔍 linkService: 作成直後の確認読み取り', {
-          id: docRef.id,
-          hasTitle: !!data.title,
-          hasUrl: !!data.url,
-          createdAt: data.createdAt,
-          status: data.status
-        });
 
-        // 3日間リマインダーを設定
-        const createdLink = convertToLink(createdDoc);
-        await notificationService.schedule3DayReminder(createdLink);
-        console.log('📅 3日間リマインダー設定完了:', docRef.id);
+
+        // serverTimestamp()が解決されているかチェック
+        if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+          const createdLink = convertToLink(createdDoc);
+          await notificationService.schedule3DayReminder(createdLink);
+          console.log('📅 3日間リマインダー設定完了:', docRef.id);
+        } else {
+          // フォールバックとして、3秒後に再試行
+          setTimeout(async () => {
+            try {
+              const retryDoc = await getDoc(docRef);
+              if (retryDoc.exists()) {
+                const retryData = retryDoc.data();
+                if (retryData.createdAt && typeof retryData.createdAt.toDate === 'function') {
+                  const retryLink = convertToLink(retryDoc);
+                  await notificationService.schedule3DayReminder(retryLink);
+                  console.log('📅 リトライ成功: 3日間リマインダー設定完了:', docRef.id);
+                } else {
+                  console.error('❌ serverTimestamp解決失敗 - 通知スケジュールできません:', docRef.id);
+                }
+              }
+            } catch (retryError) {
+              console.error('❌ 通知スケジュール再試行エラー:', retryError);
+            }
+          }, 3000);
+        }
       }
     } catch (error) {
       console.error('❌ linkService: 作成確認エラー', error);

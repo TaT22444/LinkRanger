@@ -353,14 +353,14 @@ export const TagDetailScreen: React.FC = () => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={24} color="#FFF" />
+          <Feather name="arrow-left" size={16} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>#{tag.name}</Text>
         <TouchableOpacity
           style={styles.optionsButton}
           onPress={() => setShowOptionsMenu(true)}
         >
-          <Feather name="more-vertical" size={20} color="#FFF" />
+          <Feather name="more-vertical" size={16} color="#FFF" />
         </TouchableOpacity>
       </View>
 
@@ -423,49 +423,6 @@ export const TagDetailScreen: React.FC = () => {
                 <Feather name="git-merge" size={20} color="#FFF" />
                 <Text style={styles.optionText}>タグを統合</Text>
               </TouchableOpacity> */}
-              
-              <View style={styles.optionSeparator} />
-              
-              {/* AI分析確認設定 */}
-              {/* <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setShowOptionsMenu(false);
-                  Alert.alert(
-                    'AI分析確認設定',
-                    `現在の設定: ${showAIAnalysisAlert ? 'アラート表示中' : 'アラート非表示'}\n\n設定を変更しますか？`,
-                    [
-                      { text: 'キャンセル', style: 'cancel' },
-                      {
-                        text: showAIAnalysisAlert ? 'アラートを無効化' : 'アラートを有効化',
-                        style: 'default',
-                        onPress: () => {
-                          const newSetting = !showAIAnalysisAlert;
-                          updateUserSettings(!newSetting); // hideAlert = !showAlert
-                          
-                          Alert.alert(
-                            '設定変更完了',
-                            newSetting 
-                              ? 'AI分析確認アラートを有効化しました' 
-                              : 'AI分析確認アラートを無効化しました'
-                          );
-                        }
-                      }
-                    ]
-                  );
-                }}
-              >
-                <Feather 
-                  name={showAIAnalysisAlert ? "bell" : "bell-off"} 
-                  size={20} 
-                  color="#FFF" 
-                />
-                <Text style={styles.optionText}>
-                  AI解説確認{showAIAnalysisAlert ? '無効化' : '有効化'}
-                </Text>
-              </TouchableOpacity> */}
-              
-
               
               <TouchableOpacity
                 style={styles.optionItem}
@@ -560,112 +517,33 @@ const styles = StyleSheet.create({
     borderBottomColor: '#333',
   },
   backButton: {
-    padding: 8,
+    paddingHorizontal: 16,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   headerTitle: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
     fontSize: 18,
     fontWeight: '600',
     color: '#FFF',
   },
   optionsButton: {
-    padding: 8,
+    paddingHorizontal: 16,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContentContainer: {
     paddingBottom: 20,
-  },
-  tagInfoSection: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#1A1A1A',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  tagHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  tagIconContainer: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#2A2A2A',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  tagTextContainer: {
-    flex: 1,
-  },
-  tagName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-    marginBottom: 4,
-  },
-  tagMeta: {
-    fontSize: 12,
-    color: '#888',
-  },
-  tagDescription: {
-    fontSize: 12,
-    color: '#AAA',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  aiAnalysisButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#8A2BE2',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 6,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  aiAnalysisButtonDisabled: {
-    backgroundColor: '#444',
-    opacity: 0.5,
-  },
-  aiButtonText: {
-    fontSize: 13,
-    color: '#FFF',
-    fontWeight: '500',
-  },
-
-  analysisHistorySection: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  analysisHistoryTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFF',
-    marginBottom: 12,
-  },
-  analysisItem: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 6,
-    padding: 14,
-    marginBottom: 12,
-  },
-
-  analysisHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  analysisLinkCount: {
-    fontSize: 10,
-    color: '#777',
-    backgroundColor: '#333',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  analysisStatusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   analysisStatusText: {
     fontSize: 10,
@@ -881,17 +759,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-
-
-
-
-
-
-  
-
-
-
-  
   // Basic UI styles
   headerContainer: {
     backgroundColor: '#121212',
@@ -900,9 +767,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 32,
     paddingBottom: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    marginTop: 16,
   },
   linksSectionTitle: {
     fontSize: 16,

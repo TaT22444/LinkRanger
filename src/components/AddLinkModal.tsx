@@ -319,7 +319,6 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
             url: url.trim()
           });
         } catch (error) {
-          console.warn('⚠️ AddLinkModal: メタデータ取得失敗、URLをタイトルに使用', error);
           finalTitle = url.trim();
         } finally {
           setFetchingMetadata(false);
@@ -400,6 +399,11 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
       const newTagIds: string[] = [];
       const preservedUserTags = [...selectedTags];
       
+      // 🔒 AI生成タグの事前制限チェック
+      const newTagsToCreate: string[] = [];
+      const existingTagsToAdd: string[] = [];
+      
+      // まず既存タグと新規作成が必要なタグを分類
       for (const tagName of aiResponse.tags) {
         const normalizedTagName = tagName.trim();
         const existingTag = availableTags.find(t => 
@@ -408,16 +412,48 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         
         if (existingTag) {
           if (!preservedUserTags.includes(existingTag.id)) {
-            newTagIds.push(existingTag.id);
+            existingTagsToAdd.push(existingTag.id);
           }
-        } else if (onAddTag) {
+        } else {
+          newTagsToCreate.push(normalizedTagName);
+        }
+      }
+      
+      // 🔒 新規タグ作成可能数をチェック（user は AddLinkModal の props にないため、onAddTag でチェック）
+      // 既存タグを追加
+      newTagIds.push(...existingTagsToAdd);
+      
+      // 新規タグを作成（制限チェックは handleAddTag 内で実行される）
+      for (const tagName of newTagsToCreate) {
+        if (onAddTag) {
           try {
-            const newTagId = await onAddTag(normalizedTagName, 'ai');
+            const newTagId = await onAddTag(tagName, 'ai');
             if (newTagId && !preservedUserTags.includes(newTagId)) {
               newTagIds.push(newTagId);
             }
           } catch (error) {
-            console.error('🤖🔥 [AI Tagging Modal] Failed to create new AI tag:', { tagName: normalizedTagName, error });
+            console.error('🤖🔥 [AI Tagging Modal] Failed to create new AI tag:', { tagName, error });
+            // エラーが制限超過によるものか確認
+            if (error instanceof Error && error.message.includes('制限')) {
+              // 🔔 制限に達した場合はユーザーに通知して残りをスキップ
+              const remainingCount = newTagsToCreate.length - newTagsToCreate.indexOf(tagName);
+              Alert.alert(
+                'タグ制限に達しました', 
+                `AI生成タグのうち${remainingCount}個が制限により作成できませんでした。\n\n作成可能なタグのみ保存します。`,
+                [
+                  { text: 'OK', style: 'default' },
+                  { 
+                    text: 'プランアップ', 
+                    onPress: () => {
+                      // AddLinkModalではアップグレードモーダルを直接表示できないため、
+                      // onClose後にHomeScreenでハンドリングする必要がある
+                      console.log('🔄 プランアップ要求（AddLinkModal）');
+                    }
+                  }
+                ]
+              );
+              break;
+            }
           }
         }
       }
@@ -568,11 +604,12 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
             failOffsetX={[-100, 100]}
           >
             <Animated.View style={[{flex: 1}, { transform: [{ translateY: gestureTranslateY }] }]}>
+
               {/* ドラッグハンドル */}
-              <View style={styles.dragHandle}>
+               <View style={styles.dragHandle}>
                 <View style={styles.dragIndicator} />
               </View>
-
+              
               <View style={styles.header}>
                 <TouchableOpacity 
                   style={styles.headerButton} 
@@ -706,30 +743,43 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   headerButton: {
-    minWidth: 60,
+    paddingHorizontal: 16,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
+    zIndex: 10,
   },
   headerTitleContainer: {
-    flex: 1,
-    alignItems: 'center',
+    position: 'absolute',
+    left: 0,
+    right: 0,
   },
   headerTitle: {
-    fontSize: 18,
+    textAlign: 'center',
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFF',
   },
   cancelText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
   },
   addButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#1A1A1A',
+    zIndex: 10,
   },
   addButtonDisabled: {
     // スタイルなし（透明）
   },
   addText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#8A2BE2',
     fontWeight: '600',
   },
@@ -886,7 +936,8 @@ const styles = StyleSheet.create({
   // ドラッグハンドル
   dragHandle: {
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 4,
   },
   dragIndicator: {
     width: 40,
