@@ -230,7 +230,7 @@ export class PlanService {
     
     // testAccountUtils.tsの統一ロジックを使用
     return isTestAccountUtil({
-      email: user.email,
+      uid: user.uid,
       isTestAccount: user.isTestAccount,
       role: user.role
     });
@@ -240,7 +240,7 @@ export class PlanService {
   static getEffectivePlan(user: User | null): UserPlan {
     if (this.isTestAccount(user)) {
       // テストアカウントのプランタイプを取得
-      const testPlan = getTestAccountPlan(user?.email || null);
+      const testPlan = getTestAccountPlan(user?.uid || null);
       
       if (testPlan === 'unlimited') {
         return 'plus'; // 無制限テストアカウントは最高プランとして扱う
@@ -261,7 +261,7 @@ export class PlanService {
     
     // テストアカウントは特別扱い
     if (this.isTestAccount(user)) {
-      const testPlan = getTestAccountPlan(user?.email || null);
+      const testPlan = getTestAccountPlan(user?.uid || null);
       
       // 無制限テストアカウントのみ制限を無制限に設定
       if (testPlan === 'unlimited') {
@@ -325,7 +325,7 @@ export class PlanService {
   // プラン表示名取得
   static getPlanDisplayName(user: User | null): string {
     if (this.isTestAccount(user)) {
-      const testPlan = getTestAccountPlan(user?.email || null);
+      const testPlan = getTestAccountPlan(user?.uid || null);
       
       if (testPlan === 'unlimited') {
         return 'テスト(無制限)';

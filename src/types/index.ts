@@ -43,8 +43,7 @@ export interface UserSubscription {
 // ユーザー型
 export interface User {
   uid: string;
-  email: string | null;
-  username: string | null; // メールアドレスをデフォルトの表示名として使用
+  username: string | null; // ユーザー表示名
   avatarId?: string;
   avatarIcon?: string;
   isAnonymous: boolean;

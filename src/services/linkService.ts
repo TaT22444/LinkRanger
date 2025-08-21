@@ -61,30 +61,37 @@ export const linkService = {
         const data = createdDoc.data();
 
 
+        // 🔒 通知スケジュールの安全制御
+        console.log('🔍 linkService: 通知スケジュール判定開始', {
+          linkId: docRef.id,
+          isDev: __DEV__,
+          hasCreatedAt: !!(data.createdAt && typeof data.createdAt.toDate === 'function')
+        });
+
         // serverTimestamp()が解決されているかチェック
         if (data.createdAt && typeof data.createdAt.toDate === 'function') {
           const createdLink = convertToLink(createdDoc);
-          await notificationService.schedule3DayReminder(createdLink);
-          console.log('📅 3日間リマインダー設定完了:', docRef.id);
+          
+          // 🔒 二重安全チェック: リンク作成直後は通知スケジュールしない
+          const now = new Date();
+          const linkAge = now.getTime() - createdLink.createdAt.getTime();
+          const isNewLink = linkAge < (5 * 60 * 1000); // 5分以内のリンクは "新規"
+          
+          console.log('🔍 linkService: リンク年齢チェック', {
+            linkId: docRef.id,
+            linkAge: Math.floor(linkAge / 1000) + '秒',
+            isNewLink,
+            willSchedule: !isNewLink
+          });
+          
+          if (!isNewLink) {
+            await notificationService.schedule3DayReminder(createdLink);
+            console.log('📅 3日間リマインダー設定完了:', docRef.id);
+          } else {
+            console.log('🚫 新規リンクのため通知スケジュールをスキップ:', docRef.id);
+          }
         } else {
-          // フォールバックとして、3秒後に再試行
-          setTimeout(async () => {
-            try {
-              const retryDoc = await getDoc(docRef);
-              if (retryDoc.exists()) {
-                const retryData = retryDoc.data();
-                if (retryData.createdAt && typeof retryData.createdAt.toDate === 'function') {
-                  const retryLink = convertToLink(retryDoc);
-                  await notificationService.schedule3DayReminder(retryLink);
-                  console.log('📅 リトライ成功: 3日間リマインダー設定完了:', docRef.id);
-                } else {
-                  console.error('❌ serverTimestamp解決失敗 - 通知スケジュールできません:', docRef.id);
-                }
-              }
-            } catch (retryError) {
-              console.error('❌ 通知スケジュール再試行エラー:', retryError);
-            }
-          }, 3000);
+          console.log('🚫 serverTimestamp未解決のため通知スケジュールをスキップ:', docRef.id);
         }
       }
     } catch (error) {

@@ -17,7 +17,7 @@ import {
   User as FirebaseUser,
   updateEmail
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { User } from '../types';
 import { userService } from './firestoreService';
@@ -78,7 +78,6 @@ export const deleteUserAccount = async (): Promise<void> => {
 
 interface UpdateUserProfileParams {
   displayName?: string;
-  email?: string;
   avatarId?: string;
   avatarIcon?: string;
 }
@@ -89,7 +88,7 @@ export const registerWithEmail = async (email: string, password: string): Promis
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const firebaseUser = userCredential.user;
     
-    // デフォルトプラットフォームタグ付きでユーザープロフィールを作成
+    // ユーザープロフィールを作成
     await createUserProfile(firebaseUser);
     
     // 作成されたユーザー情報を取得して返す
@@ -158,7 +157,7 @@ export const loginAnonymously = async (): Promise<User> => {
     const firebaseUser = userCredential.user;
     console.log('✅ Firebase匿名認証完了:', firebaseUser.uid);
     
-    // デフォルトプラットフォームタグ付きでユーザープロフィールを作成
+    // ユーザープロフィールを作成
     console.log('📝 匿名ユーザープロフィール作成中...');
     await createUserProfile(firebaseUser);
     
@@ -400,10 +399,35 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
           console.log('User document found in Firestore');
           const userData = userDoc.data() as User;
           
-          // Firestoreのデータを優先
+          // メールアドレスがusernameとして使用されているかチェック
+          const isEmailAsUsername = userData.username && 
+                                   userData.username.includes('@') && 
+                                   userData.username.includes('.');
+          
+          let finalUsername = userData.username;
+          
+          // メールアドレスがusernameとして使用されている場合は安全な名前に変更
+          if (isEmailAsUsername) {
+            finalUsername = generateSafeUsername(firebaseUser.email, firebaseUser.displayName);
+            
+            // Firestoreを更新（非同期でバックグラウンド実行）
+            setTimeout(async () => {
+              try {
+                await updateDoc(doc(db, 'users', firebaseUser.uid), {
+                  username: finalUsername,
+                  updatedAt: serverTimestamp()
+                });
+                console.log('🔒 Username updated from email to safe name:', finalUsername);
+              } catch (error) {
+                console.error('Failed to update username:', error);
+              }
+            }, 100);
+          }
+          
+          // Firestoreのデータを優先、emailはFirebase Authから取得
           const user = {
             ...userData,
-            username: userData.username || userData.email || null,
+            username: finalUsername || generateSafeUsername(firebaseUser.email, firebaseUser.displayName),
             avatarId: userData.avatarId,
             avatarIcon: userData.avatarIcon,
             createdAt: convertFirebaseTimestamp(userData.createdAt)
@@ -425,7 +449,7 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
               const userData = newUserDoc.data() as User;
               const user = {
                 ...userData,
-                username: userData.username || userData.email || null,
+                username: userData.username || generateSafeUsername(firebaseUser.email, firebaseUser.displayName),
                 avatarId: userData.avatarId,
                 avatarIcon: userData.avatarIcon,
                 createdAt: convertFirebaseTimestamp(userData.createdAt)
@@ -464,17 +488,11 @@ export const updateUserProfile = async (params: UpdateUserProfileParams): Promis
       });
     }
 
-    // メールアドレスの更新
-    if (params.email) {
-      await updateEmail(auth.currentUser, params.email);
-    }
-
     // Firestoreのユーザー情報を更新
     const userRef = doc(db, 'users', auth.currentUser.uid);
     const updateData: { [key: string]: any } = {};
 
     if (params.displayName) updateData.username = params.displayName;
-    if (params.email) updateData.email = params.email;
     if (params.avatarId) updateData.avatarId = params.avatarId;
     if (params.avatarIcon) updateData.avatarIcon = params.avatarIcon;
 
@@ -486,12 +504,29 @@ export const updateUserProfile = async (params: UpdateUserProfileParams): Promis
   }
 }; 
 
+  // メールアドレスから安全なユーザー名を生成
+  const generateSafeUsername = (email: string | null, displayName: string | null): string => {
+    if (displayName) {
+      return displayName; // displayNameがある場合はそのまま使用
+    }
+    
+    if (email) {
+      // メールアドレスの@より前の部分を取得
+      const localPart = email.split('@')[0];
+      
+      // Option A: シンプルに localPart のみ
+      return localPart;
+    }
+    
+    // フォールバック: 完全匿名
+    return `ユーザー${Math.floor(1000 + Math.random() * 9000)}`;
+  };
+
   const createUserProfile = async (user: FirebaseUser): Promise<void> => {
     try {
       const userData = {
         uid: user.uid,
-        email: user.email || '',
-        username: user.displayName || user.email || '',
+        username: generateSafeUsername(user.email, user.displayName),
         isAnonymous: user.isAnonymous,
         preferences: {
           theme: 'dark' as const,
@@ -501,20 +536,9 @@ export const updateUserProfile = async (params: UpdateUserProfileParams): Promis
         },
       };
 
-      // まずユーザープロフィールを作成
+      // ユーザープロフィールを作成
       await userService.createUser(userData);
       console.log('User profile created successfully');
-      
-      // デフォルトプラットフォームタグの作成は非同期で実行（認証フローをブロックしない）
-      setTimeout(async () => {
-        try {
-          await userService.createDefaultPlatformTags(user.uid);
-          console.log('Default platform tags created in background');
-        } catch (error) {
-          console.error('Failed to create default platform tags in background:', error);
-          // エラーが発生してもユーザー体験には影響しない
-        }
-      }, 100); // 100ms後に実行
       
     } catch (error) {
       console.error('Failed to create user profile:', error);

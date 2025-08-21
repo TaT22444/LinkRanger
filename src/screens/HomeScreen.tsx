@@ -55,7 +55,7 @@ type SharedLinkData = {
 
 export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = ({ sharedLinkData }) => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const { user } = useAuth();
+  const { user, getUserEmail } = useAuth();
   const [prefillUrl, setPrefillUrl] = useState<string>('');
   const lastHandledSharedUrlRef = useRef<string | null>(null);
   
@@ -718,7 +718,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   };
 
   const getUserInitial = () => {
-    return user?.email?.charAt(0).toUpperCase() || 'U';
+    return getUserEmail()?.charAt(0).toUpperCase() || 'U';
   };
 
   const handleAddTag = async (tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual') => {

@@ -26,29 +26,31 @@ async function auditTestAccounts() {
           userData.role === 'admin' || 
           userData.role === 'tester') {
         
-        testAccounts.push({
-          uid,
-          email: userData.email,
-          isTestAccount: userData.isTestAccount,
-          role: userData.role,
-          createdAt: userData.createdAt?.toDate() || 'Unknown'
-        });
+        try {
+          // Firebase Authからメールアドレスを取得
+          const userRecord = await admin.auth().getUser(uid);
+          
+          testAccounts.push({
+            uid,
+            email: userRecord.email || 'No Email',
+            isTestAccount: userData.isTestAccount,
+            role: userData.role,
+            createdAt: userData.createdAt?.toDate() || 'Unknown'
+          });
+        } catch (error) {
+          // Firebase Authにユーザーが存在しない場合
+          testAccounts.push({
+            uid,
+            email: 'Auth Record Not Found',
+            isTestAccount: userData.isTestAccount,
+            role: userData.role,
+            createdAt: userData.createdAt?.toDate() || 'Unknown'
+          });
+        }
       }
       
-      // 疑わしいメールアドレスの検出
-      if (userData.email && (
-        userData.email.includes('test') ||
-        userData.email.includes('dev') ||
-        userData.email.includes('demo') ||
-        userData.email.includes('admin')
-      )) {
-        suspiciousAccounts.push({
-          uid,
-          email: userData.email,
-          isTestAccount: userData.isTestAccount || false,
-          role: userData.role || 'user'
-        });
-      }
+      // メールベースの疑わしいアカウント検出は無効化
+      // （Firebase AuthのemailはFirestoreに保存されていないため）
     }
     
     // 結果表示

@@ -3,7 +3,7 @@
  * 3日間未読リンクの通知チェック機能
  */
 
-// Development build対応の安全なimport
+// モジュール未対応環境の安全なimport
 let BackgroundFetch: any = null;
 let TaskManager: any = null;
 
@@ -11,7 +11,7 @@ try {
   BackgroundFetch = require('expo-background-fetch');
   TaskManager = require('expo-task-manager');
 } catch (error) {
-  console.log('⚠️ Development build: BackgroundFetch/TaskManager modules not available');
+  console.log('⚠️ BackgroundFetch/TaskManager modules not available');
 }
 import { Platform } from 'react-native';
 import { httpsCallable } from 'firebase/functions';
@@ -52,12 +52,26 @@ const processUnusedLinksNotifications = async (unusedLinks: Array<{
       continue;
     }
 
-    // 🔒 安全チェック: 作成から最低3時間経過していないリンクは通知しない
+    // 🔒 厳格な安全チェック: 作成から最低3日経過していないリンクは絶対に通知しない
     const now = new Date();
-    const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
     
-    if (linkCreatedAt > threeHoursAgo) {
-
+    console.log('🔍 backgroundTaskService: 時間チェック', {
+      linkId: link.id,
+      linkTitle: link.title.slice(0, 30) + '...',
+      createdAt: linkCreatedAt.toISOString(),
+      threeDaysAgo: threeDaysAgo.toISOString(),
+      currentTime: now.toISOString(),
+      isOldEnough: linkCreatedAt <= threeDaysAgo,
+      ageInHours: Math.floor((now.getTime() - linkCreatedAt.getTime()) / (1000 * 60 * 60))
+    });
+    
+    if (linkCreatedAt > threeDaysAgo) {
+      console.log('🚫 backgroundTaskService: リンクが新しすぎるためスキップ', {
+        linkId: link.id,
+        ageInHours: Math.floor((now.getTime() - linkCreatedAt.getTime()) / (1000 * 60 * 60)),
+        requiredHours: 72
+      });
       continue; // この新しいリンクの通知をスキップ
     }
     
@@ -107,12 +121,12 @@ const isBackgroundTaskAvailable = () => {
            typeof TaskManager.defineTask === 'function' &&
            Platform.OS === 'ios'; // iOSのみサポート（TestFlight/App Store）
   } catch {
-    console.log('⚠️ Development build: BackgroundFetch/TaskManager無効化');
+    console.log('⚠️ BackgroundFetch/TaskManager利用不可（モジュール未対応）');
     return false;
   }
 };
 
-// バックグラウンドタスクの定義（Development buildではスキップ）
+// バックグラウンドタスクの定義（利用可能な場合のみ）
 if (isBackgroundTaskAvailable()) {
   TaskManager.defineTask(UNUSED_LINKS_CHECK_TASK, async () => {
     try {
@@ -147,7 +161,7 @@ if (isBackgroundTaskAvailable()) {
     }
   });
 } else {
-  console.log('⚠️ Development build: TaskManagerタスク定義をスキップ');
+  console.log('⚠️ BackgroundTask利用不可: TaskManagerタスク定義をスキップ');
 }
 
 class BackgroundTaskService {
@@ -167,7 +181,7 @@ class BackgroundTaskService {
   async registerBackgroundTasks(): Promise<void> {
     try {
       if (!isBackgroundTaskAvailable()) {
-        console.log('⚠️ バックグラウンドタスクは利用できません（Development build）');
+        console.log('⚠️ バックグラウンドタスクは利用できません（モジュール未対応）');
         return;
       }
 

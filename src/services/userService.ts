@@ -15,7 +15,7 @@ import {
 import { db } from '../config/firebase';
 import { User } from '../types';
 import { COLLECTIONS } from './firestoreUtils';
-import { getDefaultPlatformTags } from '../utils/platformDetector';
+
 
 // ===== ユーザー関連 =====
 export const userService = {
@@ -37,62 +37,6 @@ export const userService = {
 
     console.log('User profile created successfully:', userData.uid);
     return userData.uid;
-  },
-
-  async createDefaultPlatformTags(userId: string): Promise<void> {
-    console.log('Creating default platform tags for user:', userId);
-    
-    try {
-      const defaultPlatformTagNames = getDefaultPlatformTags();
-      const batch = writeBatch(db);
-      let createdCount = 0;
-      
-      for (const tagName of defaultPlatformTagNames) {
-        // 既存タグのチェック（念のため） - 循環インポートを避けるため、直接クエリ
-        const existingTagQuery = query(
-          collection(db, COLLECTIONS.TAGS),
-          where('userId', '==', userId),
-          where('name', '==', tagName),
-          limit(1)
-        );
-        const existingTagSnapshot = await getDocs(existingTagQuery);
-        if (!existingTagSnapshot.empty) {
-          console.log(`Tag "${tagName}" already exists, skipping`);
-          continue;
-        }
-
-        // 新しいタグを作成
-        const tagRef = doc(collection(db, COLLECTIONS.TAGS));
-        batch.set(tagRef, {
-          userId,
-          name: tagName,
-          type: 'recommended', // プラットフォームタグは推奨タグとして分類
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          linkCount: 0,
-          lastUsedAt: serverTimestamp(),
-          firstUsedAt: serverTimestamp(),
-        });
-        
-        createdCount++;
-        console.log(`Queued default platform tag: "${tagName}"`);
-      }
-      
-      if (createdCount > 0) {
-        await batch.commit();
-        console.log(`Created ${createdCount} default platform tags for user ${userId}`);
-        
-        // ユーザー統計を更新
-        await this.updateUserStats(userId, { totalTags: createdCount });
-      } else {
-        console.log('No new platform tags to create');
-      }
-      
-    } catch (error) {
-      console.error('Error creating default platform tags:', error);
-      // エラーが発生してもユーザー作成は継続
-      throw error; // エラーを上位に伝播（バックグラウンド実行なので影響なし）
-    }
   },
 
   async getUser(uid: string): Promise<User | null> {

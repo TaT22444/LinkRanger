@@ -5,13 +5,13 @@
 
 import { Link } from '../types';
 
-// expo-notificationsの安全なimport（Development build対応）
+// expo-notificationsの安全なimport（モジュール未対応環境対応）
 let Notifications: any = null;
 
 try {
   Notifications = require('expo-notifications');
 } catch (error) {
-  console.log('⚠️ Development build: expo-notifications module not available');
+  console.log('⚠️ expo-notifications module not available');
 }
 
 // expo-notifications の型定義（フォールバック）
@@ -27,7 +27,7 @@ const isNotificationAvailable = () => {
            Notifications !== null &&
            typeof Notifications.scheduleNotificationAsync === 'function';
   } catch {
-    console.log('⚠️ Development build: expo-notifications無効化');
+    console.log('⚠️ expo-notifications無効化（モジュール未対応）');
     return false;
   }
 };
@@ -111,15 +111,13 @@ class NotificationService {
         return null;
       }
 
-      // 🚫 Development build制限: 長期スケジュール通知を無効化
-      if (__DEV__) {
-        console.log('🚫 Development build: 3日間通知スケジュールを無効化（TestFlightで正常動作）', {
-          linkId: link.id,
-          title: link.title.slice(0, 30) + '...',
-          reason: 'expo-dev-client制限によりバックグラウンド処理のみで通知'
-        });
-        return null;
-      }
+      // 🔍 Development環境での動作確認用ログ
+      console.log('📅 schedule3DayReminder: 開始', {
+        linkId: link.id,
+        title: link.title.slice(0, 30) + '...',
+        isDevelopment: __DEV__,
+        environment: __DEV__ ? 'Development' : 'Production/TestFlight'
+      });
 
       // 🔍 デバッグログ: createdAtの詳細確認
       console.log('🔍 schedule3DayReminder: デバッグ開始', {
@@ -220,16 +218,30 @@ class NotificationService {
         return null;
       }
 
-      // 🔒 最終安全チェック: 作成から最低2時間経過していないリンクは通知しない
+      // 🔒 厳格な安全チェック: 作成から最低3日経過していないリンクは絶対に通知しない
       const now = new Date();
-      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+      const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
       
-      if (link.createdAt > twoHoursAgo) {
-
+      console.log('🔍 scheduleUnusedLinkNotification: 時間チェック', {
+        linkId: link.id,
+        linkTitle: link.title.slice(0, 30) + '...',
+        createdAt: link.createdAt.toISOString(),
+        threeDaysAgo: threeDaysAgo.toISOString(),
+        currentTime: now.toISOString(),
+        isOldEnough: link.createdAt <= threeDaysAgo,
+        ageInHours: Math.floor((now.getTime() - link.createdAt.getTime()) / (1000 * 60 * 60))
+      });
+      
+      if (link.createdAt > threeDaysAgo) {
+        console.log('🚫 scheduleUnusedLinkNotification: リンクが新しすぎるためスキップ', {
+          linkId: link.id,
+          ageInHours: Math.floor((now.getTime() - link.createdAt.getTime()) / (1000 * 60 * 60)),
+          requiredHours: 72
+        });
         return null;
       }
 
-      // 3日間未読チェック時に即座通知を送信
+      // 3日間経過後の未読チェック時に即座通知を送信
       const notificationDate = new Date();
       notificationDate.setSeconds(notificationDate.getSeconds() + 5); // 5秒後に即座通知（即座性を保つ）
 

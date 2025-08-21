@@ -186,19 +186,9 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
       await iapService.purchasePlan(planName);
       
-      // TestFlight環境での表示メッセージを改善
-      const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
-                                       (global as any).__DEV__ === true);
-                                       
-      const message = isTestFlight 
-        ? `[TestFlight] ${planName.toUpperCase()}プランの模擬購入が完了しました。\n\n実際のアプリでは、ここでプランがアップグレードされます。`
-        : '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。';
-        
-      const title = isTestFlight ? 'TestFlight 模擬購入完了' : '購入処理中';
-      
       Alert.alert(
-        title,
-        message,
+        '購入処理完了',
+        '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。',
         [{ text: 'OK', onPress: onClose }]
       );
 

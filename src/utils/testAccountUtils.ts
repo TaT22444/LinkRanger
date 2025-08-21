@@ -37,28 +37,18 @@ const TEST_ACCOUNT_PLANS: Record<string, 'free' | 'plus' | 'pro' | 'unlimited'> 
 const DEVELOPER_EMAILS = process.env.EXPO_PUBLIC_DEVELOPER_EMAILS?.split(',') || [];
 
 /**
- * メールアドレスベースでテストアカウントかどうかを判定
+ * UIDベースでテストアカウントかどうかを判定
  */
-export function isTestAccountByEmail(email: string | null): boolean {
-  if (!email) return false;
+export function isTestAccountByUID(uid: string | null): boolean {
+  if (!uid) return false;
   
-  // 特定のメールアドレス
-  // if (TEST_EMAIL_ADDRESSES.includes(email.toLowerCase())) {
-  //   return true;
-  // }
+  // 特定のテストアカウントUID（必要に応じて追加）
+  const TEST_UIDS: string[] = [
+    // 'uid1',
+    // 'uid2',
+  ];
   
-  // 開発者メールアドレス（環境変数）
-  if (DEVELOPER_EMAILS.includes(email.toLowerCase())) {
-    return true;
-  }
-  
-  // ドメインベースの判定
-  // const domain = email.split('@')[1]?.toLowerCase();
-  // if (domain && TEST_EMAIL_DOMAINS.includes(domain)) {
-  //   return true;
-  // }
-  
-  return false;
+  return TEST_UIDS.includes(uid);
 }
 
 /**
@@ -70,44 +60,34 @@ export function isDevelopmentMode(): boolean {
 
 /**
  * テストアカウントのプランタイプを取得
+ * UIDベースまたはFirestoreのフラグベース
  */
-export function getTestAccountPlan(email: string | null): 'free' | 'plus' | 'pro' | 'unlimited' | null {
-  if (!email) return null;
+export function getTestAccountPlan(uid: string | null): 'free' | 'plus' | 'pro' | 'unlimited' | null {
+  if (!uid) return null;
   
-  const lowerEmail = email.toLowerCase();
+  // 特定のテストアカウントUIDのプランマッピング
+  const UID_PLAN_MAP: { [key: string]: 'free' | 'plus' | 'pro' | 'unlimited' } = {
+    // サンドボックス用のUIDを追加する場合はここに記述
+    // 'sandbox_uid_1': 'unlimited',
+    // 'test_uid_2': 'plus',
+  };
   
-  // プラン別テストアカウントをチェック
-  if (TEST_ACCOUNT_PLANS[lowerEmail]) {
-    return TEST_ACCOUNT_PLANS[lowerEmail];
-  }
-  
-  // 環境変数の開発者メールアドレスをチェック（無制限扱い）
-  if (DEVELOPER_EMAILS.includes(lowerEmail)) {
-    return 'unlimited';
-  }
-  
-  // ドメインベースのテストアカウントは無制限扱い
-  // const domain = email.split('@')[1]?.toLowerCase();
-  // if (domain && TEST_EMAIL_DOMAINS.includes(domain)) {
-  //   return 'unlimited';
-  // }
-  
-  return null;
+  return UID_PLAN_MAP[uid] || null;
 }
 
 /**
  * 無制限テストアカウントかどうかを判定
  */
-export function isUnlimitedTestAccount(email: string | null): boolean {
-  const testPlan = getTestAccountPlan(email);
+export function isUnlimitedTestAccount(uid: string | null): boolean {
+  const testPlan = getTestAccountPlan(uid);
   return testPlan === 'unlimited';
 }
 
 /**
- * 統合テストアカウント判定（複数の方法を組み合わせ）
+ * 統合テストアカウント判定（Firestore フラグベース + UIDベース）
  */
 export function isTestAccount(user: {
-  email: string | null;
+  uid?: string;
   isTestAccount?: boolean;
   role?: 'user' | 'admin' | 'tester';
 }): boolean {
@@ -116,18 +96,13 @@ export function isTestAccount(user: {
     return true;
   }
   
-  // 2. メールアドレスベース
-  if (isTestAccountByEmail(user.email)) {
+  // 2. UIDベース
+  if (user.uid && isTestAccountByUID(user.uid)) {
     return true;
   }
   
-  // 3. プラン別テストアカウント
-  if (getTestAccountPlan(user.email) !== null) {
-    return true;
-  }
-  
-  // 4. 開発環境での特別扱い（オプション）
-  if (isDevelopmentMode() && user.email?.includes('dev')) {
+  // 3. プラン別テストアカウント（UIDベース）
+  if (user.uid && getTestAccountPlan(user.uid) !== null) {
     return true;
   }
   
@@ -139,7 +114,6 @@ export function isTestAccount(user: {
  */
 export function logTestAccountInfo(user: {
   uid?: string;
-  email: string | null;
   isTestAccount?: boolean;
   role?: 'user' | 'admin' | 'tester';
 }): void {
@@ -148,10 +122,9 @@ export function logTestAccountInfo(user: {
   if (testStatus) {
     console.log('🧪 テストアカウント検出:', {
       uid: user.uid,
-      email: user.email,
       isTestAccount: user.isTestAccount,
       role: user.role,
-      emailBasedTest: isTestAccountByEmail(user.email),
+      uidBasedTest: user.uid ? isTestAccountByUID(user.uid) : false,
       developmentMode: isDevelopmentMode()
     });
   }

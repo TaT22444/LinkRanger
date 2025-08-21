@@ -13,8 +13,8 @@ import * as Application from 'expo-application';
 
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const { user, logout } = useAuth();
-  const userEmail = user?.email || 'No Email';
+  const { user, logout, getUserEmail } = useAuth();
+  const userEmail = getUserEmail() || 'No Email';
   const [appVersion, setAppVersion] = useState('');
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export const AccountScreen: React.FC = () => {
   const userPlan = useMemo(() => PlanService.getUserPlan(user), [user]);
   const planLimits = useMemo(() => PlanService.getPlanLimits(user), [user]);
   const isTestAccount = useMemo(() => PlanService.isTestAccount(user), [user]);
-  const isUnlimitedTest = useMemo(() => isUnlimitedTestAccount(user?.email || null), [user?.email]);
+  const isUnlimitedTest = useMemo(() => isUnlimitedTestAccount(user?.uid || null), [user?.uid]);
 
   // Freeプランかどうか
   const isFree = userPlan === 'free';

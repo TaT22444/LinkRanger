@@ -20,10 +20,10 @@ interface AuthContextType extends AuthState {
   logout: () => Promise<void>;
   updateUserProfile: (profile: { 
     displayName?: string; 
-    email?: string;
     avatarId?: string;
     avatarIcon?: string;
   }) => Promise<void>;
+  getUserEmail: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -49,8 +49,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setState({
           user: user ? {
             ...user,
-            // Firestoreのusernameフィールドを優先的に使用
-            username: user.username || user.email || null,
+            // Firestoreのusernameフィールドを使用（authServiceで既にFirebase Authのemailがフォールバック設定済み）
+            username: user.username || null,
             avatarId: user.avatarId,
             avatarIcon: user.avatarIcon,
           } : null,
@@ -159,7 +159,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateUserProfile = async (profile: { 
     displayName?: string; 
-    email?: string;
     avatarId?: string;
     avatarIcon?: string;
   }) => {
@@ -175,7 +174,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user: prev.user ? {
           ...prev.user,
           username: profile.displayName || prev.user.username,
-          email: profile.email || prev.user.email,
           avatarId: profile.avatarId || prev.user.avatarId,
           avatarIcon: profile.avatarIcon || prev.user.avatarIcon,
         } : null,
@@ -192,6 +190,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const getUserEmail = (): string | null => {
+    return auth.currentUser?.email || null;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -203,6 +205,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     loginWithApple,
         logout,
         updateUserProfile,
+        getUserEmail,
       }}
     >
       {children}

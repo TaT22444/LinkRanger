@@ -26,9 +26,9 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const EditProfileScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { user, updateUserProfile } = useAuth();
+  const { user, updateUserProfile, getUserEmail } = useAuth();
   
-  const [displayName, setDisplayName] = useState(user?.username || user?.email || '');
+  const [displayName, setDisplayName] = useState(user?.username || getUserEmail() || '');
   const [isLoading, setIsLoading] = useState(false);
   const [isAvatarSelectorVisible, setIsAvatarSelectorVisible] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<{ id: string; icon: string } | null>(
@@ -36,7 +36,7 @@ export const EditProfileScreen: React.FC = () => {
   );
 
   // 元の表示名を取得
-  const getOriginalDisplayName = () => user?.username || user?.email || '';
+  const getOriginalDisplayName = () => user?.username || getUserEmail() || '';
 
   // フォーカスが外れた時の処理
   const handleDisplayNameBlur = () => {
@@ -170,8 +170,9 @@ export const EditProfileScreen: React.FC = () => {
     if (user?.username) {
       return user.username.charAt(0).toUpperCase();
     }
-    if (user?.email) {
-      return user.email.charAt(0).toUpperCase();
+    const email = getUserEmail();
+    if (email) {
+      return email.charAt(0).toUpperCase();
     }
     return '?';
   };
@@ -244,7 +245,7 @@ export const EditProfileScreen: React.FC = () => {
           <View style={styles.inputGroup}>
             <Text style={styles.label}>メールアドレス</Text>
             <View style={[styles.inputContainer, styles.readOnlyInput]}>
-              <Text style={styles.readOnlyText}>{user?.email}</Text>
+              <Text style={styles.readOnlyText}>{getUserEmail()}</Text>
             </View>
           </View>
         </View>

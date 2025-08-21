@@ -350,32 +350,6 @@ export function generatePlatformTagName(platformInfo: PlatformInfo): string {
 }
 
 /**
- * デフォルトで提供するプラットフォームタグ一覧を取得
- * @returns デフォルトプラットフォームタグ名の配列
- */
-export function getDefaultPlatformTags(): string[] {
-  // よく使われるプラットフォームのみをデフォルトとして提供
-  const defaultPlatforms = [
-    'Instagram',
-    'X (Twitter)', 
-    'YouTube',
-    'Google Maps',
-    'note',
-    'Notion',
-    'TikTok',
-    'GitHub',
-    'Qiita',
-    'Zenn',
-    'Amazon',
-    'Netflix',
-    'Medium',
-    'Wikipedia'
-  ];
-  
-  return defaultPlatforms;
-}
-
-/**
  * プラットフォーム情報の一覧を取得
  * @returns 全プラットフォーム情報
  */

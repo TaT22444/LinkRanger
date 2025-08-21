@@ -70,16 +70,10 @@ export class IapService {
       isDevelopment: __DEV__
     });
 
-    // Development環境またはTestFlight環境での特別処理
-    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
-                                     (global as any).__DEV__ === true ||
-                                     !(global as any).HermesInternal);
-    
-    if (__DEV__ || isTestFlight) {
-      console.log('🛒 Development/TestFlight mode detected - using mock IAP functionality');
-      console.log('🛒 Init Environment:', { __DEV__, isTestFlight, NODE_ENV: process.env.NODE_ENV });
+    // Development環境でのみモック処理を使用
+    if (__DEV__) {
+      console.log('🛒 Development mode detected - using mock IAP functionality');
       this.initialized = true;
-      // 開発環境・TestFlight環境では初期化成功として扱う
       return;
     }
     
@@ -115,10 +109,13 @@ export class IapService {
         console.error('❌ IAP Error Message:', error.message);
         console.error('❌ IAP Error Details:', error.debugMessage || error.userInfo);
       
-        // Development Buildでは初期化失敗を許容
+        // TestFlight/本番環境での初期化失敗の詳細ログ
         if (error.code === 'E_IAP_NOT_AVAILABLE') {
-          this.initialized = true; // 開発環境では初期化成功として扱う
-          return;
+          console.error('❌ IAP not available. Check App Store Connect configuration:');
+          console.error('   1. Product IDs match exactly');
+          console.error('   2. Products are approved and available for sale');
+          console.error('   3. Contracts, tax, and banking information complete');
+          console.error('   4. Bundle ID matches App Store Connect');
         }
       }
       
@@ -202,16 +199,9 @@ export class IapService {
       throw new Error('IAP service is not initialized. Call initialize() first.');
     }
     
-    // Development環境またはTestFlight環境では模擬的なプロダクトを返す
-    // __DEV__ = false でもTestFlightでは課金が制限されることがある
-    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
-                                     (global as any).__DEV__ === true ||
-                                     !(global as any).HermesInternal);
-    
-    if (__DEV__ || isTestFlight) {
-      console.log('🛒 Development/TestFlight mode - returning mock products');
-      console.log('🛒 Environment:', { __DEV__, isTestFlight, NODE_ENV: process.env.NODE_ENV });
-      
+    // Development環境では模擬的なプロダクトを返す
+    if (__DEV__) {
+      console.log('🛒 Development mode - returning mock products');
       const mockProducts = [
         {
           productId: 'com.tat22444.wink.plus.monthly',
@@ -288,13 +278,12 @@ export class IapService {
         console.error('❌ Product fetch error message:', error.message);
         
         if (error.code === 'E_IAP_NOT_AVAILABLE') {
-          console.error('❌ IAP not available. Possible causes:');
-          console.error('   1. App Store Connect configuration incomplete');
-          console.error('   2. Product IDs do not match App Store Connect settings');
-          console.error('   3. Subscriptions not approved for sale');
-          console.error('   4. Testing on Simulator (use real device)');
-          console.error('   5. Wrong Apple Developer account or bundle ID');
-          console.error('   6. Development build (try production build or TestFlight)');
+          console.error('❌ Products not available. Check App Store Connect:');
+          console.error('   1. Products exist and approved for sale');
+          console.error('   2. Product IDs match exactly');
+          console.error('   3. Contracts, tax, and banking complete');
+          console.error('   4. Using real device (not simulator)');
+          console.error('   5. Bundle ID matches configuration');
         }
       }
       
@@ -318,22 +307,14 @@ export class IapService {
       isDevelopment: __DEV__
     });
     
-    // Development環境またはTestFlight環境では模擬的な購入成功
-    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
-                                     (global as any).__DEV__ === true ||
-                                     !(global as any).HermesInternal);
-                                     
-    if (__DEV__ || isTestFlight) {
-      console.log('🛒 Development/TestFlight mode - simulating successful purchase');
-      console.log('🛒 Purchase Environment:', { __DEV__, isTestFlight });
-      
-      // TestFlight/Development用の模擬購入処理
-      // 実際のユーザーサブスクリプション更新はスキップ
+    // Development環境では模擬的な購入成功
+    if (__DEV__) {
+      console.log('🛒 Development mode - simulating successful purchase');
       return new Promise((resolve) => {
         setTimeout(() => {
           console.log('🛒 ✅ Mock purchase completed successfully');
           resolve();
-        }, 1000); // 1秒の擬似的な処理時間
+        }, 1000);
       });
     }
     
@@ -368,13 +349,9 @@ export class IapService {
       isDevelopment: __DEV__
     });
     
-    // Development環境またはTestFlight環境では模擬的なリストア処理
-    const isTestFlight = !__DEV__ && (process.env.NODE_ENV === 'development' || 
-                                     (global as any).__DEV__ === true ||
-                                     !(global as any).HermesInternal);
-    
-    if (__DEV__ || isTestFlight) {
-      console.log('🛒 Development/TestFlight mode - simulating restore purchases (no purchases found)');
+    // Development環境では模擬的なリストア処理
+    if (__DEV__) {
+      console.log('🛒 Development mode - simulating restore purchases (no purchases found)');
       return Promise.resolve();
     }
     
