@@ -280,8 +280,19 @@ export const useLinks = (
 
         const newLinks = [optimisticLink, ...prev];
         
-
-
+        // 🔍 リンク作成後の状態確認ログ
+        console.log('🔍 useFirestore: createLink後の状態', {
+          linkId,
+          optimisticLinkStatus: optimisticLink.status,
+          optimisticLinkTagIds: optimisticLink.tagIds?.length || 0,
+          totalLinks: newLinks.length,
+          newLinkDetails: {
+            id: optimisticLink.id,
+            status: optimisticLink.status,
+            tagIds: optimisticLink.tagIds?.length || 0,
+            title: optimisticLink.title?.slice(0, 20) + '...'
+          }
+        });
         
         return newLinks;
       });

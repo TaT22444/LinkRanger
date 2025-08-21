@@ -110,7 +110,15 @@ export const TagSelectorModal: React.FC<TagSelectorModalProps> = ({
   // タグ名を取得
   const getTagName = (tagId: string): string => {
     const tag = availableTags.find(t => t.id === tagId);
-    return tag ? tag.name : tagId;
+    
+    // 🔧 タグが見つからない場合の表示を改善（IDではなく適切なフォールバック）
+    if (tag) {
+      return tag.name;
+    } else {
+      // タグが見つからない場合（削除されたタグや制限で作成されなかったタグ）
+      console.warn('⚠️ TagSelectorModal: タグが見つかりません', { tagId, availableTagsCount: availableTags.length });
+      return '削除されたタグ'; // ユーザーフレンドリーな表示
+    }
   };
 
   // 選択されたタグ数

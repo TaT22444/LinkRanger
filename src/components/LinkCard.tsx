@@ -121,7 +121,16 @@ export const LinkCard: React.FC<LinkCardProps> = ({
               {link.tagIds.slice(0, 2).map((tagId, index) => {
                 // タグIDからタグ名を取得
                 const tag = tags.find(t => t.id === tagId);
-                const displayName = tag ? tag.name : tagId; // タグが見つからない場合はIDを表示
+                
+                // 🔧 タグが見つからない場合の表示を改善（IDではなく適切なフォールバック）
+                let displayName: string;
+                if (tag) {
+                  displayName = tag.name;
+                } else {
+                  // タグが見つからない場合（削除されたタグや制限で作成されなかったタグ）
+                  console.warn('⚠️ LinkCard: タグが見つかりません', { tagId, linkId: link.id });
+                  displayName = '削除されたタグ'; // ユーザーフレンドリーな表示
+                }
                 
                 return (
                   <View key={`${tagId}-${index}`} style={styles.tag}>

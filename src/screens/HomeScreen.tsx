@@ -77,6 +77,50 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       (!link.tagIds || link.tagIds.length === 0) &&
       aiProcessingStatus[link.id] === undefined
     );
+
+    // 🔍 詳細なフィルタリングデバッグログ
+    const filteredOutLinks = links.filter(link => {
+      const statusMatch = link.status === 'pending' || link.status === 'error';
+      const noTags = !link.tagIds || link.tagIds.length === 0;
+      const notProcessing = aiProcessingStatus[link.id] === undefined;
+      
+      if (!statusMatch || !noTags || !notProcessing) {
+        return {
+          id: link.id,
+          status: link.status,
+          tagIds: link.tagIds?.length || 0,
+          statusMatch,
+          noTags,
+          notProcessing,
+          reason: !statusMatch ? 'status不適合' : !noTags ? 'タグあり' : '処理中'
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    console.log('🔍 AI Status Links分類:', {
+      総リンク数: links.length,
+      処理中リンク数: processing.length,
+      未処理リンク数: untagged.length,
+      処理中リンクIDs: processing.map(l => l.id),
+      未処理リンクIDs: untagged.map(l => ({ id: l.id, status: l.status, tagIds: l.tagIds?.length || 0 })),
+      aiProcessingStatusキー: Object.keys(aiProcessingStatus),
+      // 🔍 詳細なフィルタリング情報を追加
+      全リンク詳細: links.map(l => ({
+        id: l.id,
+        status: l.status,
+        tagIds: l.tagIds?.length || 0,
+        title: l.title?.slice(0, 20) + '...'
+      })),
+      フィルタリング条件: {
+        status条件: 'pending || error',
+        tagIds条件: 'tagIds.length === 0',
+        aiProcessingStatus条件: 'aiProcessingStatus[id] === undefined'
+      },
+      // 🔍 フィルタリングで除外されたリンクの詳細
+      除外されたリンク: filteredOutLinks
+    });
+
     return { processingLinks: processing, failedLinks: failed, untaggedLinks: untagged };
   }, [links, aiProcessingStatus]);
   
@@ -294,8 +338,8 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
     const fullLinkData = {
       ...linkData,
       userId: user.uid,
-      status: 'processing',
-      tagIds: linkData.tagIds || [],
+      status: 'pending', // 'processing' → 'pending' に修正（タグ制限時もuntaggedLinksに表示されるように）
+      tagIds: [], // 🔧 重要: リンク作成時は常に空の配列（AI処理で後から設定される）
       isBookmarked: false,
       isArchived: false,
       priority: 'medium',
@@ -304,18 +348,43 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
     try {
       const newLinkId = await createLink(fullLinkData);
 
+      // 🔍 リンク作成後の状態確認ログ
+      console.log('✅ handleAddLink: リンク作成完了', {
+        linkId: newLinkId,
+        status: fullLinkData.status,
+        hasTagIds: !!(fullLinkData.tagIds?.length),
+        totalLinks: links.length + 1 // 作成後の総リンク数
+      });
       
       // 通知は3日間未読だった場合のみ発行するため、リンク作成時の即座通知は削除
       // const newLink = { ...fullLinkData, id: newLinkId } as Link;
       // await notificationService.scheduleUnusedLinkNotification(newLink);
       
-      // 🚀 手動選択されたタグがある場合は自動AI処理をスキップするかユーザーに確認
+      // 🚀 手動選択されたタグがある場合の処理
       const hasManualTags = (linkData.tagIds || []).length > 0;
       
-      // アラートを削除し、常にAI処理を実行
-      setTimeout(() => {
-        processAITagging(newLinkId, fullLinkData);
-      }, 500);
+      if (hasManualTags) {
+        // 🔧 手動選択されたタグがある場合は、それらをリンクに設定
+        console.log('🔧 handleAddLink: 手動選択されたタグを設定', { 
+          linkId: newLinkId, 
+          manualTagIds: linkData.tagIds,
+          manualTagCount: linkData.tagIds?.length || 0
+        });
+        
+        // 手動選択されたタグをリンクに設定
+        await updateLink(newLinkId, { 
+          tagIds: linkData.tagIds || [],
+          status: 'completed' // 手動タグがある場合は完了状態
+        });
+        
+        console.log('✅ handleAddLink: 手動タグ設定完了');
+      } else {
+        // AI処理を即座に実行（タグ制限チェックを早期に行う）
+        console.log('🔄 handleAddLink: AI処理を開始', { linkId: newLinkId, hasTagIds: false });
+        setTimeout(() => {
+          processAITagging(newLinkId, fullLinkData);
+        }, 100); // 500ms → 100ms に短縮（UI応答性向上）
+      }
 
       // 追加に成功したらモーダルは閉じ、入力をリセット
       setShowAddModal(false);
@@ -331,12 +400,21 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const processAITagging = async (linkId: string, linkData: Partial<Link>) => {
     if (!user?.uid) return;
 
-    // 🔒 タグ制限の事前チェック
+    console.log('🔍 processAITagging: 開始', { linkId, hasTagIds: !!(linkData.tagIds?.length) });
+
+    // 🔒 タグ制限の事前チェック（aiProcessingStatus設定前に実行）
     const currentTagCount = userTags.length;
     const maxTags = PlanService.getMaxTags(user);
     const canCreateNewTags = maxTags === -1 || currentTagCount < maxTags;
     
     if (!canCreateNewTags) {
+      console.log('🚫 processAITagging: タグ制限に達しているためスキップ', {
+        linkId,
+        currentTagCount,
+        maxTags,
+        canCreateNewTags
+      });
+
       Alert.alert(
         'タグ制限に達しました',
         'タグの保持上限に達しているため、AIタグ付けを実行できません。\n\n既存のタグを削除するか、プランをアップグレードしてください。',
@@ -352,19 +430,14 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         ]
       );
       
-      // 処理状態を削除（untaggedLinksに表示されるようにする）
-      setAiProcessingStatus(prev => {
-        const newState = { ...prev };
-        delete newState[linkId]; // 処理中状態を削除
-        return newState;
-      });
-      
-      // リンクの状態はpendingのまま維持（untaggedLinksに表示される）
-      // エラー状態には設定しない
-      
+      // ⚠️ 重要: aiProcessingStatusには一切登録せずにreturn
+      // これによりリンクは確実にuntaggedLinksに表示される
+      console.log('📝 processAITagging: リンクはuntaggedLinksに表示される', { linkId });
       return;
     }
 
+    // タグ制限チェック通過後にのみaiProcessingStatusに登録
+    console.log('✅ processAITagging: タグ制限チェック通過、AI処理開始', { linkId });
     setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.1 }));
 
     try {
@@ -386,7 +459,8 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       );
       setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.8 }));
 
-      const finalTagIds: string[] = [...(linkData.tagIds || [])];
+      // 🔧 重要: finalTagIdsを空の配列で初期化（元のタグIDは使用しない）
+      const finalTagIds: string[] = [];
       
       // 🔒 AI生成タグの事前制限チェック
       const newTagsToCreate: string[] = [];
@@ -398,9 +472,8 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         const existingTag = userTags.find(t => t.name.trim().toLowerCase() === normalizedTagName.toLowerCase());
         
         if (existingTag) {
-          if (!finalTagIds.includes(existingTag.id)) {
-            existingTagsToAdd.push(existingTag.id);
-          }
+          // 既存タグは直接finalTagIdsに追加
+          existingTagsToAdd.push(existingTag.id);
         } else {
           newTagsToCreate.push(normalizedTagName);
         }
@@ -410,6 +483,17 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       const currentTagCount = userTags.length;
       const maxNewTags = Math.max(0, PlanService.getMaxTags(user) - currentTagCount);
       const canCreateTags = PlanService.getMaxTags(user) === -1 || maxNewTags >= newTagsToCreate.length;
+      
+      // 🔍 デバッグログ: タグ制限チェックの詳細
+      console.log('🔍 AI生成タグ制限チェック:', {
+        currentTagCount,
+        maxTags: PlanService.getMaxTags(user),
+        requestedNewTags: newTagsToCreate.length,
+        maxNewTags,
+        canCreateTags,
+        existingTagsToAdd,
+        newTagsToCreate
+      });
       
       if (!canCreateTags && newTagsToCreate.length > 0) {
         console.warn('🚫 AI生成タグ制限超過:', {
@@ -479,7 +563,23 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
 
       await updateLink(linkId, updateData);
       
-      console.log('🎉 AIタグ付与完了:', { linkId, finalTagIds });
+      // 🔍 最終的なタグIDの詳細ログ
+      console.log('🎉 AIタグ付与完了:', { 
+        linkId, 
+        finalTagIds,
+        finalTagIds詳細: finalTagIds.map(tagId => {
+          const tag = userTags.find(t => t.id === tagId);
+          return {
+            tagId,
+            tagName: tag?.name || 'タグが見つかりません',
+            tagExists: !!tag
+          };
+        }),
+        aiResponseTags: aiResponse.tags,
+        existingTagsToAdd,
+        newTagsToCreate,
+        createdTagsCount: newTagsToCreate.length
+      });
       
       // ... (Alert表示のロジックは変更なし)
       const userTagCount = (linkData.tagIds || []).length;

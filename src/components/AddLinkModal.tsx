@@ -558,7 +558,15 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
 
   const getTagName = (tagId: string): string => {
     const tag = availableTags.find(t => t.id === tagId);
-    return tag ? tag.name : tagId;
+    
+    // 🔧 タグが見つからない場合の表示を改善（IDではなく適切なフォールバック）
+    if (tag) {
+      return tag.name;
+    } else {
+      // タグが見つからない場合（削除されたタグや制限で作成されなかったタグ）
+      console.warn('⚠️ AddLinkModal: タグが見つかりません', { tagId, availableTagsCount: availableTags.length });
+      return '削除されたタグ'; // ユーザーフレンドリーな表示
+    }
   };
 
   const canSave = url.trim() && isValidUrl(url.trim()) && !loading && !fetchingMetadata && !generatingAITags;
