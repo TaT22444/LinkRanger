@@ -162,13 +162,6 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
           </View>
         </View>
 
-        {/* AI要約 */}
-        {link.summary && (
-          <View style={styles.summarySection}>
-            <Text style={styles.summaryText}>{link.summary}</Text>
-          </View>
-        )}
-
         {/* 説明 */}
         {link.description && (
           <View style={styles.descriptionSection}>
@@ -327,18 +320,6 @@ const styles = StyleSheet.create({
   date: {
     fontSize: 14,
     color: '#888',
-  },
-  
-  // AI要約セクション
-  summarySection: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  summaryText: {
-    fontSize: 14,
-    color: '#FFF',
-    lineHeight: 20,
   },
   
   // 説明セクション

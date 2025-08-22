@@ -14,24 +14,6 @@
 //   'development@linkranger.com',
 // ];
 
-// プラン別テストアカウント（メールアドレス -> プラン のマッピング）
-const TEST_ACCOUNT_PLANS: Record<string, 'free' | 'plus' | 'pro' | 'unlimited'> = {
-  // 無制限テストアカウント
-  'tatsu0823takasago@icloud.com': 'unlimited',
-  
-  // Plusプランテストアカウント
-  'plus.test@linkranger.com': 'plus',
-  'test.plus@example.com': 'plus',
-  
-  // Proプランテストアカウント
-  'pro.test@linkranger.com': 'pro',
-  'test.pro@example.com': 'pro',
-  
-  // 従来のテストアカウント（無制限扱い）
-  'test@example.com': 'unlimited',
-  'demo@linkranger.com': 'unlimited',
-  'development@linkranger.com': 'unlimited',
-};
 
 // 開発者アカウント（環境変数で制御）
 const DEVELOPER_EMAILS = process.env.EXPO_PUBLIC_DEVELOPER_EMAILS?.split(',') || [];
