@@ -680,7 +680,9 @@ export const batchService = {
     const batch = writeBatch(db);
     let validDeletions = 0;
     
-    // 各タグの所有者を確認してから削除
+    // 1. まず、削除対象のタグを使用している全リンクを一括取得
+    const allLinksToUpdate = new Map<string, Set<string>>();
+    
     for (const tagId of tagIds) {
       const tagRef = doc(db, COLLECTIONS.TAGS, tagId);
       const tagDoc = await getDoc(tagRef);
@@ -688,24 +690,36 @@ export const batchService = {
       if (tagDoc.exists()) {
         const tagData = tagDoc.data();
         if (tagData.userId === userId) {
-          // タグを使用しているリンクからタグIDを削除
+          // タグを使用しているリンクを取得
           const linksWithTag = await tagService.getLinksWithTag(userId, tagId);
+          
+          // 各リンクの更新対象タグIDを管理
           linksWithTag.forEach(link => {
-            const linkRef = doc(db, COLLECTIONS.LINKS, link.id);
-            const updatedTagIds = link.tagIds.filter(id => id !== tagId);
-            batch.update(linkRef, { 
-              tagIds: updatedTagIds,
-              updatedAt: serverTimestamp() 
-            });
+            if (!allLinksToUpdate.has(link.id)) {
+              // リンクの現在のタグIDをコピー
+              allLinksToUpdate.set(link.id, new Set(link.tagIds));
+            }
+            // 削除対象のタグIDを除去
+            allLinksToUpdate.get(link.id)!.delete(tagId);
           });
           
-          // タグを削除
+          // タグを削除対象に追加
           batch.delete(tagRef);
           validDeletions++;
         }
       }
     }
     
+    // 2. 更新されたリンクを一括更新
+    allLinksToUpdate.forEach((updatedTagIds, linkId) => {
+      const linkRef = doc(db, COLLECTIONS.LINKS, linkId);
+      batch.update(linkRef, { 
+        tagIds: Array.from(updatedTagIds),
+        updatedAt: serverTimestamp() 
+      });
+    });
+    
+    // 3. バッチ処理を実行
     if (validDeletions > 0) {
       await batch.commit();
       // 統計更新

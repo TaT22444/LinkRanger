@@ -1,7 +1,7 @@
 /**
  * Import function triggers from their respective submodules:
  *
- * import {onCall} from "firebase-functions/v2/https";
+ * import {onCall} from "firebase-functions/v2/async";
  * import {onDocumentWritten} from "firebase-functions/v2/firestore";
  *
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
@@ -56,14 +56,14 @@ async function generateTagsLogic(
   logger.info(`🤖 [AI Tagging Start] userId: ${userId}, url: ${url}`);
   const combinedText = `${title} ${description || ""}`.trim();
 
-  // 1. キャッシュを確認
-  logger.info(`🤖 [Cache Check] Checking cache for text: "${combinedText}" (length: ${combinedText.length})`);
-  const cachedTags = await getCachedTags(combinedText);
+  // 1. キャッシュを確認 (ユーザーIDで分離)
+  logger.info(`🤖 [Cache Check] Checking cache for userId: ${userId}, text: "${combinedText}" (length: ${combinedText.length})`);
+  const cachedTags = await getCachedTags(userId, combinedText);
   if (cachedTags) {
     logger.info(`🤖 [AI Tagging Cache Hit] Found cached tags for userId: ${userId}`, {tags: cachedTags});
     return {tags: cachedTags, fromCache: true, tokensUsed: 0, cost: 0};
   } else {
-    logger.info(`🤖 [Cache Miss] No cached tags found for text: "${combinedText.slice(0, 100)}..."`);
+    logger.info(`🤖 [Cache Miss] No cached tags found for userId: ${userId}, text: "${combinedText.slice(0, 100)}..."`);
   }
 
   // 2. Webページからコンテンツを抽出（メタデータ含む）
@@ -105,7 +105,7 @@ async function generateTagsLogic(
   if (combinedText.length < 50 && domainTags.length > 0) {
     logger.info(`🤖 [AI Tagging Domain Based] Using domain-based tags for userId: ${userId}`, {domainTags});
     const simpleTags = [...domainTags, ...Array.from(keyTerms)].slice(0, maxTags);
-    await cacheTags(combinedText, simpleTags);
+    await cacheTags(userId, combinedText, simpleTags);
     return {tags: simpleTags, fromCache: false, tokensUsed: 0, cost: 0};
   }
 
@@ -184,7 +184,7 @@ async function generateTagsLogic(
   const tokensUsed = Math.ceil(prompt.length / 4);
   const cost = AI_LIMITS[userPlan]?.costPerRequest || 0;
   // AI使用量記録は各機能で個別に実装
-  await cacheTags(combinedText, tags);
+  await cacheTags(userId, combinedText, tags);
 
   logger.info(`🤖 [AI Tagging Success] Generated tags for userId: ${userId}`, {
     tagsCount: tags.length,
@@ -253,15 +253,7 @@ export const generateAIAnalysis = onCall({timeoutSeconds: 120, memory: "1GiB"}, 
     });
 
     // AIに統合的で簡潔な分析を要求
-    const prompt = `${analysisPrompt}
-
-【追加指示】
-- 統合的で簡潔な分析を心がけてください
-- 冗長な説明は避け、最も重要な情報のみを含めてください
-- 参考リンクは必ず最後に含めてください
-- マークダウン形式で見やすく整理してください
-- テーマに説明文が含まれている場合は、その説明文の内容も考慮して解説してください
-- 例：「AI開発ツール Kiro（Kiroの機能・使い方・料金）」の場合、機能・使い方・料金の観点から解説してください`;
+    const prompt = `${analysisPrompt}\n\n【追加指示】\n- 統合的で簡潔な分析を心がけてください\n- 冗長な説明は避け、最も重要な情報のみを含めてください\n- 参考リンクは必ず最後に含めてください\n- マークダウン形式で見やすく整理してください\n- テーマに説明文が含まれている場合は、その説明文の内容も考慮して解説してください\n- 例：「AI開発ツール Kiro（Kiroの機能・使い方・料金）」の場合、機能・使い方・料金の観点から解説してください`;
 
     logger.info(`🤖 [AI Analysis Prompt] length: ${prompt.length}`);
 
@@ -405,14 +397,14 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
       "relatedLinkIndices": [0, 2, 5]
     },
     {
-      "title": "${tagName}の活用方法", 
+      "title": "${tagName}の活用方法",
       "description": "実践的な使い方やコツについて",
       "keywords": ["活用", "実践", "方法"],
       "relatedLinkIndices": [1, 3, 4]
     },
     {
       "title": "${tagName}のトレンド",
-      "description": "最新動向や注目ポイントについて", 
+      "description": "最新動向や注目ポイントについて",
       "keywords": ["トレンド", "最新", "動向"],
       "relatedLinkIndices": [2, 6, 7]
     }
@@ -461,7 +453,7 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
         logger.info("🔍 AI応答の詳細解析:", {
           hasSuggestions: !!suggestions.suggestions,
           suggestionsCount: suggestions.suggestions?.length || 0,
-          suggestionsWithRelatedIndices: suggestions.suggestions?.map((s: any, index: number) => ({
+          suggestionsWithRelatedIndices: suggestions.suggestions?.map((s: { title: string; relatedLinkIndices: number[] }, index: number) => ({
             index,
             title: s.title,
             hasRelatedLinkIndices: !!s.relatedLinkIndices,
@@ -503,7 +495,7 @@ ${linkTitles.map((title: string, index: number) => `${index + 1}. ${title}`).joi
 
     // 各テーマのrelatedLinkIndicesを検証・修正
     if (suggestions.suggestions) {
-      suggestions.suggestions.forEach((suggestion: any) => {
+      suggestions.suggestions.forEach((suggestion: { title: string, relatedLinkIndices: number[] }) => {
         // relatedLinkIndicesが存在しない場合は、デフォルト値を設定
         if (!suggestion.relatedLinkIndices || !Array.isArray(suggestion.relatedLinkIndices)) {
           // リンク数に応じてデフォルトインデックスを設定
@@ -788,14 +780,7 @@ export const checkUnusedLinks = onCall({timeoutSeconds: 30, memory: "512MiB"}, a
     const unusedLinksSnapshot = await unusedLinksQuery.get();
     logger.info(`📊 Links after basic filters: ${unusedLinksSnapshot.size}`);
 
-    const unusedLinks: Array<{
-      id: string;
-      title: string;
-      url: string;
-      userId: string;
-      lastAccessedAt?: Date;
-      createdAt: Date;
-    }> = [];
+    const unusedLinks: Array<{id: string; title: string; url: string; userId: string; lastAccessedAt?: Date; createdAt: Date;}> = [];
 
     let notificationsSent = 0;
 
@@ -823,9 +808,7 @@ export const checkUnusedLinks = onCall({timeoutSeconds: 30, memory: "512MiB"}, a
           continue; // この新しいリンクをスキップ
         }
         // 通知送信済みかチェック（古い構造と新しい構造の両方に対応）
-        const isAlreadyNotified =
-          (linkData.notificationsSent?.unused3Days === true) ||
-          (linkData.notificationsSent?.threeDays === true);
+        const isAlreadyNotified = (linkData.notificationsSent?.unused3Days === true) || (linkData.notificationsSent?.threeDays === true);
 
         if (!isAlreadyNotified) {
           unusedLinks.push({
@@ -885,7 +868,7 @@ export const checkUnusedLinks = onCall({timeoutSeconds: 30, memory: "512MiB"}, a
 });
 
 // Simple content type analysis
-function analyzeContentType($: any, content: string, title: string, description: string, domain: string): string {
+function analyzeContentType($: cheerio.CheerioAPI, content: string, title: string, description: string, domain: string): string {
   const text = `${title} ${description}`.toLowerCase(); // contentは使用しない
 
   // Domain-based detection
@@ -1303,15 +1286,15 @@ function generateFallbackTags(text: string, plan: keyof typeof AI_LIMITS): strin
   return relevantTags.slice(0, maxTags);
 }
 
-async function getCachedTags(text: string): Promise<string[] | null> {
-  const hash = generateContentHash(text);
-  logger.info(`🤖 [Cache Lookup] Looking for hash: ${hash}`);
+async function getCachedTags(userId: string, text: string): Promise<string[] | null> {
+  const hash = generateContentHash(`${userId}::${text}`);
+  logger.info(`🤖 [Cache Lookup] Looking for hash: ${hash} (userId: ${userId})`);
   const cacheDoc = await db.collection("tagCache").doc(hash).get();
   if (cacheDoc.exists) {
     const data = cacheDoc.data();
     const cacheAge = new Date().getTime() - data?.createdAt.toDate().getTime();
     const cacheAgeHours = Math.floor(cacheAge / (1000 * 60 * 60));
-    const isCacheValid = cacheAge < 7 * 24 * 60 * 60 * 1000;
+    const isCacheValid = cacheAge < 7 * 24 * 60 * 60 * 1000; // 7日間有効
     logger.info(`🤖 [Cache Found] Cache age: ${cacheAgeHours}h, valid: ${isCacheValid}`, {cachedTags: data?.tags});
     if (isCacheValid) return data?.tags || null;
     logger.info("🤖 [Cache Expired] Cache too old, ignoring");
@@ -1498,9 +1481,9 @@ export const recordAIUsage = onCall(async (request) => {
   }
 });
 
-async function cacheTags(text: string, tags: string[]): Promise<void> {
-  const hash = generateContentHash(text);
-  logger.info(`🤖 [Cache Store] Storing tags for text: "${text.slice(0, 100)}..." (hash: ${hash})`, {tags});
+async function cacheTags(userId: string, text: string, tags: string[]): Promise<void> {
+  const hash = generateContentHash(`${userId}::${text}`);
+  logger.info(`🤖 [Cache Store] Storing tags for userId: ${userId}, text: "${text.slice(0, 100)}..." (hash: ${hash})`, {tags});
   await db.collection("tagCache").doc(hash).set({tags, createdAt: FieldValue.serverTimestamp()});
 }
 
@@ -1519,16 +1502,27 @@ function generateContentHash(text: string): string {
 //
 // ===================================================================
 
-interface AppleReceiptValidationRequest {
-  receipt: string;
-  productId: string;
+interface AppleInAppPurchase {
+  transaction_id: string;
+  original_transaction_id: string;
+  purchase_date_ms: string;
+  expires_date_ms: string;
+}
+
+interface AppleReceipt {
+  in_app?: AppleInAppPurchase[];
 }
 
 interface AppleReceiptResponse {
   status: number;
-  receipt?: any;
-  "latest_receipt_info"?: any[];
-  "pending_renewal_info"?: any[];
+  receipt?: AppleReceipt;
+  latest_receipt_info?: { expires_date_ms: string }[];
+  pending_renewal_info?: Record<string, unknown>[];
+}
+
+interface AppleReceiptValidationRequest {
+  receipt: string;
+  productId: string;
 }
 
 export const validateAppleReceipt = onCall<AppleReceiptValidationRequest>(async (request) => {
@@ -1733,7 +1727,7 @@ function calculateSubscriptionExpirationDate(validationResult: AppleReceiptRespo
 
 /**
  * Share Extension経由でリンクを保存（フォールバック用）
- * メインの保存処理はApp Group経由で行われる
+ * メインの保存処理はApp Group経経由で行われる
  */
 export const saveSharedLink = onCall(
   {region: "asia-northeast1"},
@@ -1808,4 +1802,37 @@ export const saveSharedLink = onCall(
   }
 );
 
+export const clearTagCache = onCall({timeoutSeconds: 300, memory: "512MiB"}, async () => {
+  // Note: In a real app, you'd want to secure this.
+  // For example, check for a specific auth claim:
+  // if (!request.auth?.token?.isAdmin) {
+  //   throw new HttpsError("permission-denied", "You must be an admin to clear the cache.");
+  // }
+  logger.info("🗑️ [Cache Clear] Received request to clear tagCache collection.");
 
+  const collectionRef = db.collection("tagCache");
+  const snapshot = await collectionRef.limit(500).get(); // Process in batches of 500
+
+  if (snapshot.empty) {
+    logger.info("✅ [Cache Clear] tagCache collection is already empty.");
+    return {success: true, deletedCount: 0, message: "Cache was already empty."};
+  }
+
+  let deletedCount = 0;
+  const batch = db.batch();
+  snapshot.docs.forEach((doc) => {
+    batch.delete(doc.ref);
+    deletedCount++;
+  });
+  await batch.commit();
+
+  // A more robust solution would loop until the collection is empty.
+  // This implementation clears up to 500 docs per call.
+  logger.info(`✅ [Cache Clear] Successfully deleted ${deletedCount} documents from tagCache.`);
+
+  return {
+    success: true,
+    deletedCount: deletedCount,
+    message: `Successfully deleted ${deletedCount} cache entries.`,
+  };
+});

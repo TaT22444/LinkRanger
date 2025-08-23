@@ -300,30 +300,6 @@ export const TagDetailScreen: React.FC = () => {
     }
   }, [mergeTargetTag, user?.uid, createOrGetTag, tag, tagLinks, updateLink, deleteTagById, navigation]);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   const renderLinkItem = ({ item }: { item: Link }) => {
     const linkTags = tags.filter(t => item.tagIds.includes(t.id));
     
@@ -340,10 +316,6 @@ export const TagDetailScreen: React.FC = () => {
       </View>
     );
   };
-
-
-
-
 
   return (
     <SafeAreaView style={styles.container}>
