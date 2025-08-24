@@ -307,6 +307,8 @@ PODS:
     - ExpoModulesCore
   - ExpoLinking (7.1.7):
     - ExpoModulesCore
+  - ExpoMailComposer (14.1.6):
+    - ExpoModulesCore
   - ExpoModulesCore (2.5.0):
     - DoubleConversion
     - glog
@@ -2101,6 +2103,7 @@ DEPENDENCIES:
   - ExpoHead (from `../node_modules/expo-router/ios`)
   - ExpoKeepAwake (from `../node_modules/expo-keep-awake/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
+  - ExpoMailComposer (from `../node_modules/expo-mail-composer/ios`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
   - ExpoShareExtension (from `../node_modules/expo-share-extension/ios`)
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
@@ -2243,6 +2246,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-keep-awake/ios"
   ExpoLinking:
     :path: "../node_modules/expo-linking/ios"
+  ExpoMailComposer:
+    :path: "../node_modules/expo-mail-composer/ios"
   ExpoModulesCore:
     :path: "../node_modules/expo-modules-core"
   ExpoShareExtension:
@@ -2433,6 +2438,7 @@ SPEC CHECKSUMS:
   ExpoHead: a7b66cbaeeb51f4a85338d335a0f5467e29a2c90
   ExpoKeepAwake: bf0811570c8da182bfb879169437d4de298376e7
   ExpoLinking: d5c183998ca6ada66ff45e407e0f965b398a8902
+  ExpoMailComposer: 16452ec9f8c36ee4a99f23dd8204233095878402
   ExpoModulesCore: 9c1392e0564a7d937cab9390c3668a0573357cb3
   ExpoShareExtension: d78cdf4539e76f862b0193b58ea4bc1309e70a03
   ExpoWebBrowser: dc39a88485f007e61a3dff05d6a75f22ab4a2e92

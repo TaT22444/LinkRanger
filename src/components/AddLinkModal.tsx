@@ -99,51 +99,50 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
 
   // モーダル表示/非表示の状態管理とアニメーション
   useEffect(() => {
-    if (visible) {
-      console.log('AddLinkModal: showing modal');
+    if (visible && !isVisible) {
+      // モーダルを開く
       setIsVisible(true);
-      
-      // アニメーション値を初期状態にリセット
-      fadeAnim.setValue(0);
-      translateY.setValue(screenHeight);
-      modalTranslateY.setValue(0);
-      gestureTranslateY.setValue(0);
+      setUrl(initialUrl);
+      resetForm();
       
       // アニメーション開始
       Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 300,
           useNativeDriver: true,
         }),
-        Animated.spring(translateY, {
-          toValue: 0,
-          tension: 65,
-          friction: 11,
-          useNativeDriver: true,
-        }),
       ]).start();
-    } else {
-      console.log('AddLinkModal: hiding modal');
       
-      // 非表示アニメーション
+      // URL入力フィールドにフォーカス
+      setTimeout(() => {
+        urlRef.current?.focus();
+      }, 350);
+      
+    } else if (!visible && isVisible) {
+      // モーダルを閉じる
       Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
         Animated.timing(translateY, {
           toValue: screenHeight,
           duration: 300,
           useNativeDriver: true,
         }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
       ]).start(() => {
         setIsVisible(false);
-        setIsExpanded(false);
+        resetForm();
       });
     }
-  }, [visible]);
+  }, [visible, initialUrl]); // initialUrlも依存配列に追加
 
   // 展開/縮小状態の変更時のアニメーション
   useEffect(() => {

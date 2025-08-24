@@ -6,7 +6,8 @@ import {
   LinkFilter, 
   LinkSort, 
   PaginatedResponse,
-  LinkWithTags 
+  LinkWithTags,
+  User 
 } from '../types';
 import { 
   linkService, 
@@ -14,6 +15,15 @@ import {
   folderService, 
   userService 
 } from '../services';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  getDoc, 
+  doc 
+} from 'firebase/firestore';
+import { db } from '../config/firebase';
 
 // 🚀 グローバルキャッシュシステム
 interface CacheEntry<T> {
@@ -22,9 +32,10 @@ interface CacheEntry<T> {
   isSubscribed: boolean;
 }
 
-const globalCache = {
+export const globalCache = {
   links: new Map<string, CacheEntry<Link[]>>(),
   tags: new Map<string, CacheEntry<Tag[]>>(),
+  users: new Map<string, CacheEntry<User>>(),
   activeSubscriptions: new Map<string, () => void>()
 };
 
@@ -339,6 +350,23 @@ export const useLinks = (
     }
   }, [links]);
 
+  const bulkDeleteLinks = useCallback(async (linkIds: string[], userId: string) => {
+    // Optimistic Update: 即座にUIからリンクを削除
+    const originalLinks = links;
+    setLinks(prev => prev.filter(link => !linkIds.includes(link.id)));
+    
+    try {
+      // batchServiceを使用して一括削除
+      const { batchService } = await import('../services/firestoreService');
+      await batchService.bulkDeleteLinks(linkIds, userId);
+    } catch (err) {
+      // エラー時にロールバック
+      setLinks(originalLinks);
+      setError(err instanceof Error ? err.message : 'Failed to bulk delete links');
+      throw err;
+    }
+  }, [links]);
+
   return {
     links,
     loading,
@@ -346,6 +374,7 @@ export const useLinks = (
     createLink,
     updateLink,
     deleteLink,
+    bulkDeleteLinks,
     hasMore,
     isLoadingMore,
     loadMore,
@@ -476,17 +505,52 @@ export const useTags = (userId: string | null) => {
   }, [userId]);
 
   const createOrGetTag = useCallback(async (tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual') => {
-    if (!userId) return '';
-    
+    if (!userId) throw new Error('User ID is not available');
+
+    const normalizedTagName = tagName.trim();
+    if (!normalizedTagName) throw new Error('Tag name cannot be empty');
+
+    // 既存のタグを検索（大文字小文字を区別しない）
+    const existingTag = tags.find(tag => tag.name.toLowerCase() === normalizedTagName.toLowerCase());
+    if (existingTag) {
+      return existingTag.id;
+    }
+
+    // 楽観的更新用の仮IDとオブジェクト
+    const optimisticId = `optimistic-${Date.now()}`;
+    const newTag: Tag = {
+      id: optimisticId,
+      name: normalizedTagName,
+      userId: userId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      type: type,
+      linkCount: 0,
+    };
+
+    // 楽観的更新：即座にUIに反映
+    setTags(prev => [...prev, newTag]);
+
     try {
-      const tagId = await tagService.createOrGetTag(userId, tagName, type);
-      return tagId;
+      // サーバーにタグ作成をリクエスト
+      const actualTagId = await tagService.createOrGetTag(userId, normalizedTagName, type);
+      
+      // サーバーから返された実際のIDでUIを更新
+      setTags(prev => prev.map(tag => 
+        tag.id === optimisticId ? { ...newTag, id: actualTagId } : tag
+      ));
+      
+      return actualTagId;
     } catch (err) {
-      console.error('useTags: error creating tag:', err);
+      console.error('useTags: error creating tag, rolling back optimistic update', err);
+      // エラー時に楽観的更新をロールバック
+      setTags(prev => prev.filter(tag => tag.id !== optimisticId));
+      
+      // エラーを呼び出し元に伝える
       setError(err instanceof Error ? err.message : 'Failed to create tag');
       throw err;
     }
-  }, [userId]);
+  }, [userId, tags]);
 
   const deleteTag = useCallback(async (tagId: string) => {
     if (!userId) return;
@@ -794,4 +858,147 @@ export const useUserStats = (userId: string | null) => {
   }, [userId]);
 
   return { stats, loading };
+}; 
+
+// ===== ユーザー情報関連のHooks =====
+export const useUser = (userId: string | null) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
+    const cacheKey = `user-${userId}`;
+    console.log('🔄 useUser: 初期化', {
+      userId,
+      shouldUseRealtime: cacheUtils.shouldUseRealtime(),
+      activeSubscriptions: globalCache.activeSubscriptions.size
+    });
+
+    // キャッシュチェック
+    const cachedEntry = globalCache.users?.get(cacheKey);
+    if (cacheUtils.isValid(cachedEntry)) {
+      console.log('💾 useUser: キャッシュヒット', {
+        userId,
+        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60))
+      });
+      setUser(cachedEntry!.data);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // リアルタイム監視
+    if (cacheUtils.shouldUseRealtime()) {
+      console.log('📡 useUser: リアルタイム監視開始', {
+        userId,
+        activeSubscriptions: globalCache.activeSubscriptions.size
+      });
+
+      try {
+        const q = query(
+          collection(db, 'users'),
+          where('__name__', '==', userId)
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          if (snapshot.empty) {
+            console.log('❌ useUser: ユーザードキュメントが見つかりません', { userId });
+            setUser(null);
+            setLoading(false);
+            setError('ユーザーが見つかりません');
+            return;
+          }
+
+          const userDoc = snapshot.docs[0];
+          const userData = userDoc.data() as User;
+          
+          console.log('📥 useUser: リアルタイム更新受信', {
+            userId,
+            plan: userData.subscription?.plan,
+            status: userData.subscription?.status
+          });
+          
+          setUser(userData);
+          setLoading(false);
+          setError(null);
+          
+          // キャッシュ更新
+          if (!globalCache.users) {
+            globalCache.users = new Map<string, CacheEntry<User>>();
+          }
+          globalCache.users.set(cacheKey, {
+            data: userData,
+            timestamp: Date.now(),
+            isSubscribed: true
+          });
+          cacheUtils.cleanupCache(globalCache.users);
+        }, (error) => {
+          console.error('❌ useUser: リアルタイム監視エラー', error);
+          setError(error.message);
+          setLoading(false);
+        });
+
+        // サブスクリプション管理
+        globalCache.activeSubscriptions.set(cacheKey, unsubscribe);
+
+        // クリーンアップ
+        return () => {
+          console.log('🧹 useUser: リアルタイム監視停止', {
+            userId,
+            remainingSubscriptions: globalCache.activeSubscriptions.size - 1
+          });
+          unsubscribe();
+          globalCache.activeSubscriptions.delete(cacheKey);
+        };
+      } catch (err) {
+        console.error('❌ useUser: リアルタイム監視エラー', err);
+        setError(err instanceof Error ? err.message : 'Failed to subscribe to user');
+        setLoading(false);
+      }
+    } else {
+      // 一回限り読み取り（高負荷時）
+      console.log('📖 useUser: one-time read', { userId });
+      
+      const fetchUser = async () => {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', userId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as User;
+            setUser(userData);
+            
+            // キャッシュ更新
+            if (!globalCache.users) {
+              globalCache.users = new Map<string, CacheEntry<User>>();
+            }
+            globalCache.users.set(cacheKey, {
+              data: userData,
+              timestamp: Date.now(),
+              isSubscribed: false
+            });
+          } else {
+            setUser(null);
+            setError('ユーザーが見つかりません');
+          }
+        } catch (err) {
+          console.error('❌ useUser: ユーザー取得エラー', err);
+          setError(err instanceof Error ? err.message : 'Failed to fetch user');
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      fetchUser();
+    }
+  }, [userId]);
+
+  return { user, loading, error };
 }; 

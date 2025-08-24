@@ -19,7 +19,7 @@ interface AIUsageData {
     daily: { used: number; limit: number; };
     cost: { spent: number; budget: number; };
   };
-  plan: 'guest' | 'free' | 'pro';
+  plan: 'guest' | 'free' | 'plus';
   recommendations: string[];
 }
 
@@ -27,7 +27,7 @@ interface AIUsageDashboardProps {
   visible: boolean;
   onClose: () => void;
   userId: string;
-  userPlan: 'guest' | 'free' | 'pro';
+  userPlan: 'guest' | 'free' | 'plus';
 }
 
 // Cloud Functions
@@ -55,16 +55,16 @@ export const AIUsageDashboard: React.FC<AIUsageDashboardProps> = ({
       const mockData: AIUsageData = {
         current: {
           monthly: { 
-            used: userPlan === 'free' ? 8 : userPlan === 'pro' ? 45 : 0, 
-            limit: userPlan === 'free' ? 20 : userPlan === 'pro' ? 200 : 0 
+            used: userPlan === 'free' ? 8 : userPlan === 'plus' ? 45 : 0, 
+            limit: userPlan === 'free' ? 20 : userPlan === 'plus' ? 200 : 0 
           },
           daily: { 
-            used: userPlan === 'free' ? 2 : userPlan === 'pro' ? 5 : 0, 
-            limit: userPlan === 'free' ? 3 : userPlan === 'pro' ? 15 : 0 
+            used: userPlan === 'free' ? 2 : userPlan === 'plus' ? 5 : 0, 
+            limit: userPlan === 'free' ? 3 : userPlan === 'plus' ? 15 : 0 
           },
           cost: { 
-            spent: userPlan === 'free' ? 0.20 : userPlan === 'pro' ? 1.25 : 0, 
-            budget: userPlan === 'free' ? 0.50 : userPlan === 'pro' ? 5.00 : 0 
+            spent: userPlan === 'free' ? 0.20 : userPlan === 'plus' ? 1.25 : 0, 
+            budget: userPlan === 'free' ? 0.50 : userPlan === 'plus' ? 5.00 : 0 
           },
         },
         plan: userPlan,
@@ -86,7 +86,7 @@ export const AIUsageDashboard: React.FC<AIUsageDashboardProps> = ({
     }
   }, [visible, userId, userPlan]);
 
-  const generateRecommendations = (plan: 'guest' | 'free' | 'pro'): string[] => {
+  const generateRecommendations = (plan: 'guest' | 'free' | 'plus'): string[] => {
     switch (plan) {
       case 'guest':
         return [

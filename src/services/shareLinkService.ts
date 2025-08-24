@@ -109,6 +109,22 @@ class ShareLinkService {
         userId: user.uid
       });
 
+      // 1日リンク追加制限チェック
+      const { PlanService } = await import('./planService');
+      try {
+        const todayLinksAdded = await PlanService.getTodayLinksAddedCount(user.uid);
+        if (!PlanService.canCreateLinkPerDay(user, todayLinksAdded)) {
+          const limitMessage = PlanService.getLimitExceededMessage(user, 'linksPerDay');
+          Alert.alert('1日の制限に達しました', limitMessage, [
+            { text: 'OK' }
+          ]);
+          return null;
+        }
+      } catch (error) {
+        console.error('❌ Share Extension: 1日制限チェックエラー:', error);
+        // エラー時は制限チェックをスキップして続行
+      }
+
       // リンクデータを作成
       const linkData = {
         userId: user.uid,
@@ -125,6 +141,15 @@ class ShareLinkService {
 
       // リンクを作成
       const linkId = await linkService.createLink(linkData);
+
+      // 今日のリンク追加数を増加
+      try {
+        await PlanService.incrementTodayLinksAdded(user.uid);
+        console.log('✅ Share Extension: 今日のリンク追加数を増加完了');
+      } catch (error) {
+        console.error('❌ Share Extension: 今日のリンク追加数増加エラー:', error);
+        // エラー時は処理を続行（統計のみの問題）
+      }
       
       console.log('✅ 共有リンク保存完了:', {
         linkId,

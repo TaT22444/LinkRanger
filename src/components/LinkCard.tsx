@@ -23,6 +23,7 @@ interface LinkCardProps {
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: () => void;
+  isDeleting?: boolean;
 }
 
 export const LinkCard: React.FC<LinkCardProps> = ({
@@ -35,6 +36,7 @@ export const LinkCard: React.FC<LinkCardProps> = ({
   isSelectionMode = false,
   isSelected = false,
   onToggleSelection,
+  isDeleting = false,
 }) => {
   const handleOpenExternalLink = async (e: any) => {
     e.stopPropagation(); // カードのタップイベントを阻止
@@ -81,9 +83,13 @@ export const LinkCard: React.FC<LinkCardProps> = ({
 
   return (
     <TouchableOpacity
-      style={styles.container}
+      style={[
+        styles.container,
+        isDeleting && styles.deletingContainer
+      ]}
       onPress={isSelectionMode ? onToggleSelection : onPress}
       activeOpacity={0.7}
+      disabled={isDeleting}
     >
       <View style={styles.content}>
         {/* 選択モード時のチェックボックス */}
@@ -285,5 +291,9 @@ const styles = StyleSheet.create({
   checkboxSelected: {
     backgroundColor: '#8A2BE2',
     borderColor: '#8A2BE2',
+  },
+  deletingContainer: {
+    backgroundColor: 'rgba(139, 0, 0, 0.05)', // より薄い赤い背景色
+    borderColor: 'rgba(64, 64, 64, 0.4)', // グレー寄りの枠線
   },
 }); 

@@ -8,9 +8,6 @@ import {
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Platform } from 'react-native';
 import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signInAnonymously, 
   signOut, 
   onAuthStateChanged,
   updateProfile as updateFirebaseProfile,
@@ -82,112 +79,7 @@ interface UpdateUserProfileParams {
   avatarIcon?: string;
 }
 
-// ユーザー登録（メールアドレス）
-export const registerWithEmail = async (email: string, password: string): Promise<User> => {
-  try {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const firebaseUser = userCredential.user;
-    
-    // ユーザープロフィールを作成
-    await createUserProfile(firebaseUser);
-    
-    // 作成されたユーザー情報を取得して返す
-    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-    if (userDoc.exists()) {
-      return userDoc.data() as User;
-    } else {
-      throw new Error('Failed to retrieve created user profile');
-    }
-  } catch (error) {
-    console.error('Registration error:', error);
-    throw error;
-  }
-};
 
-// ログイン（メールアドレス）
-export const loginWithEmail = async (email: string, password: string): Promise<User> => {
-  try {
-    console.log('📧 メールログイン開始:', email);
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const firebaseUser = userCredential.user;
-    console.log('✅ Firebase認証完了:', firebaseUser.uid);
-    
-    // Firestoreからユーザー情報を取得
-    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-    if (userDoc.exists()) {
-      console.log('✅ 既存ユーザー情報取得');
-      return userDoc.data() as User;
-    } else {
-      console.log('📝 ユーザープロフィール作成中...');
-      // ドキュメントが存在しない場合は作成（既存ユーザーでプロフィールが無い場合）
-      await createUserProfile(firebaseUser);
-      const newUserDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-      console.log('✅ ユーザープロフィール作成完了');
-      return newUserDoc.data() as User;
-    }
-  } catch (error: any) {
-    console.error('❌ メールログインエラー:', error);
-    
-    if (error.code) {
-      switch (error.code) {
-        case 'auth/api-key-not-valid':
-          throw new Error('Firebase APIキーが無効です。設定を確認してください。');
-        case 'auth/user-not-found':
-          throw new Error('このメールアドレスは登録されていません。');
-        case 'auth/wrong-password':
-          throw new Error('パスワードが正しくありません。');
-        case 'auth/too-many-requests':
-          throw new Error('リクエストが多すぎます。しばらく待ってから再試行してください。');
-        case 'auth/network-request-failed':
-          throw new Error('ネットワークエラーが発生しました。インターネット接続を確認してください。');
-        default:
-          throw new Error(`ログインエラー: ${error.message || error.code}`);
-      }
-    }
-    
-    throw error;
-  }
-};
-
-// 匿名ログイン
-export const loginAnonymously = async (): Promise<User> => {
-  try {
-    console.log('👤 匿名ログイン開始');
-    const userCredential = await signInAnonymously(auth);
-    const firebaseUser = userCredential.user;
-    console.log('✅ Firebase匿名認証完了:', firebaseUser.uid);
-    
-    // ユーザープロフィールを作成
-    console.log('📝 匿名ユーザープロフィール作成中...');
-    await createUserProfile(firebaseUser);
-    
-    // 作成されたユーザー情報を取得して返す
-    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-    if (userDoc.exists()) {
-      console.log('✅ 匿名ユーザープロフィール作成完了');
-      return userDoc.data() as User;
-    } else {
-      throw new Error('匿名ユーザープロフィールの取得に失敗しました');
-    }
-  } catch (error: any) {
-    console.error('❌ 匿名ログインエラー:', error);
-    
-    if (error.code) {
-      switch (error.code) {
-        case 'auth/api-key-not-valid':
-          throw new Error('Firebase APIキーが無効です。設定を確認してください。');
-        case 'auth/network-request-failed':
-          throw new Error('ネットワークエラーが発生しました。インターネット接続を確認してください。');
-        case 'auth/too-many-requests':
-          throw new Error('リクエストが多すぎます。しばらく待ってから再試行してください。');
-        default:
-          throw new Error(`匿名ログインエラー: ${error.message || error.code}`);
-      }
-    }
-    
-    throw error;
-  }
-};
 
 // Googleログイン
 export const signInWithGoogle = async (): Promise<User> => {

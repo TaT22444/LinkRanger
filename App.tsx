@@ -1,5 +1,5 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, AppState, AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
@@ -117,6 +117,7 @@ const parseSharedLink = (incomingUrl: string): SharedLinkData | null => {
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const [sharedLinkData, setSharedLinkData] = useState<SharedLinkData | null>(null);
+  const navigationRef = useRef<any>(null);
 
   // Deep Link の初回URL & ランタイムイベントの両方を処理（既存）
   useEffect(() => {
@@ -133,6 +134,7 @@ const AppContent: React.FC = () => {
           if (data) {
             console.log('🔗 初期URLから共有リンク受信:', data);
             setSharedLinkData(data);
+            // 初期URLの場合は、HomeScreenへの強制遷移は不要（アプリ起動時）
           }
         }
       } catch (e) {
@@ -146,6 +148,12 @@ const AppContent: React.FC = () => {
           if (data) {
             console.log('🔗 ランタイムURLから共有リンク受信:', data);
             setSharedLinkData(data);
+            
+            // ランタイムURLの場合は、確実にHomeScreenに遷移
+            if (navigationRef.current) {
+              navigationRef.current.navigate('Main', { screen: 'Home' });
+              console.log('🔄 ShareExtension遷移: HomeScreenに強制遷移');
+            }
           }
         } catch (e) {
           console.error('❌ 共有リンク処理エラー:', e);

@@ -129,7 +129,7 @@ export const AIStatusMonitor: React.FC<AIStatusMonitorProps> = ({
             <Text style={styles.cancelText}>閉じる</Text>
           </TouchableOpacity>
           
-          <Text style={styles.headerTitle}>AIタグ付け管理</Text>
+          <Text style={styles.headerTitle}>AIタグ付け</Text>
           
         </View>
 
@@ -241,7 +241,7 @@ export const AIStatusMonitor: React.FC<AIStatusMonitorProps> = ({
                     <Feather name="check-circle" size={48} color="#8A2BE2" />
                     <Text style={styles.emptyStateTitle}>すべて完了</Text>
                     <Text style={styles.emptyStateText}>
-                      AIタグ付けが必要なリンクはありません
+                      なんらかのエラーでAIタグ付けが行われなかったリンクがここに表示されます
                     </Text>
                   </View>
                 )}

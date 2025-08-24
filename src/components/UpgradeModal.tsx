@@ -15,7 +15,10 @@ import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
 import { IapService } from '../services/applePayService'; // Updated import
 import { useAuth } from '../contexts/AuthContext';
+import { useUser } from '../hooks/useFirestore';
 import { Product, Subscription } from 'react-native-iap';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../config/firebase';
 
 interface UpgradeModalProps {
   visible: boolean;
@@ -23,7 +26,7 @@ interface UpgradeModalProps {
   currentPlan?: UserPlan;
   heroTitle?: string;
   heroDescription?: string;
-  sourceContext?: 'link_limit' | 'tag_limit' | 'account' | 'general';
+  sourceContext?: 'link_limit' | 'tag_limit' | 'daily_limit' | 'account' | 'general';
 }
 
 interface PlanFeature {
@@ -51,11 +54,51 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 効率的な情報管理を実現しましょう`,
   sourceContext = 'general',
 }) => {
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
+  // リアルタイムでユーザー情報を監視
+  const { user: realtimeUser, loading: userLoading } = useUser(authUser?.uid || null);
+  
+  // リアルタイムユーザー情報を優先、なければ認証ユーザーを使用
+  const user = realtimeUser || authUser;
+  
   const iapService = IapService.getInstance();
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingPlan, setProcessingPlan] = useState<UserPlan | null>(null);
   const [products, setProducts] = useState<(Product | Subscription)[]>([]);
+  const [isWaitingForUpdate, setIsWaitingForUpdate] = useState(false);
+  const [waitingPlan, setWaitingPlan] = useState<UserPlan | null>(null);
+
+  // 現在のプランをリアルタイムで取得
+  const currentUserPlan = user ? PlanService.getDisplayPlan(user) : 'free';
+
+  // ダウングレード期間中かどうかを判定
+  const isInDowngradePeriod = user?.subscription?.downgradeTo && 
+    user?.subscription?.downgradeEffectiveDate && 
+    PlanService.getNextRenewalDate(user) && 
+    new Date() < PlanService.getNextRenewalDate(user)!;
+
+  // プラン変更完了後の状態監視
+  useEffect(() => {
+    if (isWaitingForUpdate && user) {
+      // プラン変更が反映されたかチェック
+      const checkPlanChange = () => {
+        const newPlan = PlanService.getDisplayPlan(user);
+        if (newPlan !== currentUserPlan) {
+          // プラン変更が反映された
+          setIsWaitingForUpdate(false);
+          setWaitingPlan(null);
+          // 少し待ってからモーダルを閉じる
+          setTimeout(() => {
+            onClose();
+          }, 2000);
+        }
+      };
+
+      // 3秒後にチェック
+      const timer = setTimeout(checkPlanChange, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isWaitingForUpdate, user, currentUserPlan, onClose]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -115,6 +158,11 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             icon: 'link',
           },
           {
+            title: `1日リンク追加 ${details.limits.maxLinksPerDay}個まで`,
+            description: '1日に追加できるリンク数に制限があります',
+            icon: 'plus-circle',
+          },
+          {
             title: `タグ保持数 ${details.limits.maxTags.toLocaleString()}個まで`,
             description: sourceContext === 'tag_limit' ? 
               'タグの整理で思考を構造化' : 
@@ -137,6 +185,11 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               'さらに多くの重要リンクを整理' : 
               'Freeプランより多くのリンクを保存',
             icon: 'link',
+          },
+          {
+            title: `1日リンク追加 ${details.limits.maxLinksPerDay}個まで`,
+            description: '1日に多くのリンクを追加可能',
+            icon: 'plus-circle',
           },
           {
             title: `タグ保持数 ${details.limits.maxTags.toLocaleString()}個まで`,
@@ -177,27 +230,67 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       Alert.alert('エラー', 'ログインが必要です');
       return;
     }
-    if (planName === 'free') return;
 
     try {
       setIsProcessing(true);
       setProcessingPlan(planName);
-      console.log('🔄 支払い処理開始:', { planName, userId: user.uid });
-
-      await iapService.purchasePlan(planName);
       
-      Alert.alert(
-        '購入処理完了',
-        '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。',
-        [{ text: 'OK', onPress: onClose }]
-      );
+      if (planName === 'free') {
+        // Freeプランへのダウングレード処理
+        console.log('🔄 Freeプランへのダウングレード開始:', { userId: user.uid });
+        
+        // Firebase Functionsを呼び出してサブスクリプションをキャンセル
+        const handleSubscriptionCancellation = httpsCallable(functions, 'handleSubscriptionCancellation');
+        await handleSubscriptionCancellation();
+        
+        Alert.alert(
+          'プラン変更完了',
+          'Freeプランに変更されました。次回請求日から適用されます。\n\n変更内容が反映されるまで少し時間がかかる場合があります。',
+          [{ text: 'OK' }] // onCloseを削除してモーダルを開いたままにする
+        );
+        
+        // 完了メッセージを表示
+        setIsWaitingForUpdate(true);
+        setWaitingPlan(planName);
+      } else if (planName === 'plus' && isInDowngradePeriod) {
+        // Plusプラン継続処理（ダウングレードのキャンセル）
+        console.log('🔄 Plusプラン継続処理開始:', { userId: user.uid });
+        
+        // Firebase Functionsを呼び出してダウングレードをキャンセル
+        const cancelDowngradeFunction = httpsCallable(functions, 'cancelDowngrade');
+        await cancelDowngradeFunction();
+        
+        Alert.alert(
+          'プラン継続完了',
+          'Plusプランの継続が完了しました。\n\n変更内容が反映されるまで少し時間がかかる場合があります。',
+          [{ text: 'OK' }] // onCloseを削除してモーダルを開いたままにする
+        );
+        
+        // 完了メッセージを表示
+        setIsWaitingForUpdate(true);
+        setWaitingPlan(planName);
+      } else {
+        // Plusプランへのアップグレード処理
+        console.log('🔄 支払い処理開始:', { planName, userId: user.uid });
+        await iapService.purchasePlan(planName);
+        
+        Alert.alert(
+          '購入処理完了',
+          '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。\n\n変更内容が反映されるまで少し時間がかかる場合があります。',
+          [{ text: 'OK' }] // onCloseを削除してモーダルを開いたままにする
+        );
+        
+        // 完了メッセージを表示
+        setIsWaitingForUpdate(true);
+        setWaitingPlan(planName);
+      }
 
     } catch (error: any) {
-      console.error('❌ 支払い処理エラー:', error);
+      console.error('❌ プラン変更処理エラー:', error);
       if (error.code === 'E_USER_CANCELLED') {
-        Alert.alert('キャンセル', '購入がキャンセルされました。');
+        Alert.alert('キャンセル', '処理がキャンセルされました。');
       } else {
-        Alert.alert('エラー', `購入処理中にエラーが発生しました: ${error.message}`);
+        Alert.alert('エラー', `プラン変更処理中にエラーが発生しました: ${error.message}`);
       }
     } finally {
       setIsProcessing(false);
@@ -219,7 +312,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   );
 
   const renderPlan = (plan: PlanOption) => {
-    const isCurrentPlan = plan.name === currentPlan;
+    const isCurrentPlan = plan.name === currentUserPlan;
     
     return (
       <View key={plan.name} style={[
@@ -240,7 +333,9 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         )}
         
         <View style={styles.planHeader}>
-          <Text style={styles.planName}>{plan.displayName}</Text>
+          <View style={styles.planNameContainer}>
+            <Text style={styles.planName}>{plan.displayName}</Text>
+          </View>
           <View style={styles.priceContainer}>
             <Text style={styles.planPrice}>{plan.price}</Text>
             <Text style={styles.planPeriod}>{plan.period}</Text>
@@ -252,15 +347,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           {plan.features.map(renderFeature)}
         </View>
 
-        {!isCurrentPlan && (
+        {(!isCurrentPlan || (plan.name === 'plus' && isInDowngradePeriod)) && !isWaitingForUpdate && (
           <TouchableOpacity
             style={[ 
               styles.upgradeButton,
               plan.recommended && styles.recommendedButton,
-              (isProcessing && processingPlan === plan.name) && styles.processingButton
+              (isProcessing && processingPlan === plan.name) && styles.processingButton,
+              // Freeプランでダウングレード期間中の場合は無効化スタイル
+              plan.name === 'free' && currentUserPlan === 'plus' && !!isInDowngradePeriod && styles.disabledButton
             ]}
             onPress={() => handleUpgrade(plan.name)}
-            disabled={isProcessing}
+            disabled={isProcessing || (plan.name === 'free' && currentUserPlan === 'plus' && !!isInDowngradePeriod)}
           >
             {isProcessing && processingPlan === plan.name ? (
               <View style={styles.processingContainer}>
@@ -277,10 +374,63 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 styles.upgradeButtonText,
                 plan.recommended && styles.recommendedButtonText
               ]}>
-                {plan.displayName}プランを選択
+                {plan.name === 'free' && currentUserPlan === 'plus' 
+                  ? (isInDowngradePeriod 
+                      ? `${PlanService.getNextRenewalDateFormatted(user)}までPlusプランをご利用できます`
+                      : 'Freeプランに戻す'
+                    )
+                  : plan.name === 'plus' && isInDowngradePeriod
+                  ? 'Plusプランを継続'
+                  : `${plan.displayName}プランを選択`
+                }
               </Text>
             )}
           </TouchableOpacity>
+        )}
+
+        {/* ローディング表示 */}
+        {isWaitingForUpdate && waitingPlan === plan.name && (
+          <View style={styles.loadingMessage}>
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#8A2BE2" style={styles.loadingSpinner} />
+              <Text style={styles.loadingMessageText}>
+                {waitingPlan === 'free' 
+                  ? 'Freeプランへの変更を反映中...'
+                  : waitingPlan === 'plus' && isInDowngradePeriod
+                  ? 'Plusプランの継続を反映中...'
+                  : 'Plusプランへのアップグレードを反映中...'
+                }
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Freeプランへの戻り説明 */}
+        {plan.name === 'free' && (
+          (currentUserPlan === 'plus' || 
+           (user?.subscription?.downgradeTo === 'free' && user?.subscription?.plan === 'plus'))) && (
+          <View style={styles.downgradeInfo}>
+            <Text style={styles.downgradeInfoTitle}>⚠️ プラン変更時の注意事項</Text>
+            <Text style={styles.downgradeInfoText}>
+              • 次回更新日まではPlusプランの機能が利用可能です。
+            </Text>
+            <Text style={styles.downgradeInfoText}>
+              • Freeプランに戻りましたら、自動的にリンクは追加日が新しいものを優先して3個まで保持、残りは削除されます。
+            </Text>
+            <Text style={styles.downgradeInfoText}>
+              • Freeプランに戻りましたら、タグは使用中のリンクに付いているもの（上限15個）以外は削除されます。
+            </Text>
+          </View>
+        )}
+
+        {/* Plusプラン継続の説明（ダウングレード期間中のみ） */}
+        {plan.name === 'plus' && isInDowngradePeriod && (
+          <View style={styles.downgradeInfo}>
+            <Text style={styles.downgradeInfoTitle}>Plusプラン継続</Text>
+            <Text style={styles.downgradeInfoText}>
+              • プランを継続することで、{PlanService.getNextRenewalDateFormatted(user)}以降もPlusプランの機能をご利用いただけます。
+            </Text>
+          </View>
         )}
       </View>
     );
@@ -398,7 +548,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: '#333',
     position: 'relative',
@@ -444,11 +594,20 @@ const styles = StyleSheet.create({
   planHeader: {
     marginBottom: 16,
   },
+  planNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 6,
+  },
   planName: {
     fontSize: 18,
     fontWeight: '700',
     color: '#FFF',
-    marginBottom: 6,
+  },
+  renewalDate: {
+    fontSize: 12,
+    color: '#AAA',
+    marginLeft: 8,
   },
   priceContainer: {
     flexDirection: 'row',
@@ -551,5 +710,49 @@ const styles = StyleSheet.create({
   },
   processingButton: {
     opacity: 0.7,
+  },
+  disabledButton: {
+    opacity: 0.5,
+    backgroundColor: '#444',
+    borderColor: '#444',
+  },
+  downgradeInfo: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  downgradeInfoTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#BBB',
+    marginBottom: 8,
+  },
+  downgradeInfoText: {
+    fontSize: 11,
+    color: '#BBB',
+    lineHeight: 16,
+    marginBottom: 2,
+  },
+  loadingMessage: {
+    backgroundColor: '#222',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  loadingSpinner: {
+    marginRight: 8,
+  },
+  loadingMessageText: {
+    fontSize: 14,
+    color: '#FFF',
+    fontWeight: '600',
   },
 });

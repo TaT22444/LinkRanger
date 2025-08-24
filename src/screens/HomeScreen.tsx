@@ -20,42 +20,48 @@ import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
+import { useUser } from '../hooks/useFirestore';
 import { useLinks, useTags } from '../hooks/useFirestore';
+import { Link, UserPlan, LinkViewMode, LinkStatus } from '../types';
 import { LinkCard } from '../components/LinkCard';
-import { AddLinkModal } from '../components/AddLinkModal';
 import { FloatingActionButton } from '../components/FloatingActionButton';
 import { TagFilter } from '../components/TagFilter';
 import { ViewModeSelector } from '../components/ViewModeSelector';
 import { TagGroupCard } from '../components/TagGroupCard';
-
+import { AddLinkModal } from '../components/AddLinkModal';
 import { AddTagModal } from '../components/AddTagModal';
 import { SearchModal } from '../components/SearchModal';
 import { LinkDetailScreen } from './LinkDetailScreen';
-import { Link, UserPlan, LinkViewMode, LinkStatus } from '../types';
 import { linkService, batchService } from '../services';
-
 import { aiService } from '../services/aiService';
 import { metadataService } from '../services/metadataService';
 import { PlanService } from '../services/planService';
 import { notificationService } from '../services/notificationService';
-
 import { AIStatusMonitor } from '../components/AIStatusMonitor';
 import { UpgradeModal } from '../components/UpgradeModal';
-
 import { db } from '../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 
 // 共有リンク用のデータ型
-type SharedLinkData = {
+interface SharedLinkData {
   url: string;
   title?: string;
   source: 'deep-link';
-};
+}
 
 export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = ({ sharedLinkData }) => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const { user, getUserEmail } = useAuth();
+  const { user: authUser, getUserEmail } = useAuth();
+  // リアルタイムでユーザー情報を監視
+  const { user: realtimeUser, loading: userLoading } = useUser(authUser?.uid || null);
+  
+  // リアルタイムユーザー情報を優先、なければ認証ユーザーを使用
+  const user = realtimeUser || authUser;
+  
+  // 🔧 ダウングレード処理の実行フラグ（Hooksルールに従ってトップレベルで定義）
+  const hasRunDowngradeRef = useRef(false);
+
   const [prefillUrl, setPrefillUrl] = useState<string>('');
   const lastHandledSharedUrlRef = useRef<string | null>(null);
   
@@ -132,6 +138,10 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [selectedLink, setSelectedLink] = useState<Link | null>(null);
   
+  // 削除中の状態管理
+  const [deletingLinkIds, setDeletingLinkIds] = useState<Set<string>>(new Set());
+  const [deletingTagIds, setDeletingTagIds] = useState<Set<string>>(new Set());
+  
   // 共有リンクデータがある場合、AddLinkModalを自動で開く
     useEffect(() => {
       const incoming = sharedLinkData?.url;
@@ -151,9 +161,20 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
 
   // ユーザー情報を監視してダウングレード処理を実行
   useEffect(() => {
-    if (user) {
-      console.log('🔍 Current user plan:', PlanService.getUserPlan(user));
+    // 🔧 ダウングレード処理が必要で、まだ完了していない場合のみ実行
+    if (user?.subscription?.downgradeTo && 
+        user?.subscription?.downgradeEffectiveDate && 
+        !user?.subscription?.downgradeCompletedAt) {
+      
+      console.log('🔍 Current user plan:', PlanService.getDisplayPlan(user));
       console.log('🔍 Plan debug info:', PlanService.getDebugInfo(user));
+      
+      // 🔧 無限ループ防止: 一度実行したらフラグを設定
+      if (hasRunDowngradeRef.current) {
+        console.log('🔄 ダウングレード処理は既に実行済み');
+        return;
+      }
+      hasRunDowngradeRef.current = true;
       
       // ダウングレード検出とクリーンアップ実行
       const checkDowngrade = async () => {
@@ -165,7 +186,6 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
             if (result.deletedLinks > 0 || result.deletedTags > 0) {
               console.log('🔄 データが削除されたため、リストの再取得をトリガー');
               // 既存のHooksが自動的に再取得することを期待
-              // または手動でwindow.location.reloadまたは強制再レンダリング
             }
           }
         } catch (error) {
@@ -175,7 +195,11 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       
       checkDowngrade();
     }
-  }, [user]);
+  }, [
+    user?.subscription?.downgradeTo,
+    user?.subscription?.downgradeEffectiveDate,
+    user?.subscription?.downgradeCompletedAt // 🔧 完了時刻も監視
+  ]);
 
   // 通知タップ時の処理を設定
   useEffect(() => {
@@ -269,7 +293,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
   const [selectedTagIdsForDeletion, setSelectedTagIdsForDeletion] = useState<Set<string>>(new Set());
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeModalContext, setUpgradeModalContext] = useState<'link_limit' | 'tag_limit' | 'account' | 'general'>('general');
+  const [upgradeModalContext, setUpgradeModalContext] = useState<'link_limit' | 'tag_limit' | 'daily_limit' | 'account' | 'general'>('general');
 
   // スワイプジェスチャー用の状態
   const swipeGestureRef = useRef<PanGestureHandler>(null);
@@ -290,7 +314,8 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const listPaddingTop = isSearchMode ? dynamicHeaderHeight : 24;
 
   // ユーザープラン（PlanServiceを使用）
-  const userPlan: UserPlan = PlanService.getEffectivePlan(user);
+  const userPlan: UserPlan = PlanService.getEffectivePlan(user); // 機能制限用
+  const displayPlan: UserPlan = PlanService.getDisplayPlan(user); // 表示用
 
 
   const handleAccountPress = () => {
@@ -300,7 +325,24 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const handleAddLink = async (linkData: Partial<Link>) => {
     if (!user?.uid) return;
     
-
+    // 🔧 1日リンク追加制限チェック
+    try {
+      const todayLinksAdded = await PlanService.getTodayLinksAddedCount(user.uid);
+      if (!PlanService.canCreateLinkPerDay(user, todayLinksAdded)) {
+        const limitMessage = PlanService.getLimitExceededMessage(user, 'linksPerDay');
+        Alert.alert('1日の制限に達しました', limitMessage, [
+          { text: 'キャンセル', style: 'cancel' },
+          { text: 'プラン変更', onPress: () => {
+            setUpgradeModalContext('daily_limit');
+            setShowUpgradeModal(true);
+          }}
+        ]);
+        return;
+      }
+    } catch (error) {
+      console.error('❌ 1日制限チェックエラー:', error);
+      // エラー時は制限チェックをスキップして続行
+    }
     
     // プラン制限チェック
     const currentLinkCount = links.length;
@@ -384,6 +426,15 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         setTimeout(() => {
           processAITagging(newLinkId, fullLinkData);
         }, 100); // 500ms → 100ms に短縮（UI応答性向上）
+      }
+
+      // 🔧 今日のリンク追加数を増加
+      try {
+        await PlanService.incrementTodayLinksAdded(user.uid);
+        console.log('✅ 今日のリンク追加数を増加完了');
+      } catch (error) {
+        console.error('❌ 今日のリンク追加数増加エラー:', error);
+        // エラー時は処理を続行（統計のみの問題）
       }
 
       // 追加に成功したらモーダルは閉じ、入力をリセット
@@ -672,9 +723,16 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
           style: 'destructive',
           onPress: async () => {
             try {
+              setDeletingLinkIds(prev => new Set(prev).add(link.id));
               await deleteLink(link.id, user?.uid || '');
             } catch (error) {
               Alert.alert('エラー', 'リンクの削除に失敗しました');
+            } finally {
+              setDeletingLinkIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(link.id);
+                return newSet;
+              });
             }
           },
         },
@@ -864,9 +922,16 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
     if (!user?.uid) return;
     
     try {
+      setDeletingTagIds(prev => new Set(prev).add(tagId));
       await deleteTagById(tagId);
     } catch (error) {
       Alert.alert('エラー', 'タグの削除に失敗しました');
+    } finally {
+      setDeletingTagIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(tagId);
+        return newSet;
+      });
     }
   };
 
@@ -954,6 +1019,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
           onToggleSelection={() => toggleTagSelection(tag.id)}
           selectedLinkIds={selectedLinkIds}
           onToggleLinkSelection={toggleLinkSelection}
+          isDeleting={deletingTagIds.has(tag.id)}
         />
       );
     },
@@ -1120,9 +1186,17 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                           text: '削除',
                           style: 'destructive',
                           onPress: async () => {
+                            const tagIdsArray = Array.from(selectedTagIdsForDeletion);
+                            
                             try {
+                              // 削除中の状態を設定
+                              setDeletingTagIds(prev => {
+                                const newSet = new Set(prev);
+                                tagIdsArray.forEach(id => newSet.add(id));
+                                return newSet;
+                              });
+                              
                               // タグの一括削除を実行
-                              const tagIdsArray = Array.from(selectedTagIdsForDeletion);
                               await batchService.bulkDeleteTags(tagIdsArray, user?.uid || '');
                               // 選択をクリア
                               setSelectedTagIdsForDeletion(new Set());
@@ -1130,6 +1204,13 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                               setIsSelectionMode(false);
                             } catch (error) {
                               Alert.alert('エラー', 'タグの削除に失敗しました');
+                            } finally {
+                              // 削除中の状態をクリア
+                              setDeletingTagIds(prev => {
+                                const newSet = new Set(prev);
+                                tagIdsArray.forEach(id => newSet.delete(id));
+                                return newSet;
+                              });
                             }
                           }
                         }
@@ -1145,9 +1226,17 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                           text: '削除',
                           style: 'destructive',
                           onPress: async () => {
+                            const linkIdsArray = Array.from(selectedLinkIds);
+                            
                             try {
+                              // 削除中の状態を設定
+                              setDeletingLinkIds(prev => {
+                                const newSet = new Set(prev);
+                                linkIdsArray.forEach(id => newSet.add(id));
+                                return newSet;
+                              });
+                              
                               // リンクの一括削除を実行
-                              const linkIdsArray = Array.from(selectedLinkIds);
                               await batchService.bulkDeleteLinks(linkIdsArray, user?.uid || '');
                               // 選択をクリア
                               setSelectedLinkIds(new Set());
@@ -1155,6 +1244,13 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                               setIsSelectionMode(false);
                             } catch (error) {
                               Alert.alert('エラー', 'リンクの削除に失敗しました');
+                            } finally {
+                              // 削除中の状態をクリア
+                              setDeletingLinkIds(prev => {
+                                const newSet = new Set(prev);
+                                linkIdsArray.forEach(id => newSet.delete(id));
+                                return newSet;
+                              });
                             }
                           }
                         }
@@ -1222,6 +1318,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         isSelectionMode={isSelectionMode}
         isSelected={selectedLinkIds.has(item.id)}
         onToggleSelection={() => toggleLinkSelection(item.id)}
+        isDeleting={deletingLinkIds.has(item.id)}
       />
     </View>
   );
@@ -1336,7 +1433,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       return (
         <FlatList
           style={styles.scrollView}
-          contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100, paddingHorizontal: 16 }}
+          contentContainerStyle={{ paddingTop: listPaddingTop, paddingBottom: 100 }}
           data={(groupedData as any).tagGroups ?? []}               // ← グループ配列をそのまま渡す
           keyExtractor={(item) => item.tag.id}
           renderItem={renderTagGroupItem}
@@ -1810,7 +1907,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
           <UpgradeModal
             visible={showUpgradeModal}
             onClose={() => setShowUpgradeModal(false)}
-            currentPlan={PlanService.getUserPlan(user)}
+            currentPlan={PlanService.getDisplayPlan(user)}
             heroTitle="リンクの保持数を増やそう！"
             heroDescription="Plusプランではリンクの保持数を50個まで増やせます"
             sourceContext={upgradeModalContext}
@@ -1828,9 +1925,6 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
@@ -2015,13 +2109,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
     backgroundColor: '#121212',
   },
-  tagGroupsContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  untaggedSection: {
-    paddingBottom: 16,
-  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -2047,6 +2134,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   viewModeHeader: {
+    width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -2073,13 +2161,13 @@ const styles = StyleSheet.create({
   viewModeHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4, // ボタン間の間隔を調整
+    gap: 4,
   },
   tagActionButton: {
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: 'rgba(138, 43, 226, 0.1)', // 薄い紫の背景
+    backgroundColor: 'rgba(138, 43, 226, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(138, 43, 226, 0.3)',
     justifyContent: 'center',

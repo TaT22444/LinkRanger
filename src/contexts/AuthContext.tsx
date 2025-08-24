@@ -3,18 +3,15 @@ import { User, AuthState } from '../types';
 import { onAuthStateChange, updateUserProfile as updateProfile, signInWithGoogle, signInWithApple } from '../services/authService';
 import { auth } from '../config/firebase';
 import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   signOut,
   updateProfile as updateFirebaseProfile,
   updateEmail,
-  signInAnonymously,
 } from 'firebase/auth';
+import { globalCache } from '../hooks/useFirestore';
+import { db } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
-  loginAnonymously: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
@@ -24,6 +21,7 @@ interface AuthContextType extends AuthState {
     avatarIcon?: string;
   }) => Promise<void>;
   getUserEmail: () => string | null;
+  forceAuthSync: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -69,51 +67,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
     }
   }, []);
-
-  const login = async (email: string, password: string) => {
-    try {
-      setState(prev => ({ ...prev, loading: true, error: null }));
-      await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChangeでloadingがfalseになるため、ここでは設定しない
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        error: error.message || 'ログインに失敗しました',
-        loading: false, 
-      }));
-      throw error;
-    }
-  };
-
-  const register = async (email: string, password: string) => {
-    try {
-      setState(prev => ({ ...prev, loading: true, error: null }));
-      await createUserWithEmailAndPassword(auth, email, password);
-      // onAuthStateChangeでloadingがfalseになるため、ここでは設定しない
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        error: error.message || 'アカウント作成に失敗しました',
-        loading: false, 
-      }));
-      throw error;
-    }
-  };
-
-  const loginAnonymously = async () => {
-    try {
-      setState(prev => ({ ...prev, loading: true, error: null }));
-      await signInAnonymously(auth);
-      // onAuthStateChangeでloadingがfalseになるため、ここでは設定しない
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        error: error.message || '匿名ログインに失敗しました',
-        loading: false, 
-      }));
-      throw error;
-    }
-  };
 
   const loginWithGoogle = async () => {
     try {
@@ -194,18 +147,82 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return auth.currentUser?.email || null;
   };
 
+  const forceAuthSync = async () => {
+    try {
+      console.log('🔄 認証状態の強制同期開始');
+      
+      // Firebase Authの現在の状態を確認
+      const currentAuthUser = auth.currentUser;
+      if (!currentAuthUser) {
+        console.log('⚠️ Firebase Authにユーザーが存在しません');
+        // 現在の状態と異なる場合のみ更新
+        if (state.user !== null) {
+          setState({
+            user: null,
+            loading: false,
+            error: null,
+          });
+        }
+        return;
+      }
+      
+      // Firestoreから最新のユーザー情報を取得
+      const userDoc = await getDoc(doc(db, 'users', currentAuthUser.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as User;
+        const user = {
+          ...userData,
+          username: userData.username || currentAuthUser.displayName || 'ユーザー',
+          avatarId: userData.avatarId,
+          avatarIcon: userData.avatarIcon,
+          createdAt: userData.createdAt
+        };
+        
+        // 現在の状態と異なる場合のみ更新
+        if (JSON.stringify(state.user) !== JSON.stringify(user)) {
+          setState({
+            user,
+            loading: false,
+            error: null,
+          });
+          console.log('✅ 認証状態の強制同期完了 - 状態更新あり');
+        } else {
+          console.log('✅ 認証状態の強制同期完了 - 状態変更なし');
+        }
+      } else {
+        console.log('⚠️ Firestoreにユーザードキュメントが存在しません');
+        // 現在の状態と異なる場合のみ更新
+        if (state.user !== null || state.error !== 'ユーザープロフィールが見つかりません') {
+          setState({
+            user: null,
+            loading: false,
+            error: 'ユーザープロフィールが見つかりません',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('❌ 認証状態の強制同期エラー:', error);
+      // 現在の状態と異なる場合のみ更新
+      if (state.error !== '認証状態の同期に失敗しました') {
+        setState({
+          user: null,
+          loading: false,
+          error: '認証状態の同期に失敗しました',
+        });
+      }
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
-    ...state,
-    login,
-    register,
-    loginAnonymously,
-    loginWithGoogle,
-    loginWithApple,
+        ...state,
+        loginWithGoogle,
+        loginWithApple,
         logout,
         updateUserProfile,
         getUserEmail,
+        forceAuthSync,
       }}
     >
       {children}

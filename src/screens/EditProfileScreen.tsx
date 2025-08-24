@@ -121,7 +121,7 @@ export const EditProfileScreen: React.FC = () => {
             text: 'OK',
             onPress: () => {
               setIsLoading(false);
-              navigation.navigate('Account');
+              navigation.goBack(); // navigate('Account')からgoBack()に変更
             },
           },
         ]

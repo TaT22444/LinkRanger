@@ -25,6 +25,7 @@ interface TagGroupCardProps {
   onToggleSelection?: () => void;
   selectedLinkIds?: Set<string>;
   onToggleLinkSelection?: (linkId: string) => void;
+  isDeleting?: boolean;
 }
 
 export const TagGroupCard: React.FC<TagGroupCardProps> = ({
@@ -40,6 +41,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
   onToggleSelection,
   selectedLinkIds = new Set(),
   onToggleLinkSelection,
+  isDeleting = false,
 }) => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
 
@@ -93,11 +95,15 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[
+      styles.container,
+      isDeleting && styles.deletingContainer
+    ]}>
       <TouchableOpacity
         style={styles.header}
         onPress={isSelectionMode ? onToggleSelection : onToggleExpanded}
         activeOpacity={0.7}
+        disabled={isDeleting}
       >
         <View style={styles.tagInfo}>
           {/* 選択モード時のチェックボックス */}
@@ -238,6 +244,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderColor: '#333',
     overflow: 'hidden',
+    marginHorizontal: 16,
+  },
+  deletingContainer: {
+    backgroundColor: 'rgba(139, 0, 0, 0.05)', // より薄い赤い背景色
+    borderColor: 'rgba(64, 64, 64, 0.4)', // グレー寄りの枠線
   },
   header: {
     flexDirection: 'row',

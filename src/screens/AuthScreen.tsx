@@ -1,44 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Dimensions,
   Linking,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
-import { FontAwesome, Ionicons } from '@expo/vector-icons';
+import { FontAwesome } from '@expo/vector-icons';
 
 export const AuthScreen: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoginView, setIsLoginView] = useState(true);
-  const [view, setView] = useState<'options' | 'email'>('options');
-  const { login, register, loginAnonymously, loginWithGoogle, loginWithApple, loading } = useAuth();
-
-  const passwordRef = useRef<TextInput>(null);
-
-  const handleEmailAuth = async () => {
-    if (!email || !password) {
-      Alert.alert('エラー', 'メールアドレスとパスワードを入力してください');
-      return;
-    }
-    try {
-      if (isLoginView) {
-        await login(email, password);
-      } else {
-        await register(email, password);
-      }
-    } catch (error) {
-      Alert.alert('認証エラー', error instanceof Error ? error.message : '予期せぬエラーが発生しました');
-    }
-  };
+  const { loginWithGoogle, loginWithApple, loading } = useAuth();
 
   const handleGoogleLogin = async () => {
     try {
@@ -55,87 +31,6 @@ export const AuthScreen: React.FC = () => {
       Alert.alert('Appleログインエラー', error instanceof Error ? error.message : 'Appleでのログインに失敗しました');
     }
   };
-  
-  const handleAnonymousLogin = async () => {
-    try {
-      await loginAnonymously();
-    } catch (error) {
-      Alert.alert('エラー', 'ゲストとしての開始に失敗しました');
-    }
-  };
-
-  const renderOptionsView = () => (
-    <View style={styles.form}>
-      <TouchableOpacity style={styles.optionButton} onPress={handleGoogleLogin} disabled={loading}>
-        <FontAwesome name="google" size={20} style={styles.icon} />
-        <Text style={styles.optionButtonText}>Googleで続行</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.optionButton} onPress={handleAppleLogin} disabled={loading}>
-        <FontAwesome name="apple" size={24} style={styles.icon} />
-        <Text style={styles.optionButtonText}>Appleで続行</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.optionButton} onPress={() => setView('email')} disabled={loading}>
-        <FontAwesome name="envelope" size={20} style={styles.icon} />
-        <Text style={styles.optionButtonText}>メールアドレスで続行</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.guestButton} onPress={handleAnonymousLogin} disabled={loading}>
-        <Text style={styles.guestButtonText}>ゲストとして続行</Text>
-      </TouchableOpacity>
-      <View style={styles.termsContainer}>
-        <Text style={styles.termsText}>
-          続行することにより.Winkの{' '}
-          <Text style={styles.termsLink} onPress={() => Linking.openURL('https://wink.app/terms')}>
-            利用規約
-          </Text>
-          に同意したことになります。
-        </Text>
-      </View>
-    </View>
-  );
-
-  const renderEmailView = () => (
-    <View style={styles.form}>
-      <View style={styles.formTitleContainer}>
-        <TouchableOpacity onPress={() => setView('options')} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.formTitle}>
-          {isLoginView ? 'ログイン' : 'アカウント作成'}
-        </Text>
-      </View>
-      <TextInput
-        style={styles.input}
-        placeholder="メールアドレス"
-        placeholderTextColor="#666"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        returnKeyType="next"
-        onSubmitEditing={() => passwordRef.current?.focus()}
-        blurOnSubmit={false}
-      />
-      <TextInput
-        ref={passwordRef}
-        style={styles.input}
-        placeholder="パスワード"
-        placeholderTextColor="#666"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        returnKeyType="go"
-        onSubmitEditing={handleEmailAuth}
-      />
-      <TouchableOpacity style={styles.primaryButton} onPress={handleEmailAuth} disabled={loading}>
-        <Text style={styles.buttonText}>{loading ? '処理中...' : (isLoginView ? 'ログイン' : 'アカウント作成')}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => setIsLoginView(!isLoginView)}>
-        <Text style={styles.switchText}>
-          {isLoginView ? "アカウントをお持ちでないですか？ 作成する" : "すでにアカウントをお持ちですか？ ログイン"}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
 
   return (
     <KeyboardAvoidingView style={styles.container} keyboardVerticalOffset={-30} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -145,7 +40,25 @@ export const AuthScreen: React.FC = () => {
             <Text style={styles.title}>.Wink</Text>
             {/* <Text style={styles.subtitle}>あなたの知の羅針盤</Text> */}
           </View>
-          {view === 'options' ? renderOptionsView() : renderEmailView()}
+          <View style={styles.form}>
+            <TouchableOpacity style={styles.optionButton} onPress={handleGoogleLogin} disabled={loading}>
+              <FontAwesome name="google" size={20} style={styles.icon} />
+              <Text style={styles.optionButtonText}>Googleで続行</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.optionButton} onPress={handleAppleLogin} disabled={loading}>
+              <FontAwesome name="apple" size={24} style={styles.icon} />
+              <Text style={styles.optionButtonText}>Appleで続行</Text>
+            </TouchableOpacity>
+            <View style={styles.termsContainer}>
+              <Text style={styles.termsText}>
+                続行することにより.Winkの{' '}
+                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://wink.app/terms')}>
+                  利用規約
+                </Text>
+                に同意したことになります。
+              </Text>
+            </View>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -163,11 +76,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   content: {
+    marginTop: 80,
     alignItems: 'center',
   },
   titleSection: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 120,
   },
   title: {
     fontSize: 40,
@@ -182,39 +96,6 @@ const styles = StyleSheet.create({
   form: {
     width: '100%',
     maxWidth: 320,
-  },
-  formTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFF',
-    textAlign: 'center',
-  },
-  input: {
-    backgroundColor: '#1E1E1E',
-    borderRadius: 12,
-    padding: 16,
-    color: '#FFF',
-    marginBottom: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  primaryButton: {
-    backgroundColor: '#8A2BE2',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  buttonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  switchText: {
-    color: '#00FFFF',
-    fontSize: 16,
-    textAlign: 'center',
   },
   optionButton: {
     flexDirection: 'row',
@@ -237,33 +118,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     width: 24,
     textAlign: 'center',
-  },
-  guestButton: {
-    marginTop: 8,
-    padding: 8,
-  },
-  guestButtonText: {
-    color: '#888',
-    fontSize: 16,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  formTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
-  },
-  backButton: {
-    position: 'absolute',
-    left: 0,
-    zIndex: 1,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#333',
-    borderRadius: 12,
   },
   termsContainer: {
     marginTop: 20,

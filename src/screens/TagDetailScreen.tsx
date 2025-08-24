@@ -98,6 +98,10 @@ export const TagDetailScreen: React.FC = () => {
   const [selectedLink, setSelectedLink] = useState<Link | null>(null);
   const [showLinkDetail, setShowLinkDetail] = useState(false);
   const [showAddTagToLinksModal, setShowAddTagToLinksModal] = useState(false);
+  
+  // 削除中の状態管理
+  const [deletingLinkIds, setDeletingLinkIds] = useState<Set<string>>(new Set());
+  const [deletingTagIds, setDeletingTagIds] = useState<Set<string>>(new Set());
   // 🔧 安全チェック: 初期化時にundefinedエラーを防ぐ
   const safeLinks = links || [];
   const safeTags = tags || [];
@@ -160,10 +164,17 @@ export const TagDetailScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              setDeletingLinkIds(prev => new Set(prev).add(linkId));
               await deleteLink(linkId, user.uid);
             } catch (error) {
               console.error('Error deleting link:', error);
               Alert.alert('エラー', 'リンクの削除に失敗しました');
+            } finally {
+              setDeletingLinkIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(linkId);
+                return newSet;
+              });
             }
           },
         },
@@ -199,11 +210,18 @@ export const TagDetailScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              setDeletingTagIds(prev => new Set(prev).add(tag.id));
               await deleteTagById(tag.id);
               navigation.goBack();
             } catch (error) {
               console.error('Error deleting tag:', error);
               Alert.alert('エラー', 'タグの削除に失敗しました');
+            } finally {
+              setDeletingTagIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(tag.id);
+                return newSet;
+              });
             }
           },
         },
@@ -312,6 +330,7 @@ export const TagDetailScreen: React.FC = () => {
           onToggleBookmark={() => handleToggleBookmark(item)}
           onDelete={() => handleDeleteLink(item.id)}
           onMarkAsRead={() => handleMarkAsRead(item.id)}
+          isDeleting={deletingLinkIds.has(item.id)}
         />
       </View>
     );

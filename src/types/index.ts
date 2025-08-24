@@ -21,6 +21,7 @@ export interface UserSubscription {
   isActive: boolean;
   downgradeTo?: UserPlan; // ダウングレード先のプラン
   downgradeEffectiveDate?: Date; // ダウングレード有効日
+  downgradeCompletedAt?: Date; // ダウングレード完了日時
   canceledAt?: Date; // 解約日時
   source?: 'apple_app_store' | 'google_play' | 'manual'; // 購入元
   lastValidatedAt?: Date; // 最後にレシートを検証した日時
@@ -48,9 +49,7 @@ export interface User {
   avatarIcon?: string;
   isAnonymous: boolean;
   createdAt: Date;
-  // テスト・管理用フラグ
-  isTestAccount?: boolean; // テストアカウント（AI制限なし）
-  role?: 'user' | 'admin' | 'tester'; // ユーザーロール
+
   // ユーザー設定
   preferences?: {
     theme: 'dark' | 'light';
@@ -62,6 +61,8 @@ export interface User {
   stats?: {
     totalLinks: number;
     totalTags: number;
+    todayLinksAdded: number; // 今日追加したリンク数
+    lastLinkAddedDate?: string; // 最後にリンクを追加した日（YYYY-MM-DD形式）
   };
   // サブスクリプション情報
   subscription?: UserSubscription;

@@ -50,6 +50,31 @@
     <string>61</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+      <string>airmail</string>
+      <string>message</string>
+      <string>bluemail</string>
+      <string>canary</string>
+      <string>edisonmail</string>
+      <string>szn-email</string>
+      <string>fastmail</string>
+      <string>x-gmxmail-netid-v1</string>
+      <string>googlegmail</string>
+      <string>mailrumail</string>
+      <string>ms-outlook</string>
+      <string>protonmail</string>
+      <string>ctxmail</string>
+      <string>readdle-spark</string>
+      <string>superhuman</string>
+      <string>telekommail</string>
+      <string>tutanota</string>
+      <string>x-webdemail-netid-v1</string>
+      <string>ymail</string>
+      <string>yandexmail</string>
+      <string>appcenter-f45b4c0b-75c9-2d01-7ab6-41f6a6015be2</string>
+      <string>mymail-mailto</string>
+    </array>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
@@ -61,6 +86,8 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。</string>
+    <key>NSMailUsageDescription</key>
+    <string>お問い合わせメールを送信するためにメール機能を使用します。</string>
     <key>UIBackgroundModes</key>
     <array>
       <string>fetch</string>

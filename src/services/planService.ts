@@ -1,10 +1,27 @@
 // プラン管理統一サービス
 import { User, UserPlan } from '../types';
-import { getTestAccountPlan, isTestAccount as isTestAccountUtil } from '../utils/testAccountUtils';
+import { 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  serverTimestamp, 
+  increment, 
+  runTransaction,
+  getDocs, 
+  query, 
+  collection, 
+  where, 
+  orderBy, 
+  writeBatch, 
+  getCountFromServer 
+} from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { Alert } from 'react-native';
 
 interface PlanLimits {
   maxTags: number;
   maxLinks: number;
+  maxLinksPerDay: number; // 1日のリンク追加制限
   hasBasicAlerts: boolean;
   hasCustomReminders: boolean;
   hasAdvancedSearch: boolean;
@@ -16,8 +33,9 @@ export class PlanService {
   // プラン制限の定義
   private static readonly PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     'free': {
-      maxTags: 50,
-      maxLinks: 5,
+      maxTags: 15,
+      maxLinks: 3,
+      maxLinksPerDay: 5, // Freeプランの1日リンク追加制限
       hasBasicAlerts: true,
       hasCustomReminders: false,
       hasAdvancedSearch: false,
@@ -26,6 +44,7 @@ export class PlanService {
     'plus': {
       maxTags: 500,
       maxLinks: 50,
+      maxLinksPerDay: 25, // Plusプランの1日リンク追加制限
       hasBasicAlerts: true,
       hasCustomReminders: true,
       hasAdvancedSearch: false,
@@ -36,7 +55,13 @@ export class PlanService {
   // プラン価格の定義
   private static readonly PLAN_PRICING = {
     'free': { price: 0, currency: 'JPY', period: 'month' },
-    'plus': { price: 480, currency: 'JPY', period: 'month' },
+    'plus': { price: 500, currency: 'JPY', period: 'month' },
+  };
+
+  // AI使用量制限の定義
+  private static readonly AI_USAGE_LIMITS: Record<UserPlan, { monthly: number; daily: number }> = {
+    'free': { monthly: 3, daily: 5 },
+    'plus': { monthly: 50, daily: 25 },
   };
   
   // プラン取得（統一アクセスポイント）
@@ -115,12 +140,7 @@ export class PlanService {
 
     console.log('🔍 getPlanStartDate - user:', user.uid, 'createdAt:', user.createdAt, 'subscription:', user.subscription);
 
-    // テストアカウントの場合はアカウント作成日を返す
-    if (this.isTestAccount(user)) {
-      const date = this.getDateFromFirebaseTimestamp(user.createdAt) || new Date();
-      console.log('📅 TestAccount date:', date);
-      return date;
-    }
+
 
     const subscription = user.subscription;
     if (!subscription) {
@@ -154,104 +174,135 @@ export class PlanService {
   // プラン開始日のテキストを生成（従来の機能）
   static getPlanStartDateText(user: User | null): string {
     const startDate = this.getPlanStartDate(user);
-    if (!startDate) return '';
-
-    // 日付が有効かチェック
-    if (isNaN(startDate.getTime())) {
-      console.error('Invalid startDate:', startDate, 'for user:', user?.uid);
-      // フォールバック: 現在の日付を使用
-      const fallbackDate = new Date();
-      const options: Intl.DateTimeFormatOptions = { 
-        year: 'numeric', 
-        month: 'short', 
-        day: 'numeric' 
-      };
-      const formattedDate = fallbackDate.toLocaleDateString('ja-JP', options);
-      return `${formattedDate}から利用開始`;
-    }
-
-    // テストアカウントの場合は特別な表示
-    if (this.isTestAccount(user)) {
-      const options: Intl.DateTimeFormatOptions = { 
-        year: 'numeric', 
-        month: 'short', 
-        day: 'numeric' 
-      };
-      const formattedDate = startDate.toLocaleDateString('ja-JP', options);
-      return `${formattedDate}からテスト利用中`;
-    }
-
-    const subscription = user?.subscription;
+    if (!startDate) return '不明';
+    
     const now = new Date();
+    const diffTime = Math.abs(now.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return '今日';
+    if (diffDays === 1) return '昨日';
+    if (diffDays < 7) return `${diffDays}日前`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}週間前`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}ヶ月前`;
+    return `${Math.floor(diffDays / 365)}年前`;
+  }
+
+  // 次の更新日を取得
+  static getNextRenewalDate(user: User | null): Date | null {
+    if (!user?.subscription) return null;
+    
+    const subscription = user.subscription;
     
     // ダウングレード予定がある場合
-    if (subscription?.downgradeTo) {
+    if (subscription.downgradeTo && subscription.downgradeEffectiveDate) {
+      const downgradeDate = this.getDateFromFirebaseTimestamp(subscription.downgradeEffectiveDate);
+      if (downgradeDate) return downgradeDate;
+    }
+    
+    // 通常の更新日（有効期限）
+    if (subscription.expirationDate) {
+      const expirationDate = this.getDateFromFirebaseTimestamp(subscription.expirationDate);
+      if (expirationDate) return expirationDate;
+    }
+    
+    return null;
+  }
+
+  // 次の更新日の表示テキストを生成
+  static getNextRenewalDateText(user: User | null): string {
+    const nextDate = this.getNextRenewalDate(user);
+    if (!nextDate) return '';
+    
+    const now = new Date();
+    const diffTime = nextDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return '期限切れ';
+    if (diffDays === 0) return '今日まで';
+    if (diffDays === 1) return '明日まで';
+    if (diffDays < 7) return `あと${diffDays}日`;
+    if (diffDays < 30) return `あと${Math.floor(diffDays / 7)}週間`;
+    if (diffDays < 365) return `あと${Math.floor(diffDays / 30)}ヶ月`;
+    return `あと${Math.floor(diffDays / 365)}年`;
+  }
+
+  // 次の更新日の具体的な日付を取得（フォーマット済み）
+  static getNextRenewalDateFormatted(user: User | null): string {
+    const nextDate = this.getNextRenewalDate(user);
+    if (!nextDate) return '';
+    
+    const now = new Date();
+    const diffTime = nextDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return '期限切れ';
+    
+    // 年を除いた具体的な日付を返す
+    const month = nextDate.getMonth() + 1;
+    const day = nextDate.getDate();
+    
+    return `${month}月${day}日`;
+  }
+
+  // ダウングレード情報の表示テキストを生成
+  static getDowngradeInfoText(user: User | null): string | null {
+    if (!user?.subscription?.downgradeTo) return null;
+    
+    const subscription = user.subscription;
+    const nextDate = this.getNextRenewalDate(user);
+    
+    if (!nextDate) return null;
+    
+    const now = new Date();
+    const diffTime = nextDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays <= 0) return null;
+    
+    // 具体的な日付を含むメッセージを返す
+    const formattedDate = this.getNextRenewalDateFormatted(user);
+    return `${formattedDate}まで、Plusプランを利用可能です。`;
+  }
+
+  // 表示用プラン（ユーザーに表示されるプラン名）
+  static getDisplayPlan(user: User | null): UserPlan {
+    if (!user) return 'free';
+    
+    const subscription = user.subscription;
+    if (!subscription) return 'free';
+    
+    // ダウングレードされたプランがある場合の処理
+    if (subscription.downgradeTo) {
+      // ダウングレードボタンを押した瞬間から、プラン表記はFreeプラン
+      return subscription.downgradeTo; // Freeプランを表示
+    }
+    
+    return subscription.plan || 'free';
+  }
+
+  // 実効プラン（機能制限に使用されるプラン）
+  static getEffectivePlan(user: User | null): UserPlan {
+    if (!user) return 'free';
+    
+    const subscription = user.subscription;
+    if (!subscription) return 'free';
+    
+    // ダウングレードされたプランがある場合の処理
+    if (subscription.downgradeTo) {
+      const now = new Date();
       const downgradeDate = this.getDateFromFirebaseTimestamp(subscription.downgradeEffectiveDate);
       
+      // ダウングレード有効日が過ぎていても、機能制限はPlusプランのまま
+      // 次のサブスク支払日までPlusプランの機能を提供
       if (downgradeDate && now >= downgradeDate) {
-        // ダウングレード後
-        const options: Intl.DateTimeFormatOptions = { 
-          year: 'numeric', 
-          month: 'short', 
-          day: 'numeric' 
-        };
-        const formattedDate = downgradeDate.toLocaleDateString('ja-JP', options);
-        return `${formattedDate}に${subscription.downgradeTo.toUpperCase()}プランに変更`;
-      } else if (downgradeDate) {
-        // ダウングレード予定
-        const options: Intl.DateTimeFormatOptions = { 
-          month: 'short', 
-          day: 'numeric' 
-        };
-        const formattedDate = downgradeDate.toLocaleDateString('ja-JP', options);
-        return `${formattedDate}に${subscription.downgradeTo.toUpperCase()}プランに変更予定`;
+        // 機能制限はPlusプランのまま（表示のみFree）
+        return 'plus';
       }
+      // まだダウングレード有効日前なら、現在のプランを継続
     }
-
-    // 通常のプラン開始日
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
-    };
-    const formattedDate = startDate.toLocaleDateString('ja-JP', options);
-    const currentPlan = this.getUserPlan(user);
     
-    if (currentPlan === 'free') {
-      return `${formattedDate}から利用開始`;
-    } else {
-      return `${formattedDate}から${currentPlan.toUpperCase()}プラン`;
-    }
-  }
-
-  // テストアカウント判定
-  static isTestAccount(user: User | null): boolean {
-    if (!user) return false;
-    
-    // testAccountUtils.tsの統一ロジックを使用
-    return isTestAccountUtil({
-      uid: user.uid,
-      isTestAccount: user.isTestAccount,
-      role: user.role
-    });
-  }
-
-  // 実効プラン（テストアカウントは特別扱い）
-  static getEffectivePlan(user: User | null): UserPlan {
-    if (this.isTestAccount(user)) {
-      // テストアカウントのプランタイプを取得
-      const testPlan = getTestAccountPlan(user?.uid || null);
-      
-      if (testPlan === 'unlimited') {
-        return 'plus'; // 無制限テストアカウントは最高プランとして扱う
-      } else if (testPlan === 'plus') {
-        return testPlan; // 指定されたプランを返す
-      }
-      
-      // フォールバック：従来通り最高プランとして扱う
-      return 'plus';
-    }
-    return this.getUserPlan(user);
+    return subscription.plan || 'free';
   }
 
   // プラン制限取得
@@ -259,22 +310,7 @@ export class PlanService {
     const effectivePlan = this.getEffectivePlan(user);
     const limits = this.PLAN_LIMITS[effectivePlan];
     
-    // テストアカウントは特別扱い
-    if (this.isTestAccount(user)) {
-      const testPlan = getTestAccountPlan(user?.uid || null);
-      
-      // 無制限テストアカウントのみ制限を無制限に設定
-      if (testPlan === 'unlimited') {
-        return {
-          ...limits,
-          maxTags: -1, // 無制限
-          maxLinks: -1, // 無制限
-        };
-      }
-      
-      // plus/proテストアカウントは通常の制限を適用
-      return limits;
-    }
+
     
     return limits;
   }
@@ -288,6 +324,9 @@ export class PlanService {
     return this.getPlanLimits(user).maxLinks;
   }
 
+  static getMaxLinksPerDay(user: User | null): number {
+    return this.getPlanLimits(user).maxLinksPerDay;
+  }
 
 
   // 制限チェック関数
@@ -301,6 +340,107 @@ export class PlanService {
     return maxLinks === -1 || currentLinkCount < maxLinks;
   }
 
+  // 1日リンク追加制限のチェック（日付リセット機能付き）
+  static canCreateLinkPerDay(user: User | null, todayLinkCount: number): boolean {
+    const maxLinksPerDay = this.getMaxLinksPerDay(user);
+    return maxLinksPerDay === -1 || todayLinkCount < maxLinksPerDay;
+  }
+
+  // ユーザーの現地時間での今日の日付を取得
+  private static getTodayDateString(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // 今日のリンク追加数を取得（日付リセット機能付き）
+  static async getTodayLinksAddedCount(userId: string): Promise<number> {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+      
+      if (!userDoc.exists()) {
+        return 0;
+      }
+      
+      const userData = userDoc.data();
+      const stats = userData.stats || {};
+      const today = this.getTodayDateString(); // ユーザーのローカルタイムゾーンで日付取得
+      const lastLinkAddedDate = stats.lastLinkAddedDate;
+      
+      // 日付が変わった場合はリセット
+      if (lastLinkAddedDate !== today) {
+        // 今日の日付でリセット
+        await updateDoc(userRef, {
+          'stats.todayLinksAdded': 0,
+          'stats.lastLinkAddedDate': today,
+          updatedAt: serverTimestamp()
+        });
+        return 0;
+      }
+      
+      return stats.todayLinksAdded || 0;
+      
+    } catch (error) {
+      console.error('❌ 今日のリンク追加数取得エラー:', error);
+      return 0; // エラー時は0を返す
+    }
+  }
+
+  // 今日のリンク追加数を増加（競合状態に対応）
+  static async incrementTodayLinksAdded(userId: string): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const today = this.getTodayDateString(); // ユーザーのローカルタイムゾーンで日付取得
+      
+      // トランザクションを使用して競合状態を防ぐ
+      await runTransaction(db, async (transaction) => {
+        const userDoc = await transaction.get(userRef);
+        
+        if (!userDoc.exists()) {
+          // ユーザードキュメントが存在しない場合は作成
+          transaction.set(userRef, {
+            stats: {
+              todayLinksAdded: 1,
+              lastLinkAddedDate: today,
+              totalLinks: 1,
+              totalTags: 0,
+            },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+          return;
+        }
+        
+        const userData = userDoc.data();
+        const stats = userData.stats || {};
+        const lastLinkAddedDate = stats.lastLinkAddedDate;
+        
+        // 日付が変わった場合はリセット
+        if (lastLinkAddedDate !== today) {
+          transaction.update(userRef, {
+            'stats.todayLinksAdded': 1,
+            'stats.lastLinkAddedDate': today,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          transaction.update(userRef, {
+            'stats.todayLinksAdded': increment(1),
+            'stats.lastLinkAddedDate': today,
+            updatedAt: serverTimestamp()
+          });
+        }
+      });
+      
+      console.log('✅ 今日のリンク追加数を増加:', { userId, today });
+      
+    } catch (error) {
+      console.error('❌ 今日のリンク追加数増加エラー:', error);
+      throw error;
+    }
+  }
 
 
   // 機能チェック関数
@@ -316,27 +456,11 @@ export class PlanService {
     return this.getPlanLimits(user).hasDataExport;
   }
 
-  // AI分析結果保存可能かチェック（全プランで可能）
-  static canSaveAnalysis(): boolean {
-    // 全プランでAI分析結果の保存が可能
-    return true;
-  }
+
 
   // プラン表示名取得
   static getPlanDisplayName(user: User | null): string {
-    if (this.isTestAccount(user)) {
-      const testPlan = getTestAccountPlan(user?.uid || null);
-      
-      if (testPlan === 'unlimited') {
-        return 'テスト(無制限)';
-      } else if (testPlan === 'plus') {
-        return 'テスト(Plus)';
-      }
-      
-      return 'テスト';
-    }
-    
-    const plan = this.getUserPlan(user);
+    const plan = this.getDisplayPlan(user);
     const displayNames: Record<UserPlan, string> = {
       'free': 'Free',
       'plus': 'Plus',
@@ -384,6 +508,10 @@ export class PlanService {
     } else {
       features.push(`リンク保存 ${limits.maxLinks}個まで`);
     }
+
+    if (limits.maxLinksPerDay !== -1) {
+      features.push(`1日あたりのリンク追加 ${limits.maxLinksPerDay}個まで`);
+    }
     
 
     
@@ -409,7 +537,7 @@ export class PlanService {
   }
 
   // 制限超過メッセージ取得
-  static getLimitExceededMessage(user: User | null, type: 'tags' | 'links'): string {
+  static getLimitExceededMessage(user: User | null, type: 'tags' | 'links' | 'linksPerDay'): string {
     const limits = this.getPlanLimits(user);
     
     switch (type) {
@@ -417,6 +545,8 @@ export class PlanService {
         return `タグの上限（${limits.maxTags.toLocaleString()}個）に達しました。上位プランにアップグレードしてください。`;
       case 'links':
         return `リンクの上限（${limits.maxLinks}個）に達しました。上位プランにアップグレードしてください。`;
+      case 'linksPerDay':
+        return `1日あたりのリンク追加上限（${limits.maxLinksPerDay}個）に達しました。上位プランにアップグレードしてください。`;
       default:
         return 'プランの制限に達しました。';
     }
@@ -462,12 +592,17 @@ export class PlanService {
         const excessCount = totalLinks - newLimits.maxLinks;
         console.log(`🗑️ リンク削除実行: ${excessCount}個を削除`);
         
-        if (showNotification) {
-          await this.showDeletionNotification('links', excessCount, newPlan);
+        try {
+          if (showNotification) {
+            await this.showDeletionNotification('links', excessCount, newPlan);
+          }
+          
+          deletedLinks = await this.deleteExcessLinks(userId, newLimits.maxLinks);
+          console.log(`✅ リンク削除完了: ${deletedLinks}個削除`);
+        } catch (error) {
+          console.error('❌ リンク削除処理でエラー:', error);
+          throw error;
         }
-        
-        deletedLinks = await this.deleteExcessLinks(userId, newLimits.maxLinks);
-        console.log(`✅ リンク削除完了: ${deletedLinks}個削除`);
       }
       
       // 3. タグの削除処理（使用頻度優先で残す）
@@ -475,23 +610,35 @@ export class PlanService {
         const excessCount = totalTags - newLimits.maxTags;
         console.log(`🗑️ タグ削除実行: ${excessCount}個を削除`);
         
-        if (showNotification) {
-          await this.showDeletionNotification('tags', excessCount, newPlan);
+        try {
+          if (showNotification) {
+            await this.showDeletionNotification('tags', excessCount, newPlan);
+          }
+          
+          deletedTags = await this.deleteExcessTags(userId, newLimits.maxTags);
+          console.log(`✅ タグ削除完了: ${deletedTags}個削除`);
+        } catch (error) {
+          console.error('❌ タグ削除処理でエラー:', error);
+          throw error;
         }
-        
-        deletedTags = await this.deleteExcessTags(userId, newLimits.maxTags);
-        console.log(`✅ タグ削除完了: ${deletedTags}個削除`);
       }
       
-      // 4. ユーザー統計の更新
+      // 4. タグ削除後のクリーンアップ：削除されたタグのIDをリンクから除去
+      if (deletedTags > 0) {
+        console.log('🧹 削除されたタグのIDをリンクからクリーンアップ開始');
+        try {
+          await this.cleanupDeletedTagReferences(userId);
+          console.log('✅ タグ参照のクリーンアップ完了');
+        } catch (error) {
+          console.error('❌ タグ参照のクリーンアップエラー:', error);
+          // クリーンアップエラーは致命的ではないので、処理を続行
+        }
+      }
+      
+      // 4. ユーザー統計の更新（統計更新は後で別途実行）
       if (deletedLinks > 0 || deletedTags > 0) {
-        const { userService } = await import('./userService');
-        if (deletedLinks > 0) {
-          await userService.updateUserStats(userId, { totalLinks: -deletedLinks });
-        }
-        if (deletedTags > 0) {
-          await userService.updateUserStats(userId, { totalTags: -deletedTags });
-        }
+        console.log('📊 統計更新が必要:', { deletedLinks, deletedTags });
+        // 統計更新は削除処理完了後に別途実行
       }
       
       console.log('🎉 プラン制限適用完了:', { deletedLinks, deletedTags });
@@ -514,15 +661,10 @@ export class PlanService {
   // リンク削除（新しいもの優先で残す）
   private static async deleteExcessLinks(userId: string, keepCount: number): Promise<number> {
     try {
-      const { getDocs, query, collection, where, orderBy } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
-      const { batchService } = await import('./firestoreService');
-      
-      // 古いリンクから順に削除対象を取得
+      // インデックスなしでクエリを実行
       const q = query(
         collection(db, 'links'),
-        where('userId', '==', userId),
-        orderBy('createdAt', 'asc') // 古い順（削除対象）
+        where('userId', '==', userId)
       );
       
       const snapshot = await getDocs(q);
@@ -531,8 +673,15 @@ export class PlanService {
       
       if (deleteCount <= 0) return 0;
       
-      // 削除対象のリンクIDを取得
-      const linksToDelete = snapshot.docs.slice(0, deleteCount).map(doc => doc.id);
+      // メモリ上でソートして古いリンクから削除対象を取得
+      const sortedDocs = snapshot.docs.sort((a, b) => {
+        const aCreatedAt = a.data().createdAt?.toDate?.() || new Date(0);
+        const bCreatedAt = b.data().createdAt?.toDate?.() || new Date(0);
+        return aCreatedAt.getTime() - bCreatedAt.getTime(); // 古い順
+      });
+      
+      // 削除対象のリンクIDを取得（古いものから）
+      const linksToDelete = sortedDocs.slice(0, deleteCount).map(doc => doc.id);
       
       console.log(`🔗 リンク削除対象: ${linksToDelete.length}個`, {
         total: totalLinks,
@@ -540,8 +689,15 @@ export class PlanService {
         delete: deleteCount
       });
       
-      // 一括削除実行
-      await batchService.bulkDeleteLinks(linksToDelete, userId);
+      // 直接削除処理を実行
+      const batch = writeBatch(db);
+      linksToDelete.forEach(linkId => {
+        const linkRef = doc(db, 'links', linkId);
+        batch.delete(linkRef);
+      });
+      
+      await batch.commit();
+      console.log(`✅ リンク削除完了: ${linksToDelete.length}個`);
       
       return linksToDelete.length;
       
@@ -554,16 +710,10 @@ export class PlanService {
   // タグ削除（使用頻度優先で残す）
   private static async deleteExcessTags(userId: string, keepCount: number): Promise<number> {
     try {
-      const { getDocs, query, collection, where, orderBy } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
-      const { batchService } = await import('./firestoreService');
-      
-      // 使用頻度の低いタグから順に削除対象を取得
+      // インデックスなしでクエリを実行
       const q = query(
         collection(db, 'tags'),
-        where('userId', '==', userId),
-        orderBy('linkCount', 'asc'), // 使用頻度の低い順（削除対象）
-        orderBy('lastUsedAt', 'asc') // 同じlinkCountの場合は古い使用日順
+        where('userId', '==', userId)
       );
       
       const snapshot = await getDocs(q);
@@ -572,8 +722,27 @@ export class PlanService {
       
       if (deleteCount <= 0) return 0;
       
-      // 削除対象のタグIDを取得
-      const tagsToDelete = snapshot.docs.slice(0, deleteCount).map(doc => doc.id);
+      // メモリ上でソートして使用頻度の低いタグから削除対象を取得
+      const sortedDocs = snapshot.docs.sort((a, b) => {
+        const aData = a.data();
+        const bData = b.data();
+        
+        // まずlinkCountで比較
+        const aLinkCount = aData.linkCount || 0;
+        const bLinkCount = bData.linkCount || 0;
+        
+        if (aLinkCount !== bLinkCount) {
+          return aLinkCount - bLinkCount; // 使用頻度の低い順
+        }
+        
+        // linkCountが同じ場合はlastUsedAtで比較
+        const aLastUsedAt = aData.lastUsedAt?.toDate?.() || new Date(0);
+        const bLastUsedAt = bData.lastUsedAt?.toDate?.() || new Date(0);
+        return aLastUsedAt.getTime() - bLastUsedAt.getTime(); // 古い順
+      });
+      
+      // 削除対象のタグIDを取得（使用頻度の低いものから）
+      const tagsToDelete = sortedDocs.slice(0, deleteCount).map(doc => doc.id);
       
       console.log(`🏷️ タグ削除対象: ${tagsToDelete.length}個`, {
         total: totalTags,
@@ -581,8 +750,15 @@ export class PlanService {
         delete: deleteCount
       });
       
-      // 一括削除実行
-      await batchService.bulkDeleteTags(tagsToDelete, userId);
+      // 直接削除処理を実行
+      const batch = writeBatch(db);
+      tagsToDelete.forEach(tagId => {
+        const tagRef = doc(db, 'tags', tagId);
+        batch.delete(tagRef);
+      });
+      
+      await batch.commit();
+      console.log(`✅ タグ削除完了: ${tagsToDelete.length}個`);
       
       return tagsToDelete.length;
       
@@ -595,9 +771,6 @@ export class PlanService {
   // 現在のデータ数を取得
   private static async getCurrentDataCounts(userId: string): Promise<{ totalLinks: number; totalTags: number }> {
     try {
-      const { getDocs, query, collection, where, getCountFromServer } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
-      
       // リンク数を取得
       const linksQuery = query(collection(db, 'links'), where('userId', '==', userId));
       const linksSnapshot = await getCountFromServer(linksQuery);
@@ -612,11 +785,6 @@ export class PlanService {
       
     } catch (error) {
       // getCountFromServerが使えない場合のフォールバック
-
-      
-      const { getDocs, query, collection, where } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
-      
       const [linksSnapshot, tagsSnapshot] = await Promise.all([
         getDocs(query(collection(db, 'links'), where('userId', '==', userId))),
         getDocs(query(collection(db, 'tags'), where('userId', '==', userId)))
@@ -633,8 +801,6 @@ export class PlanService {
 
   // 削除実行前の通知
   private static async showDeletionNotification(type: 'links' | 'tags', deleteCount: number, newPlan: UserPlan): Promise<void> {
-    const { Alert } = await import('react-native');
-    
     const typeText = type === 'links' ? 'リンク' : 'タグ';
     const planText = newPlan === 'free' ? 'Freeプラン' : 'Plusプラン';
     
@@ -654,8 +820,6 @@ export class PlanService {
 
   // 削除完了後の通知
   private static async showCompletionNotification(deletedLinks: number, deletedTags: number, newPlan: UserPlan): Promise<void> {
-    const { Alert } = await import('react-native');
-    
     const planText = newPlan === 'free' ? 'Freeプラン' : 'Plusプラン';
     let message = `${planText}への変更が完了しました。\n\n`;
     
@@ -688,27 +852,50 @@ export class PlanService {
       return { applied: false, deletedLinks: 0, deletedTags: 0 };
     }
     
+    const subscription = user.subscription;
     const now = new Date();
-    const downgradeDate = this.getDateFromFirebaseTimestamp(user.subscription.downgradeEffectiveDate);
+    const downgradeDate = this.getDateFromFirebaseTimestamp(subscription.downgradeEffectiveDate);
+    
+    // 🔧 ダウングレード処理が既に完了している場合はスキップ
+    if (subscription.downgradeCompletedAt) {
+      console.log('🔄 ダウングレード処理は既に完了済み:', { 
+        userId: user.uid, 
+        completedAt: subscription.downgradeCompletedAt 
+      });
+      return { applied: false, deletedLinks: 0, deletedTags: 0 };
+    }
     
     // ダウングレード日が過ぎているかチェック
     if (downgradeDate && now >= downgradeDate) {
-      const currentPlan = this.getUserPlan(user);
-      const intendedPlan = user.subscription.downgradeTo;
+      const intendedPlan = subscription.downgradeTo;
       
-      // まだダウングレード処理が実行されていない場合
-      if (currentPlan !== intendedPlan) {
+      // intendedPlanが存在し、まだダウングレード処理が実行されていない場合
+      if (intendedPlan && subscription.plan !== intendedPlan) {
         console.log('🔄 ダウングレード実行:', { 
           userId: user.uid, 
-          from: currentPlan, 
+          from: subscription.plan, 
           to: intendedPlan, 
           downgradeDate 
         });
         
         const result = await this.enforceNewPlanLimits(user.uid, intendedPlan, true);
         
-        // subscription情報を更新（ダウングレード完了をマーク）
-        await this.markDowngradeCompleted(user.uid, intendedPlan);
+        // 🔧 強制的なタグ参照クリーンアップ（削除処理が不要でも実行）
+        console.log('🧹 強制的なタグ参照クリーンアップを実行');
+        try {
+          await this.cleanupDeletedTagReferences(user.uid);
+          console.log('✅ 強制タグ参照クリーンアップ完了');
+        } catch (error) {
+          console.error('❌ 強制タグ参照クリーンアップエラー:', error);
+        }
+        
+        // 🔧 権限エラー回避のため、ダウングレード完了マークを一時的にスキップ
+        try {
+          await this.markDowngradeCompleted(user.uid, intendedPlan);
+        } catch (error) {
+          console.warn('⚠️ ダウングレード完了マークをスキップ（権限エラー）:', error);
+          // 権限エラーが発生しても処理を続行
+        }
         
         return { applied: true, ...result };
       }
@@ -717,25 +904,90 @@ export class PlanService {
     return { applied: false, deletedLinks: 0, deletedTags: 0 };
   }
 
+  // 削除されたタグのIDをリンクからクリーンアップ
+  private static async cleanupDeletedTagReferences(userId: string): Promise<void> {
+    try {
+      // 1. 現在存在するタグIDのセットを取得
+      const tagsQuery = query(collection(db, 'tags'), where('userId', '==', userId));
+      const tagsSnapshot = await getDocs(tagsQuery);
+      const existingTagIds = new Set(tagsSnapshot.docs.map(doc => doc.id));
+      
+      console.log('🔍 既存タグID数:', existingTagIds.size);
+      
+      // 2. リンクから削除されたタグのIDを除去
+      const linksQuery = query(collection(db, 'links'), where('userId', '==', userId));
+      const linksSnapshot = await getDocs(linksQuery);
+      
+      const batch = writeBatch(db);
+      let updatedLinks = 0;
+      
+      linksSnapshot.docs.forEach(linkDoc => {
+        const linkData = linkDoc.data();
+        const tagIds = linkData.tagIds || [];
+        
+        // 存在しないタグIDをフィルタリング
+        const validTagIds = tagIds.filter((tagId: string) => existingTagIds.has(tagId));
+        
+        // タグIDが変更された場合のみ更新
+        if (validTagIds.length !== tagIds.length) {
+          const linkRef = doc(db, 'links', linkDoc.id);
+          batch.update(linkRef, { tagIds: validTagIds });
+          updatedLinks++;
+          
+          console.log('🧹 リンクのタグ参照をクリーンアップ:', {
+            linkId: linkDoc.id,
+            originalTagIds: tagIds,
+            validTagIds: validTagIds,
+            removedCount: tagIds.length - validTagIds.length
+          });
+        }
+      });
+      
+      if (updatedLinks > 0) {
+        await batch.commit();
+        console.log(`✅ タグ参照クリーンアップ完了: ${updatedLinks}個のリンクを更新`);
+      } else {
+        console.log('✅ タグ参照クリーンアップ: 更新不要');
+      }
+      
+    } catch (error) {
+      console.error('❌ タグ参照クリーンアップエラー:', error);
+      throw error;
+    }
+  }
+
   // ダウングレード完了のマーク
   private static async markDowngradeCompleted(userId: string, newPlan: UserPlan): Promise<void> {
     try {
-      const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
+      console.log('🔧 ダウングレード完了マーク開始:', { userId, newPlan });
       
       const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, {
+      
+      // 🔧 ダウングレード完了を確実にマーク（これによりuseEffectの依存関係が変わる）
+      const updateData = {
         'subscription.plan': newPlan,
         'subscription.downgradeTo': null,
         'subscription.downgradeEffectiveDate': null,
+        'subscription.downgradeCompletedAt': serverTimestamp(), // 完了時刻を記録
         'subscription.lastUpdated': serverTimestamp(),
         updatedAt: serverTimestamp()
-      });
+      };
       
-      console.log('✅ ダウングレード完了マーク:', { userId, newPlan });
+      console.log('🔧 更新データ:', updateData);
+      
+      await updateDoc(userRef, updateData);
+      
+      console.log('✅ ダウングレード完了マーク完了:', { userId, newPlan });
       
     } catch (error) {
       console.error('❌ ダウングレード完了マークエラー:', error);
+      console.error('❌ エラー詳細:', {
+        userId,
+        newPlan,
+        errorCode: (error as any)?.code,
+        errorMessage: (error as any)?.message,
+        errorDetails: error
+      });
       throw error;
     }
   }
@@ -745,11 +997,22 @@ export class PlanService {
     const limits = this.getPlanLimits(user);
     return {
       actualPlan: this.getUserPlan(user),
+      displayPlan: this.getDisplayPlan(user),
       effectivePlan: this.getEffectivePlan(user),
-      isTestAccount: this.isTestAccount(user),
       limits,
       displayName: this.getPlanDisplayName(user),
-      canSaveAnalysis: this.canSaveAnalysis(),
     };
+  }
+
+  // AI使用量制限取得
+  static getAIUsageLimit(user: { subscription: { plan: UserPlan } }): number {
+    const plan = user.subscription.plan;
+    return this.AI_USAGE_LIMITS[plan]?.monthly || 5;
+  }
+
+  // AI日次使用量制限取得
+  static getAIDailyLimit(user: { subscription: { plan: UserPlan } }): number {
+    const plan = user.subscription.plan;
+    return this.AI_USAGE_LIMITS[plan]?.daily || 5;
   }
 } 

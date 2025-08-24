@@ -1,7 +1,8 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth, initializeAuth } from 'firebase/auth';
+import { getAuth, Auth, initializeAuth, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getFunctions, Functions } from 'firebase/functions';
+import { Platform } from 'react-native';
 
 // Firebase設定（環境変数優先、フォールバックあり）
 const getFirebaseConfig = () => {
@@ -50,11 +51,27 @@ try {
   try {
     auth = initializeAuth(app);
     console.log('✅ Firebase Auth初期化完了');
+    
+    // 認証状態の永続化設定
+    if (Platform.OS === 'web') {
+      // Webの場合はローカルストレージに永続化
+      setPersistence(auth, browserLocalPersistence);
+      console.log('✅ Web用認証永続化設定完了');
+    } else {
+      // モバイルの場合はデフォルト（永続化）
+      console.log('✅ モバイル用認証永続化設定完了（デフォルト）');
+    }
   } catch (error: any) {
     // 既に初期化されている場合はgetAuthを使用
     if (error.code === 'auth/already-initialized') {
       auth = getAuth(app);
       console.log('✅ Firebase Auth初期化完了（既存のAuth使用）');
+      
+      // 既存のAuthにも永続化設定を適用
+      if (Platform.OS === 'web') {
+        setPersistence(auth, browserLocalPersistence);
+        console.log('✅ 既存Auth用Web認証永続化設定完了');
+      }
     } else {
       throw error;
     }

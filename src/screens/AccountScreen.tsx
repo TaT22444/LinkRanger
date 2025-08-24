@@ -3,17 +3,30 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'rea
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
+import { useUser } from '../hooks/useFirestore';
+import { useLinks, useTags } from '../hooks/useFirestore';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
-import { isUnlimitedTestAccount } from '../utils/testAccountUtils';
+
 import { UpgradeModal } from '../components/UpgradeModal';
 import { deleteUserAccount } from '../services/authService';
 import * as Application from 'expo-application';
+import * as MailComposer from 'expo-mail-composer';
 
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const { user, logout, getUserEmail } = useAuth();
+  const { user: authUser, logout, getUserEmail } = useAuth();
+  // リアルタイムでユーザー情報を監視
+  const { user: realtimeUser, loading: userLoading } = useUser(authUser?.uid || null);
+  
+  // リアルタイムユーザー情報を優先、なければ認証ユーザーを使用
+  const user = realtimeUser || authUser;
+  
+  // 現在のリンクとタグの数を取得
+  const { links } = useLinks(user?.uid || null);
+  const { tags: userTags } = useTags(user?.uid || null);
+  
   const userEmail = getUserEmail() || 'No Email';
   const [appVersion, setAppVersion] = useState('');
 
@@ -24,10 +37,8 @@ export const AccountScreen: React.FC = () => {
   }, []);
   
   // PlanServiceを使用してプラン情報を取得（useMemoで最適化）
-  const userPlan = useMemo(() => PlanService.getUserPlan(user), [user]);
+  const userPlan = useMemo(() => PlanService.getDisplayPlan(user), [user]); // 表示用プラン
   const planLimits = useMemo(() => PlanService.getPlanLimits(user), [user]);
-  const isTestAccount = useMemo(() => PlanService.isTestAccount(user), [user]);
-  const isUnlimitedTest = useMemo(() => isUnlimitedTestAccount(user?.uid || null), [user?.uid]);
 
   // Freeプランかどうか
   const isFree = userPlan === 'free';
@@ -50,6 +61,52 @@ export const AccountScreen: React.FC = () => {
     setShowUpgradeModal(true);
   };
 
+  const handleContact = async () => {
+    try {
+      // メール送信が利用可能かチェック
+      const isAvailable = await MailComposer.isAvailableAsync();
+      
+      if (!isAvailable) {
+        Alert.alert(
+          'メール送信不可',
+          'このデバイスではメール送信が利用できません。',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // メール送信画面を開く
+      await MailComposer.composeAsync({
+        recipients: ['official.app.wink@gmail.com'],
+        subject: 'Wink お問い合わせ',
+        body: `お問い合わせ内容：
+
+ユーザーID: ${user?.uid || '不明'}
+プラン: ${PlanService.getPlanDisplayName(user)}プラン
+アプリバージョン: ${appVersion}
+
+─────────────────
+↓↓↓お問い合わせ内容↓↓↓
+
+
+─────────────────
+
+`,
+      });
+    } catch (error) {
+      console.error('メール送信エラー:', error);
+      Alert.alert(
+        'エラー',
+        'メール送信に失敗しました。',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handlePolicy = () => {
+    // TODO: 利用規約・プライバシーポリシー画面への遷移
+    Alert.alert('利用規約・プライバシーポリシー', 'この機能は現在開発中です。');
+  };
 
 
   const handleEditProfile = () => {
@@ -108,12 +165,6 @@ export const AccountScreen: React.FC = () => {
       ]
     );
   };
-  const handleContact = () => {
-    Alert.alert('お問い合わせ', 'サポートへのお問い合わせ画面へ遷移');
-  };
-  const handlePolicy = () => {
-    Alert.alert('利用規約・プライバシーポリシー', 'WebViewや外部リンクへ遷移');
-  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -132,14 +183,11 @@ export const AccountScreen: React.FC = () => {
           <View style={styles.profileInfo}>
             <Text style={styles.email}>{user?.username || userEmail}</Text>
             <View style={styles.planContainer}>
-              <Text style={styles.plan}>
-                {PlanService.getPlanDisplayName(user)}プラン
-              </Text>
-              {isUnlimitedTest && (
-                <View style={styles.testBadge}>
-                  <Text style={styles.testBadgeText}>無制限</Text>
-                </View>
-              )}
+              <View style={styles.planInfo}>
+                <Text style={styles.plan}>
+                  {PlanService.getPlanDisplayName(user)}プラン
+                </Text>
+              </View>
             </View>
           </View>
           <View style={styles.profileEditButton}>
@@ -150,29 +198,59 @@ export const AccountScreen: React.FC = () => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.plan}>
-          {PlanService.getPlanDisplayName(user)}プラン
-        </Text>
-      
-
+        <View style={styles.planSectionHeader}>
+          <View style={styles.planHeaderInfo}>
+            <Text style={styles.sectionTitle}>
+              {PlanService.getPlanDisplayName(user)}プラン
+            </Text>
+            {/* Plusプランでダウングレード期間中でない場合のみ更新日を表示 */}
+            {user?.subscription?.plan === 'plus' && 
+             !user?.subscription?.downgradeTo && 
+             user?.subscription?.expirationDate && (
+              <Text style={styles.sectionRenewalDate}>
+                次回お支払日: {PlanService.getNextRenewalDateFormatted(user)}
+              </Text>
+            )}
+          </View>
+          {PlanService.getDowngradeInfoText(user) && (
+            <Text style={styles.downgradeInfo}>
+              {PlanService.getDowngradeInfoText(user)}
+            </Text>
+          )}
+        </View>
 
         {/* プラン制限情報 */}
         <View style={styles.planLimitsContainer}>
           <View style={styles.limitItem}>
-            <Text style={styles.limitLabel}>タグ保存</Text>
+            <Text style={styles.limitLabel}>タグ保持上限数</Text>
             <Text style={styles.limitValue}>
-              {planLimits.maxTags === -1 ? '無制限' : `${planLimits.maxTags.toLocaleString()}個まで`}
+              {planLimits.maxTags === -1 
+                ? `${userTags?.length || 0}個 / 無制限` 
+                : `${userTags?.length || 0}個 / ${planLimits.maxTags.toLocaleString()}個`
+              }
             </Text>
           </View>
           <View style={styles.limitItem}>
-            <Text style={styles.limitLabel}>リンク保存</Text>
+            <Text style={styles.limitLabel}>リンク保持上限数</Text>
             <Text style={styles.limitValue}>
-              {planLimits.maxLinks === -1 ? '無制限' : `${planLimits.maxLinks}個まで`}
+              {planLimits.maxLinks === -1 
+                ? `${links?.length || 0}個 / 無制限` 
+                : `${links?.length || 0}個 / ${planLimits.maxLinks}個`
+              }
+            </Text>
+          </View>
+          <View style={styles.limitItem}>
+            <Text style={styles.limitLabel}>今日のリンク追加</Text>
+            <Text style={styles.limitValue}>
+              {planLimits.maxLinksPerDay === -1 
+                ? '無制限' 
+                : `${user?.stats?.todayLinksAdded || 0}個 / ${planLimits.maxLinksPerDay}個`
+              }
             </Text>
           </View>
         </View>
         {/* アップグレードボタン */}
-        {!isTestAccount && userPlan !== 'plus' && (
+        {userPlan !== 'plus' && (
           <TouchableOpacity style={styles.upgradeItem} onPress={handleUpgrade}>
             <Feather name="star" size={18} color="#FFF" style={styles.itemIcon} />
             <Text style={styles.upgradeItemText}>
@@ -318,7 +396,6 @@ const styles = StyleSheet.create({
     color: '#AAA',
     fontSize: 13,
     fontWeight: 'bold',
-    marginBottom: 8,
     letterSpacing: 1,
   },
   menuItem: {
@@ -337,7 +414,7 @@ const styles = StyleSheet.create({
   },
 
   planLimitsContainer: {
-    marginTop: 16,
+    marginTop: 8,
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: '#333',
@@ -395,6 +472,39 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 10,
     fontWeight: '600',
+  },
+  planInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  renewalDate: {
+    fontSize: 12,
+    color: '#AAA',
+    marginLeft: 8,
+  },
+  downgradeInfo: {
+    fontSize: 12,
+    color: '#FF5252',
+  },
+  planSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  planRenewalDate: {
+    fontSize: 12,
+    color: '#AAA',
+    marginLeft: 8,
+  },
+  planHeaderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionRenewalDate: {
+    fontSize: 12,
+    color: '#AAA',
+    marginLeft: 8,
   },
 
 });

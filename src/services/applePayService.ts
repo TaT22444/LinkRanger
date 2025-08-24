@@ -29,12 +29,10 @@ const validateAppleReceiptFunction = httpsCallable(functions, 'validateAppleRece
 const productSkus = Platform.select({
   ios: [
     'com.tat22444.wink.plus.monthly',     // Apple Store Connectで設定した正しいID
-    'com.tat22444.wink.pro.monthly',      // Apple Store Connectで設定した正しいID
   ],
   android: [
     // TODO: Google Play Consoleで設定したIDを追加
     'com.tat22444.wink.plus.monthly',
-    'com.tat22444.wink.pro.monthly',
   ],
 }) || [];
 
@@ -375,7 +373,6 @@ export class IapService {
   private getSkuForPlan(plan: UserPlan): string | null {
     const planMap = {
       plus: 'com.tat22444.wink.plus.monthly',   // Apple Store Connectで設定した正しいID
-      pro: 'com.tat22444.wink.pro.monthly',     // Apple Store Connectで設定した正しいID
     };
     
     const sku = planMap[plan as keyof typeof planMap] || null;

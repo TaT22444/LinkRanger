@@ -45,7 +45,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
-        "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。"
+        "NSCameraUsageDescription": "このアプリはカメラ機能を使用しませんが、一部のライブラリがカメラAPIを参照しています。",
+        "NSMailUsageDescription": "お問い合わせメールを送信するためにメール機能を使用します。"
       },
       "entitlements": {
         "com.apple.developer.applesignin": [
@@ -104,8 +105,13 @@
         "expo-share-extension",
         {
           "activationRules": [
-            { "type": "url", "max": 1 },
-            { "type": "text" }
+            {
+              "type": "url",
+              "max": 1
+            },
+            {
+              "type": "text"
+            }
           ],
           "ios": {
             "extensionName": "WinkShareExtension",
@@ -132,7 +138,11 @@
       "expo-task-manager",
       [
         "expo-build-properties",
-        { "ios": { "useFrameworks": "static" } }
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
       ],
       [
         "expo-build-properties",
@@ -141,7 +151,8 @@
             "debugInformationFormat": "dwarf-with-dsym"
           }
         }
-      ]
+      ],
+      "expo-mail-composer"
     ],
     "extra": {
       "eas": {

@@ -8,7 +8,7 @@
  */
 
 import {setGlobalOptions} from "firebase-functions";
-import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onCall, HttpsError, onRequest} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as functions from "firebase-functions";
 import axios from "axios";
@@ -968,7 +968,7 @@ function extractKeyTerms(title: string, description?: string): Set<string> {
   }
 
   // 4. 英語の固有名詞や略語（特に重要）
-  const englishTerms = allText.match(/\b([A-Z][a-zA-Z0-9]+(?:\s[A-Z][a-zA-Z0-9]+)*)\b/g);
+  const englishTerms = allText.match(/\b([A-Z][A-Za-z0-9]+(?:\s[A-Z][A-Za-z0-9]+)*)\b/g);
   if (englishTerms) {
     englishTerms.forEach((term) => {
       if (term.length >= 2) {
@@ -1525,6 +1525,8 @@ interface AppleReceiptValidationRequest {
   productId: string;
 }
 
+// App Storeサーバー通知用の型定義（現在は使用していない）
+
 export const validateAppleReceipt = onCall<AppleReceiptValidationRequest>(async (request) => {
   try {
     if (!request.auth?.uid) {
@@ -1551,7 +1553,6 @@ export const validateAppleReceipt = onCall<AppleReceiptValidationRequest>(async 
     // プロダクトIDの確認
     const validProducts = [
       "com.tat22444.wink.plus.monthly",
-      "com.tat22444.wink.pro.monthly",
     ];
 
     if (!validProducts.includes(productId)) {
@@ -1559,7 +1560,7 @@ export const validateAppleReceipt = onCall<AppleReceiptValidationRequest>(async 
     }
 
     // ユーザーのプランを更新
-    const planType = productId.includes("plus") ? "plus" : "pro";
+    const planType = "plus"; // proプランは廃止済み
     await updateUserSubscription(userId, planType, validationResult);
 
     logger.info("✅ Apple レシート検証・プラン更新完了:", {userId, planType, productId});
@@ -1679,9 +1680,22 @@ export const handleSubscriptionCancellation = onCall(async (request) => {
       originalExpiration: subscription.expirationDate,
     });
 
+    // Firebase TimestampをDateオブジェクトに変換してからtoISOString()を呼び出し
+    let downgradeEffectiveDate: string;
+    if (downgradeDate && typeof downgradeDate.toDate === 'function') {
+      // Firebase Timestampの場合
+      downgradeEffectiveDate = downgradeDate.toDate().toISOString();
+    } else if (downgradeDate instanceof Date) {
+      // JavaScript Dateオブジェクトの場合
+      downgradeEffectiveDate = downgradeDate.toISOString();
+    } else {
+      // その他の場合（数値や文字列など）
+      downgradeEffectiveDate = new Date(downgradeDate).toISOString();
+    }
+
     return {
       success: true,
-      downgradeEffectiveDate: downgradeDate.toISOString(),
+      downgradeEffectiveDate: downgradeEffectiveDate,
     };
   } catch (error) {
     logger.error("❌ サブスクリプション解約処理エラー:", error);
@@ -1754,6 +1768,52 @@ export const saveSharedLink = onCall(
     });
 
     try {
+      // 1日リンク追加制限チェック
+      const userRef = db.collection("users").doc(auth.uid);
+      const userDoc = await userRef.get();
+      
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        const stats = userData?.stats || {};
+        
+        // ユーザーの現地時間での今日の日付を取得
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const lastLinkAddedDate = stats.lastLinkAddedDate;
+        
+        let todayLinksAdded = 0;
+        
+        // 日付が変わった場合はリセット
+        if (lastLinkAddedDate !== today) {
+          await userRef.set({
+            stats: {
+              ...stats,
+              todayLinksAdded: 0,
+              lastLinkAddedDate: today,
+            },
+            updatedAt: FieldValue.serverTimestamp(),
+          }, {merge: true});
+          todayLinksAdded = 0;
+        } else {
+          todayLinksAdded = stats.todayLinksAdded || 0;
+        }
+        
+        // プラン制限をチェック
+        const subscription = userData?.subscription;
+        const userPlan = subscription?.plan || 'free';
+        const maxLinksPerDay = userPlan === 'free' ? 5 : 25;
+        
+        if (todayLinksAdded >= maxLinksPerDay) {
+          logger.warn("❌ Share Extension: 1日制限に達しました", {
+            userId: auth.uid,
+            todayLinksAdded,
+            maxLinksPerDay,
+            userPlan,
+          });
+          throw new HttpsError("resource-exhausted", "1日のリンク追加制限に達しました");
+        }
+      }
+
       // リンクデータを作成（統一された構造）
       const linkData = {
         userId: auth.uid,
@@ -1774,6 +1834,21 @@ export const saveSharedLink = onCall(
 
       // Firestoreに保存
       const docRef = await db.collection("links").add(linkData);
+
+      // 今日のリンク追加数を増加
+      if (userDoc.exists) {
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        
+        await userRef.set({
+          stats: {
+            ...((userDoc.data()?.stats) || {}),
+            todayLinksAdded: FieldValue.increment(1),
+            lastLinkAddedDate: today,
+          },
+          updatedAt: FieldValue.serverTimestamp(),
+        }, {merge: true});
+      }
 
       logger.info("✅ Share Extension: リンク保存完了", {
         userId: auth.uid,
@@ -1835,4 +1910,123 @@ export const clearTagCache = onCall({timeoutSeconds: 300, memory: "512MiB"}, asy
     deletedCount: deletedCount,
     message: `Successfully deleted ${deletedCount} cache entries.`,
   };
+});
+
+// ===================================================================
+//
+// App Storeサーバー通知処理
+//
+// ===================================================================
+
+/**
+ * App Storeサーバー通知を受信して処理する関数
+ * サブスクリプションの状態変更をリアルタイムで処理
+ */
+export const appleWebhookHandler = onRequest(async (req, res) => {
+  logger.info("🍎 [App Store Webhook] Received a request.");
+
+  if (req.method !== "POST") {
+    logger.warn("⚠️ Received non-POST request. Responding with 405.");
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  try {
+    const signedPayload = req.body.signedPayload;
+    if (!signedPayload) {
+      logger.error("❌ No signedPayload found in the request body.");
+      res.status(400).send("Bad Request: signedPayload is required.");
+      return;
+    }
+
+    // ここでJWS署名の検証とペイロードのデコードを行う
+    // 実際のアプリでは、Appleの公開鍵を使って署名を検証するライブラリ（例: node-jose）を使用します。
+    // 今回はデバッグのため、ペイロードを直接ログに出力します。
+    logger.info("📦 Received signedPayload:", signedPayload);
+
+    // TODO: JWS署名検証とペイロードのデコード処理を実装
+
+    // Appleに200 OKを返し、通知が成功したことを伝える
+    res.status(200).send("OK");
+  } catch (error) {
+    logger.error("❌ Error processing App Store notification:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+/**
+ * App Store Server Notifications V2 a
+ * https://developer.apple.com/documentation/appstoreservernotifications/
+ */
+export const appStoreServerNotification = functions.https.onRequest(
+  async (request, response) => {
+    try {
+      logger.info("App Store Server Notification received.", {
+        body: request.body,
+      });
+
+      // TODO: Implement JWS validation and process the notification
+      // For now, we just acknowledge the receipt of the notification.
+      // Apple requires a 200 OK response to stop retries.
+
+      response.status(200).send();
+    } catch (error) {
+      logger.error("Error handling App Store Server Notification:", error);
+      response.status(500).send("Internal Server Error");
+    }
+  },
+);
+
+// ダウングレードキャンセル処理（Plusプラン継続用）
+export const cancelDowngrade = onCall(async (request) => {
+  try {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "認証が必要です");
+    }
+
+    const userId = request.auth.uid;
+    const userRef = db.collection("users").doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "ユーザーが見つかりません");
+    }
+
+    const userData = userDoc.data();
+    const subscription = userData?.subscription;
+
+    if (!subscription || !subscription.downgradeTo) {
+      throw new HttpsError("failed-precondition", "ダウングレード予定が見つかりません");
+    }
+
+    // ダウングレード予定をクリアし、Plusプランを継続
+    await userRef.set({
+      subscription: {
+        ...subscription,
+        status: "active", // アクティブに戻す
+        downgradeTo: null, // ダウングレード予定をクリア
+        downgradeEffectiveDate: null, // ダウングレード日をクリア
+        canceledAt: null, // キャンセル日をクリア
+        lastUpdated: FieldValue.serverTimestamp(),
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+
+    logger.info("✅ ダウングレードキャンセル処理完了:", {
+      userId,
+      originalPlan: subscription.plan,
+      canceledDowngradeTo: subscription.downgradeTo,
+    });
+
+    return {
+      success: true,
+      message: "Plusプランの継続が完了しました",
+    };
+  } catch (error) {
+    logger.error("❌ ダウングレードキャンセル処理エラー:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "ダウングレードキャンセル処理に失敗しました");
+  }
 });

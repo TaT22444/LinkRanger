@@ -3,56 +3,75 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ユーザーは自身のプロフィール情報のみ読み書き・削除できる
-    // アカウント作成時のみ、自身のプロフィールを作成できる
-    // 注意: subscriptionフィールドはサーバー側(Cloud Functions)のみ更新可能
-    match /users/{userId} {
-      allow read, delete: if request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
-      // subscription情報以外の更新を許可
-      allow update: if request.auth.uid == userId 
-        && (!("subscription" in resource.data) || !("subscription" in request.resource.data) 
-            || resource.data.subscription == request.resource.data.subscription);
+    // --- Helper Functions ---
+    // ユーザーがサインインしているかを確認
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // ドキュメントの所有者かを確認 (作成時)
+    function isCreatingOwner() {
+      return request.auth.uid == request.resource.data.userId;
+    }
+    
+    // ドキュメントの所有者かを確認 (更新・削除時)
+    function isUpdatingOwner() {
+      return request.auth.uid == resource.data.userId;
+    }
+    
+    // ドキュメントが存在するかチェック
+    function documentExists() {
+      return resource != null;
     }
 
-    // リンク、タグ、保存された分析結果
-    // ログインしているユーザーは、自身のuserIdが記録されたドキュメントのみ、
-    // 作成、読み取り、更新、削除ができる
+    // --- User Profiles ---
+    // ユーザーは自身のプロフィール情報のみアクセス可能
+    match /users/{userId} {
+      allow read, delete: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      // (重要) 更新ルール: シンプルで確実な権限チェック
+      // ユーザーは自身のプロフィールを更新できる
+      allow update: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- User-Owned Content (Links, Tags, Analyses) ---
+    // ユーザーは自身のコンテンツのみ作成・読み取り・更新・削除が可能
     match /links/{linkId} {
-      allow read, update, delete: if request.auth.uid == resource.data.userId;
-      allow create: if request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow create: if isSignedIn() && isCreatingOwner();
     }
 
     match /tags/{tagId} {
-      allow read, update, delete: if request.auth.uid == resource.data.userId;
-      allow create: if request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow create: if isSignedIn() && isCreatingOwner();
     }
 
     match /savedAnalyses/{analysisId} {
-      allow read, update, delete: if request.auth.uid == resource.data.userId;
-      allow create: if request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow create: if isSignedIn() && isCreatingOwner();
     }
 
-    // AI使用量データ（サーバー管理、読み取り専用）
+    // --- Server-Managed Collections ---
+    // AI使用量データ。サーバーからの書き込みのみ許可。
     match /aiUsage/{usageId} {
-      // 自分の使用量のみ読み取り可能（アカウント画面での表示用）
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      // 書き込みはCloud Functionsのみ
-      allow write: if false;
+      // 自分の使用量のみ読み取り可能
+      allow read: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow write: if false; // クライアントからの書き込みは全面禁止
     }
     
+    // AI使用量の月次サマリー。サーバーからの書き込みのみ許可。
     match /aiUsageSummary/{summaryId} {
-      // 自分のサマリーのみ読み取り可能（summaryIdは "userId_YYYY-MM" 形式）
-      allow read: if request.auth != null && summaryId.matches(request.auth.uid + '_.*');
-      // 書き込みはCloud Functionsのみ
-      allow write: if false;
+      // 自分のサマリーのみ読み取り可能 (summaryIdは "userId_YYYY-MM" 形式)
+      allow read: if isSignedIn() && summaryId.matches(request.auth.uid + '_.*');
+      allow write: if false; // クライアントからの書き込みは全面禁止
     }
-    // タグキャッシュ（全ユーザー共通、パフォーマンス最適化用）
+
+    // タグのキャッシュ。読み取り専用。
     match /tagCache/{cacheId} {
-      // 認証済みユーザーは読み取り可能
-      allow read: if request.auth != null;
-      // 書き込みはCloud Functionsのみ
-      allow write: if false;
+      // 認証済みユーザーは誰でも読み取り可能
+      allow read: if isSignedIn();
+      allow write: if false; // クライアントからの書き込みは全面禁止
     }
   }
 }
