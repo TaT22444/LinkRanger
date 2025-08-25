@@ -81,26 +81,36 @@ const processUnusedLinksNotifications = async (unusedLinks: Array<{
       createdAt: linkCreatedAt.toISOString()
     });
     
-    await notificationService.scheduleUnusedLinkNotification({
-      id: link.id,
-      title: link.title,
-      url: link.url,
-      userId: link.userId,
-      lastAccessedAt: link.lastAccessedAt || linkCreatedAt,
-      createdAt: linkCreatedAt,
-      // 他の必要なプロパティはデフォルト値を設定
-      description: '',
-      status: 'pending' as const,
-      isBookmarked: false,
-      isArchived: false,
-      isRead: false,
-      priority: 'medium' as const,
-      tagIds: [],
-      updatedAt: new Date(),
-      notificationsSent: { 
-        unused3Days: false
+    // 直接ローカル通知を送信（Cloud Functionsからの呼び出し用）
+    try {
+      if (notificationService && typeof (notificationService as any).scheduleNotificationAsync === 'function') {
+        // Notificationsモジュールが利用可能な場合のみ
+        const Notifications = require('expo-notifications');
+        if (Notifications && typeof Notifications.scheduleNotificationAsync === 'function') {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '📚 未読リンクのリマインダー',
+              body: `「${link.title}」を3日前に保存しました。まだ読んでいませんか？`,
+              data: {
+                type: '3day_reminder_background',
+                linkId: link.id,
+                linkUrl: link.url,
+                linkTitle: link.title,
+                scheduledBy: 'background_task'
+              },
+              sound: true,
+            },
+            trigger: null, // 即座送信
+          });
+          
+          console.log('✅ バックグラウンド通知送信完了:', link.id);
+        } else {
+          console.log('⚠️ expo-notificationsモジュールが利用できません');
+        }
       }
-    });
+    } catch (notificationError) {
+      console.error('❌ 通知送信エラー:', notificationError);
+    }
   }
   
   console.log('✅ processUnusedLinksNotifications完了');
@@ -190,9 +200,16 @@ class BackgroundTaskService {
         return;
       }
 
+      // 🔒 開発環境での即座実行を防止
+      if (__DEV__) {
+        console.log('🛡️ 開発モード: バックグラウンドタスク登録をスキップ（即座実行防止）');
+        console.log('📝 手動テスト用: backgroundTaskService.checkUnusedLinksManually() を使用してください');
+        return;
+      }
+
       // バックグラウンドフェッチを登録
       const status = await BackgroundFetch.registerTaskAsync(UNUSED_LINKS_CHECK_TASK, {
-        minimumInterval: 6 * 60 * 60 * 1000, // 6時間ごと（より正確な3日間チェック）
+        minimumInterval: 24 * 60 * 60 * 1000, // 24時間ごと（より正確な3日間チェック）
         stopOnTerminate: false,
         startOnBoot: true,
       });
@@ -200,7 +217,8 @@ class BackgroundTaskService {
       console.log('📅 バックグラウンドタスク登録完了:', {
         taskName: UNUSED_LINKS_CHECK_TASK,
         status,
-        interval: '6時間ごと（より正確な3日間チェック）'
+        interval: '24時間ごと（より正確な3日間チェック）',
+        environment: 'production'
       });
 
       this.isRegistered = true;
@@ -268,6 +286,14 @@ class BackgroundTaskService {
     try {
       console.log('🔍 手動チェック開始: 3日間未読リンク');
       
+      // 🔒 安全な手動テストのための確認
+      if (!__DEV__) {
+        console.warn('⚠️ 手動チェックは開発モードでのみ実行してください');
+        return;
+      }
+      
+      console.log('🛡️ 開発モードでの手動テストを実行中...');
+      
       // 手動チェックで3日間未読リンクをチェック
       // 認証されたユーザーIDはCloud Functions側で自動取得されます
       const result = await checkUnusedLinksFunction();
@@ -286,13 +312,28 @@ class BackgroundTaskService {
       // ログ出力を簡潔にする
       console.log('📊 手動チェック結果:', {
         unusedLinksCount: data.unusedLinks.length,
-        notificationsSent: data.notificationsSent
+        notificationsSent: data.notificationsSent,
+        environment: 'development_manual_test'
       });
 
-      // 共通関数を使用して通知処理を実行
-      await processUnusedLinksNotifications(data.unusedLinks);
+      // 🔒 開発モードでの通知テスト用の安全なフィルタリング
+      const testSafeLinks = data.unusedLinks.filter(link => {
+        const createdAt = new Date(link.createdAt);
+        const now = new Date();
+        const ageInHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+        return ageInHours >= 72; // 3日間（72時間）以上のリンクのみ
+      });
       
-      console.log('✅ 手動チェック完了');
+      console.log('🔒 安全フィルタ結果:', {
+        originalCount: data.unusedLinks.length,
+        safeCount: testSafeLinks.length,
+        filteredOut: data.unusedLinks.length - testSafeLinks.length
+      });
+
+      // 共通関数を使用して通知処理を実行（安全なリンクのみ）
+      await processUnusedLinksNotifications(testSafeLinks);
+      
+      console.log('✅ 手動チェック完了（開発モード）');
     } catch (error) {
       console.error('❌ 手動チェックエラー:', error);
     }

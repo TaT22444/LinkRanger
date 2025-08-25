@@ -56,21 +56,27 @@ export class IapService {
    * アプリ起動時に一度だけ呼び出す
    */
   async initialize(): Promise<void> {
+    const timestamp = new Date().toISOString();
+    
     if (this.initialized) {
-      console.log('🛒 IAP Service: Already initialized');
+      console.log('[SUB-MONITOR] [' + timestamp + '] IAP Service: Already initialized', {
+        environment: __DEV__ ? 'development' : 'production',
+        platform: Platform.OS
+      });
       return;
     }
     
-    console.log('🛒 IAP Service: Initializing...', {
+    console.log('[SUB-MONITOR] [' + timestamp + '] IAP Service: Initializing...', {
       platform: Platform.OS,
       productSkus,
       skuCount: productSkus.length,
-      isDevelopment: __DEV__
+      environment: __DEV__ ? 'development' : 'production'
     });
 
-    // Development環境でのみモック処理を使用
+    // Development環境でのモック処理
     if (__DEV__) {
-      console.log('🛒 Development mode detected - using mock IAP functionality');
+      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - using mock IAP functionality');
+      this.setupDevelopmentMockListeners(); // 開発環境用のモックリスナーを設定
       this.initialized = true;
       return;
     }
@@ -141,29 +147,62 @@ export class IapService {
   }
 
   /**
+   * 開発環境用のモックリスナーを設定
+   */
+  private setupDevelopmentMockListeners(): void {
+    const timestamp = new Date().toISOString();
+    console.log('[SUB-MONITOR] [' + timestamp + '] Setting up development mock listeners');
+    
+    // 開発環境でのサブスクリプションシミュレーション用ログ
+    console.log('[SUB-MONITOR] [' + timestamp + '] Mock subscription monitoring active', {
+      environment: 'development',
+      availableProducts: productSkus,
+      mockPurchaseEnabled: true,
+      realIAPDisabled: true
+    });
+  }
+
+  /**
    * 購入イベントのリスナーをセットアップ
    */
   private setupListeners(): void {
     purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase: SubscriptionPurchase) => {
-      console.log('🛒 Purchase updated:', purchase);
+      const timestamp = new Date().toISOString();
+      
+      // サブスクリプション監視用の専用ログ（絡り込み用）
+      console.log(`[SUB-MONITOR] [${timestamp}] Purchase updated:`, {
+        productId: purchase.productId,
+        transactionId: purchase.transactionId,
+        originalTransactionId: purchase.originalTransactionIdentifierIOS,
+        transactionDate: purchase.transactionDate,
+        expirationDate: purchase.originalTransactionDateIOS,
+        autoRenewing: purchase.autoRenewingAndroid,
+        environment: __DEV__ ? 'development' : 'production'
+      });
+      
       const receipt = purchase.transactionReceipt;
       if (receipt) {
         try {
           // バックエンドにレシートを送信して検証
-          console.log('🔒 Validating receipt with backend...');
+          console.log(`[SUB-MONITOR] [${timestamp}] Validating receipt...`);
           await this.validateReceipt(purchase);
 
           // トランザクションを完了
           await finishTransaction({ purchase, isConsumable: false });
-          console.log('✅ Transaction finished');
+          console.log(`[SUB-MONITOR] [${timestamp}] Transaction finished - Product: ${purchase.productId}`);
         } catch (error) {
-          console.error('❌ Receipt validation or transaction finish failed', error);
+          console.error(`[SUB-MONITOR] [${timestamp}] Receipt validation failed:`, error);
         }
       }
     });
 
     purchaseErrorSubscription = purchaseErrorListener((error: PurchaseError) => {
-      console.error('❌ Purchase error:', error);
+      const timestamp = new Date().toISOString();
+      console.error(`[SUB-MONITOR] [${timestamp}] Purchase error:`, {
+        code: error.code,
+        message: error.message,
+        debugMessage: error.debugMessage
+      });
     });
   }
 
@@ -192,19 +231,27 @@ export class IapService {
    * ストアから販売可能な商品情報を取得する
    */
   async getProducts(): Promise<(Product | Subscription)[]> {
+    const timestamp = new Date().toISOString();
+    
     if (!this.initialized) {
-      console.error('❌ IAP Service not initialized');
+      console.error('[SUB-MONITOR] [' + timestamp + '] IAP Service not initialized');
       throw new Error('IAP service is not initialized. Call initialize() first.');
     }
     
+    console.log('[SUB-MONITOR] [' + timestamp + '] Fetching products...', {
+      environment: __DEV__ ? 'development' : 'production',
+      platform: Platform.OS,
+      requestedSKUs: productSkus
+    });
+    
     // Development環境では模擬的なプロダクトを返す
     if (__DEV__) {
-      console.log('🛒 Development mode - returning mock products');
+      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - returning mock products');
       const mockProducts = [
         {
           productId: 'com.tat22444.wink.plus.monthly',
-          price: '480',
-          localizedPrice: '¥480',
+          price: '500',
+          localizedPrice: '¥500',
           currency: 'JPY',
           title: 'LinkRanger Plus Monthly',
           description: 'Plus プラン - 月額',
@@ -220,6 +267,17 @@ export class IapService {
       ] as (Product | Subscription)[];
       
       this.products = mockProducts;
+      
+      console.log('[SUB-MONITOR] [' + timestamp + '] Mock products loaded', {
+        count: mockProducts.length,
+        environment: 'development',
+        products: mockProducts.map(p => ({
+          productId: p.productId,
+          localizedPrice: (p as any).localizedPrice,
+          price: (p as any).price
+        }))
+      });
+      
       return mockProducts;
     }
     
@@ -294,25 +352,42 @@ export class IapService {
    * @param plan 購入したいプラン
    */
   async purchasePlan(plan: UserPlan): Promise<void> {
+    const timestamp = new Date().toISOString();
     const sku = this.getSkuForPlan(plan);
+    
     if (!sku) {
+      console.error('[SUB-MONITOR] [' + timestamp + '] No SKU found for plan:', { plan });
       throw new Error(`No SKU found for plan: ${plan}`);
     }
     
-    console.log(`🛒 Requesting purchase for SKU: ${sku}`, {
+    console.log('[SUB-MONITOR] [' + timestamp + '] Purchase request initiated', {
       plan,
       sku,
-      isDevelopment: __DEV__
+      environment: __DEV__ ? 'development' : 'production',
+      platform: Platform.OS
     });
     
     // Development環境では模擬的な購入成功
     if (__DEV__) {
-      console.log('🛒 Development mode - simulating successful purchase');
+      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - simulating purchase flow', {
+        plan,
+        sku,
+        mockDuration: '2 seconds',
+        willSucceed: true
+      });
+      
       return new Promise((resolve) => {
         setTimeout(() => {
-          console.log('🛒 ✅ Mock purchase completed successfully');
+          const completionTimestamp = new Date().toISOString();
+          console.log('[SUB-MONITOR] [' + completionTimestamp + '] Mock purchase completed successfully', {
+            plan,
+            sku,
+            transactionId: 'mock_' + Date.now(),
+            environment: 'development',
+            status: 'completed'
+          });
           resolve();
-        }, 1000);
+        }, 2000); // 2秒待機でリアルな購入をシミュレート
       });
     }
     
@@ -339,17 +414,24 @@ export class IapService {
    * 過去の購入情報を復元する
    */
   async restorePurchases(): Promise<void> {
+    const timestamp = new Date().toISOString();
+    
     if (!this.initialized) {
+      console.error('[SUB-MONITOR] [' + timestamp + '] IAP not initialized for restore');
       throw new Error('IAP not initialized');
     }
     
-    console.log('🛒 Restoring purchases...', {
-      isDevelopment: __DEV__
+    console.log('[SUB-MONITOR] [' + timestamp + '] Restore purchases initiated', {
+      environment: __DEV__ ? 'development' : 'production',
+      platform: Platform.OS
     });
     
     // Development環境では模擬的なリストア処理
     if (__DEV__) {
-      console.log('🛒 Development mode - simulating restore purchases (no purchases found)');
+      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - simulating restore purchases', {
+        foundPurchases: 0,
+        message: 'No previous purchases found in development mode'
+      });
       return Promise.resolve();
     }
     

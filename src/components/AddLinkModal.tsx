@@ -87,7 +87,6 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
   const panGestureRef = useRef<PanGestureHandler>(null);
 
   const resetForm = () => {
-    setUrl(initialUrl);
     setSelectedTags([]);
     setShowTagSelector(false);
     setFetchingMetadata(false);
@@ -95,6 +94,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     setLoading(false);
     setIsExpanded(false);
     // キャッシュはリセットしない（セッション中は保持）
+    // URLは個別に管理するため、ここではリセットしない
   };
 
   // モーダル表示/非表示の状態管理とアニメーション
@@ -102,7 +102,10 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     if (visible && !isVisible) {
       // モーダルを開く
       setIsVisible(true);
-      setUrl(initialUrl);
+      // initialUrlが設定されている場合はURLを更新
+      if (initialUrl && initialUrl !== url) {
+        setUrl(initialUrl);
+      }
       resetForm();
       
       // アニメーション開始
@@ -142,7 +145,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         resetForm();
       });
     }
-  }, [visible, initialUrl]); // initialUrlも依存配列に追加
+  }, [visible]); // initialUrlを依存配列から削除
 
   // 展開/縮小状態の変更時のアニメーション
   useEffect(() => {
@@ -158,13 +161,12 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     }
   }, [isExpanded, visible, isVisible]);
 
-  // initialUrlが変更された際にURLフィールドを更新
+  // initialUrlが変更された際にURLフィールドを更新（モーダルが表示されている時のみ）
   useEffect(() => {
-    if (initialUrl && initialUrl !== url) {
-      console.log('AddLinkModal: initialUrl changed, updating URL field:', initialUrl);
+    if (initialUrl && initialUrl !== url && visible) {
       setUrl(initialUrl);
     }
-  }, [initialUrl]);
+  }, [initialUrl, visible]);
 
   // ジェスチャーハンドラー
   const onGestureEvent = Animated.event(

@@ -1807,7 +1807,6 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
           )}
 
           <AddLinkModal
-            key={prefillUrl}                 // URLが変われば入力欄をリセット
             visible={showAddModal}
             onClose={() => {
               setShowAddModal(false);

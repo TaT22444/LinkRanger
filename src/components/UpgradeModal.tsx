@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { UserPlan } from '../types';
@@ -70,28 +71,55 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   // 現在のプランをリアルタイムで取得
   const currentUserPlan = user ? PlanService.getDisplayPlan(user) : 'free';
 
-  // プラン変更完了後の状態監視
+  // プラン変更完了後の状態監視（TestFlightでは実行されない）
   useEffect(() => {
-    if (isWaitingForUpdate && user) {
-      // プラン変更が反映されたかチェック
+    if (isWaitingForUpdate && user && !__DEV__) {
+      // 本番環境のみでプラン変更をチェック
+      const initialPlan = currentUserPlan;
+      
       const checkPlanChange = () => {
         const newPlan = PlanService.getDisplayPlan(user);
-        if (newPlan !== currentUserPlan) {
+        console.log('🔍 プラン変更チェック:', { initialPlan, newPlan, waiting: isWaitingForUpdate });
+        
+        if (newPlan !== initialPlan && newPlan === waitingPlan) {
           // プラン変更が反映された
+          console.log('✅ プラン変更反映完了:', { from: initialPlan, to: newPlan });
           setIsWaitingForUpdate(false);
           setWaitingPlan(null);
+          
           // 少し待ってからモーダルを閉じる
           setTimeout(() => {
             onClose();
-          }, 2000);
+          }, 1500);
         }
       };
 
-      // 3秒後にチェック
-      const timer = setTimeout(checkPlanChange, 3000);
-      return () => clearTimeout(timer);
+      // 3秒後にチェック開始、その後は2秒間隔でチェック
+      const initialTimer = setTimeout(() => {
+        checkPlanChange();
+        
+        // 初回チェックで変更がない場合のみ継続チェック
+        const intervalTimer = setInterval(checkPlanChange, 2000);
+        
+        // 30秒後にタイムアウト
+        const timeoutTimer = setTimeout(() => {
+          clearInterval(intervalTimer);
+          setIsWaitingForUpdate(false);
+          setWaitingPlan(null);
+          console.log('⏰ プラン変更チェックタイムアウト');
+        }, 30000);
+        
+        return () => {
+          clearInterval(intervalTimer);
+          clearTimeout(timeoutTimer);
+        };
+      }, 3000);
+      
+      return () => {
+        clearTimeout(initialTimer);
+      };
     }
-  }, [isWaitingForUpdate, user, currentUserPlan, onClose]);
+  }, [isWaitingForUpdate, waitingPlan]); // 依存配列を最小限に
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -100,14 +128,14 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           await iapService.initialize();
           const fetchedProducts = await iapService.getProducts();
           setProducts(fetchedProducts);
-          console.log('🛒 UpgradeModal: Products loaded successfully', {
-            count: fetchedProducts.length,
-            isDevelopment: __DEV__,
-            products: fetchedProducts.map(p => ({
-              productId: p.productId,
-              localizedPrice: (p as any).localizedPrice
-            }))
-          });
+        console.log('[SUB-MONITOR] UpgradeModal: Products loaded successfully', {
+          count: fetchedProducts.length,
+          environment: __DEV__ ? 'development' : 'production',
+          products: fetchedProducts.map(p => ({
+            productId: p.productId,
+            localizedPrice: (p as any).localizedPrice
+          }))
+        });
         } catch (error) {
           console.error('Failed to fetch products', error);
           
@@ -218,24 +246,75 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
   // Appleガイドラインに準拠: アプリ内でのサブスクリプションキャンセル機能を廃止
   const handleUpgrade = async (planName: UserPlan) => {
+    const timestamp = new Date().toISOString();
+    
+    console.log('[SUB-MONITOR] [' + timestamp + '] handleUpgrade initiated', {
+      planName,
+      userId: user?.uid || 'unknown',
+      currentPlan: currentUserPlan,
+      environment: __DEV__ ? 'development' : 'production',
+      sourceContext
+    });
+    
     if (!user?.uid) {
+      console.error('[SUB-MONITOR] [' + timestamp + '] handleUpgrade failed - no user ID');
       Alert.alert('エラー', 'ログインが必要です');
       return;
     }
 
     // ユーザーがアップグレードを選択した場合のみ処理
     if (planName !== 'plus') {
+      console.log('[SUB-MONITOR] [' + timestamp + '] handleUpgrade skipped - not plus plan', { planName });
       // 'plus' 以外のプラン（現状'free'）への変更はここでは扱わない
       return;
     }
 
+    // TestFlight環境での特別処理
+    if (__DEV__) {
+      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - showing TestFlight guidance');
+      Alert.alert(
+        'テストフライト環境',
+        'TestFlight版では実際の購入処理は制限されています。\n\nApp Store正式リリース後に以下が可能になります：\n• 実際のプラン購入\n• Apple Payでの決済\n• サブスクリプション管理',
+        [
+          { text: 'OK', style: 'default' },
+          {
+            text: 'テスト用アップグレード',
+            onPress: () => {
+              console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - test upgrade guidance shown');
+              // テスト環境用の模擬アップグレード
+              Alert.alert(
+                'テスト用機能',
+                'テスト用のプランアップグレードを実行するには、Firebase Consoleから手動でユーザー情報を編集してください。\n\n手順：\n1. Firebase Consoleを開く\n2. Firestore Databaseでユーザーを検索\n3. subscription.planを"plus"に変更',
+                [{ text: '了解' }]
+              );
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    // 本番環境での実際の購入処理
     try {
       setIsProcessing(true);
       setProcessingPlan(planName);
       
-      // Plusプランへのアップグレード処理のみ
-      console.log('🔄 支払い処理開始:', { planName, userId: user.uid });
+      console.log('[SUB-MONITOR] [' + timestamp + '] Production purchase flow initiated', {
+        planName,
+        userId: user.uid,
+        environment: 'production',
+        processingState: 'started'
+      });
+      
       await iapService.purchasePlan(planName);
+      
+      const completionTimestamp = new Date().toISOString();
+      console.log('[SUB-MONITOR] [' + completionTimestamp + '] Purchase plan completed', {
+        planName,
+        userId: user.uid,
+        environment: 'production',
+        processingState: 'completed'
+      });
       
       Alert.alert(
         '購入処理完了',
@@ -248,8 +327,18 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       setWaitingPlan(planName);
 
     } catch (error: any) {
-      console.error('❌ プラン変更処理エラー:', error);
+      const errorTimestamp = new Date().toISOString();
+      console.error('[SUB-MONITOR] [' + errorTimestamp + '] Purchase plan failed', {
+        planName,
+        userId: user.uid,
+        environment: 'production',
+        errorCode: error.code,
+        errorMessage: error.message,
+        processingState: 'failed'
+      });
+      
       if (error.code === 'E_USER_CANCELLED') {
+        console.log('[SUB-MONITOR] [' + errorTimestamp + '] User cancelled purchase');
         Alert.alert('キャンセル', '処理がキャンセルされました。');
       } else {
         Alert.alert('エラー', `プラン変更処理中にエラーが発生しました: ${error.message}`);
@@ -257,12 +346,48 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     } finally {
       setIsProcessing(false);
       setProcessingPlan(null);
+      
+      const finalTimestamp = new Date().toISOString();
+      console.log('[SUB-MONITOR] [' + finalTimestamp + '] handleUpgrade completed', {
+        planName,
+        userId: user.uid,
+        processingState: 'finished'
+      });
     }
   };
 
   // App Storeのサブスクリプション管理ページにリダイレクト
   const handleManageSubscription = () => {
+    // TestFlight環境での適切な案内
+    if (__DEV__) {
+      Alert.alert(
+        'テストフライト環境',
+        'TestFlight版では、実際のサブスクリプション管理は制限されています。\n\nApp Store正式リリース後に以下が可能になります：\n• プランの変更・キャンセル\n• 請求履歴の確認\n• 自動更新設定の変更',
+        [
+          { text: 'OK', style: 'default' },
+          { 
+            text: 'App Storeで確認', 
+            onPress: () => {
+              const url = 'https://apps.apple.com/account/subscriptions';
+              Linking.openURL(url).catch(() => {
+                Alert.alert('エラー', 'App Storeを開けませんでした。');
+              });
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // 本番環境: 通常のサブスクリプション管理ページ
     const url = 'https://apps.apple.com/account/subscriptions';
+    
+    console.log('🔗 サブスクリプション管理ページに遷移:', {
+      url,
+      platform: Platform.OS,
+      environment: 'production'
+    });
+    
     Linking.canOpenURL(url).then(supported => {
       if (supported) {
         Linking.openURL(url);

@@ -93,36 +93,36 @@ export class PlanService {
       return null;
     }
     
-    console.log('🔍 getDateFromFirebaseTimestamp - input:', timestamp, 'type:', typeof timestamp);
+
     
     try {
       // Firebase Timestamp (seconds + nanoseconds)
       if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
         const date = new Date(timestamp.seconds * 1000);
-        console.log('📅 Converted from seconds:', date);
+
         return date;
       } 
       // Firebase Timestamp with toDate method
       else if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp) {
         const date = timestamp.toDate();
-        console.log('📅 Converted from toDate:', date);
+
         return date;
       } 
       // Already a Date object
       else if (timestamp instanceof Date) {
-        console.log('📅 Already Date object:', timestamp);
+
         return timestamp;
       } 
       // String format
       else if (typeof timestamp === 'string') {
         const date = new Date(timestamp);
-        console.log('📅 Converted from string:', date, 'isValid:', !isNaN(date.getTime()));
+
         return !isNaN(date.getTime()) ? date : null;
       }
       // Number (milliseconds)
       else if (typeof timestamp === 'number') {
         const date = new Date(timestamp);
-        console.log('📅 Converted from number:', date);
+
         return date;
       }
       

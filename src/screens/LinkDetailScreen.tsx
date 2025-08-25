@@ -127,7 +127,11 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
 
   const getDisplayTags = () => {
     if (!link.tagIds || link.tagIds.length === 0) return [];
-    return link.tagIds.map(tagId => ({
+    
+    // 重複するtagIdを除去してユニークにする
+    const uniqueTagIds = [...new Set(link.tagIds)];
+    
+    return uniqueTagIds.map(tagId => ({
       id: tagId,
       name: getTagName(tagId)
     }));
@@ -180,8 +184,8 @@ export const LinkDetailScreen: React.FC<LinkDetailScreenProps> = ({
           
           <View style={styles.tagsContainer}>
             {displayTags.length > 0 ? (
-              displayTags.map((tag) => (
-                <View key={tag.id} style={styles.tag}>
+              displayTags.map((tag, index) => (
+                <View key={`${tag.id}-${index}`} style={styles.tag}>
                   <Text style={styles.tagText}>#{tag.name}</Text>
                 </View>
               ))

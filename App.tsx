@@ -50,7 +50,9 @@ const MainNavigator: React.FC<{ sharedLinkData: SharedLinkData | null }> = ({ sh
         contentStyle: { backgroundColor: '#121212' },
       }}
     >
-      <MainStack.Screen name="Home" component={() => <HomeScreen sharedLinkData={sharedLinkData} />} />
+      <MainStack.Screen name="Home">
+        {() => <HomeScreen sharedLinkData={sharedLinkData} />}
+      </MainStack.Screen>
       <MainStack.Screen 
         name="Account" 
         component={AccountScreen}
@@ -214,9 +216,11 @@ const App: React.FC = () => {
         await notificationService.initializeNotifications();
         console.log('✅ 通知サービス初期化完了');
         
-        // バックグラウンドタスクサービス初期化
-        await backgroundTaskService.registerBackgroundTasks();
-        console.log('✅ バックグラウンドタスクサービス初期化完了');
+        // バックグラウンドタスクサービス初期化（遅延実行で即座実行を防止）
+        setTimeout(async () => {
+          await backgroundTaskService.registerBackgroundTasks();
+          console.log('✅ バックグラウンドタスクサービス初期化完了（遅延実行）');
+        }, 5000); // 5秒遅延でアプリ起動時の即座実行を防止
       } catch (error) {
         console.error('❌ アプリ初期化エラー:', error);
       }

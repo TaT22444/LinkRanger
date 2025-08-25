@@ -72,23 +72,13 @@ export const linkService = {
         if (data.createdAt && typeof data.createdAt.toDate === 'function') {
           const createdLink = convertToLink(createdDoc);
           
-          // 🔒 二重安全チェック: リンク作成直後は通知スケジュールしない
-          const now = new Date();
-          const linkAge = now.getTime() - createdLink.createdAt.getTime();
-          const isNewLink = linkAge < (5 * 60 * 1000); // 5分以内のリンクは "新規"
-          
-          console.log('🔍 linkService: リンク年齢チェック', {
-            linkId: docRef.id,
-            linkAge: Math.floor(linkAge / 1000) + '秒',
-            isNewLink,
-            willSchedule: !isNewLink
-          });
-          
-          if (!isNewLink) {
+          // 3日間リマインダーをスケジュール
+          try {
             await notificationService.schedule3DayReminder(createdLink);
             console.log('📅 3日間リマインダー設定完了:', docRef.id);
-          } else {
-            console.log('🚫 新規リンクのため通知スケジュールをスキップ:', docRef.id);
+          } catch (error) {
+            console.error('❌ 通知スケジュール設定エラー:', error);
+            // 通知設定に失敗してもリンク作成は続行
           }
         } else {
           console.log('🚫 serverTimestamp未解決のため通知スケジュールをスキップ:', docRef.id);

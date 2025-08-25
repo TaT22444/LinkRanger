@@ -796,15 +796,16 @@ export const checkUnusedLinks = onCall({timeoutSeconds: 30, memory: "512MiB"}, a
 
       // 3日間経過しているかチェック
       if (lastAccessTime <= threeDaysAgo) {
-        // 🔒 安全チェック: 作成から最低6時間経過していないリンクは除外
+        // 🔒 安全チェック: 作成から最低3日経過していないリンクは除外（厳格チェック）
         const createdTime = linkData.createdAt.toDate();
-        const sixHoursAgo = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+        const threeDaysAgoStrict = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
-        if (createdTime > sixHoursAgo) {
-          logger.info(`⏭️ 新しいリンクをスキップ (作成から6時間未満): ${doc.id}`, {
+        if (createdTime > threeDaysAgoStrict) {
+          logger.info(`⏭️ 新しいリンクをスキップ (作成から3日未満): ${doc.id}`, {
             createdAt: createdTime.toISOString(),
-            sixHoursAgo: sixHoursAgo.toISOString(),
+            threeDaysAgoStrict: threeDaysAgoStrict.toISOString(),
             title: linkData.title,
+            ageInHours: Math.floor((now.getTime() - createdTime.getTime()) / (1000 * 60 * 60)),
           });
           continue; // この新しいリンクをスキップ
         }

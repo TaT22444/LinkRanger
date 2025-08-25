@@ -38,9 +38,9 @@ const setupNotificationHandler = () => {
     // 通知表示方法の設定
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
+        shouldShowAlert: false,   // 通知を表示する
+        shouldPlaySound: false,   // 音を鳴らす
+        shouldSetBadge: false,   // バッジは設定しない
       }),
     });
     console.log('📱 通知ハンドラーを設定');
@@ -111,69 +111,33 @@ class NotificationService {
         return null;
       }
 
-      // 🔍 Development環境での動作確認用ログ
-      console.log('📅 schedule3DayReminder: 開始', {
-        linkId: link.id,
-        title: link.title.slice(0, 30) + '...',
-        isDevelopment: __DEV__,
-        environment: __DEV__ ? 'Development' : 'Production/TestFlight'
-      });
-
-      // 🔍 デバッグログ: createdAtの詳細確認
-      console.log('🔍 schedule3DayReminder: デバッグ開始', {
-        linkId: link.id,
-        createdAt: link.createdAt,
-        createdAtType: typeof link.createdAt,
-        createdAtConstructor: link.createdAt.constructor.name,
-        createdAtString: link.createdAt.toString(),
-        createdAtISO: link.createdAt.toISOString(),
-        currentTime: new Date().toISOString()
-      });
-
-      // 3日間後の正確な時刻を計算
-      const threeDaysLater = new Date(link.createdAt.getTime() + 3 * 24 * 60 * 60 * 1000);
-      
-      // 🔍 詳細な計算ログ
-      console.log('🔍 schedule3DayReminder: 日時計算', {
-        createdAtTime: link.createdAt.getTime(),
-        threeDaysInMs: 3 * 24 * 60 * 60 * 1000,
-        threeDaysLater: threeDaysLater.toISOString(),
-        currentTime: new Date().toISOString(),
-        isPastDate: threeDaysLater <= new Date()
-      });
+            // 3日間後の正確な時刻を計算
+      const now = new Date();
+      const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
       
       // 3日後の日時が過去の場合は通知しない（データ整合性エラー）
-      if (threeDaysLater <= new Date()) {
-
+      if (threeDaysLater <= now) {
+        console.log('🚫 3日後の日時が過去のため通知をスキップ');
         return null;
       }
-      
-      const notificationDate = threeDaysLater;
 
-      // 🔍 実際の通知スケジュール前の最終確認
-      console.log('🔍 schedule3DayReminder: 通知スケジュール実行前', {
+      console.log('📅 3日間リマインダーをスケジュール:', {
         linkId: link.id,
-        notificationDate: notificationDate.toISOString(),
-        trigger: { date: notificationDate },
-        willScheduleIn: (notificationDate.getTime() - new Date().getTime()) / 1000 / 60 + ' minutes'
+        title: link.title.slice(0, 30) + '...',
+        scheduledFor: threeDaysLater.toISOString(),
+        willScheduleIn: Math.floor((threeDaysLater.getTime() - now.getTime()) / (1000 * 60 * 60)) + ' hours'
       });
 
-      // 🔧 修正: secondsベースのtriggerに変更（expo-notificationsの既知問題対応）
-      const secondsFromNow = Math.floor((notificationDate.getTime() - new Date().getTime()) / 1000);
-      
-      console.log('🔧 schedule3DayReminder: trigger修正', {
-        notificationDate: notificationDate.toISOString(),
-        secondsFromNow,
-        minutesFromNow: secondsFromNow / 60,
-        hoursFromNow: secondsFromNow / 3600
-      });
+      const trigger = { date: threeDaysLater };
+      console.log('🐛 DEBUG: Trigger object to be scheduled:', trigger);
 
+      // 通知をスケジュール
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
-          title: '📖 未読のリンクがあります',
-          body: `「${link.title}」を3日間確認していません。確認してみませんか？`,
+          title: '📖 未読リンクのリマインダー',
+          body: `「${link.title}」を3日前に保存しました。まだ読んでいませんか？`,
           data: {
-            type: 'unused_link_3day_reminder',
+            type: '3day_reminder',
             linkId: link.id,
             linkUrl: link.url,
             linkTitle: link.title,
@@ -182,96 +146,21 @@ class NotificationService {
           sound: true,
         },
         trigger: {
-          seconds: secondsFromNow,
+          date: threeDaysLater,  // 日時指定でスケジュール
         },
       });
 
-      // 🔍 スケジュール完了後の検証ログ
-      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-      const ourNotification = scheduledNotifications.find((n: any) => n.identifier === notificationId);
-      
-      console.log('📅 3日間リマインダー設定完了:', {
+      console.log('✅ 3日間リマインダースケジュール完了:', {
         linkId: link.id,
-        linkTitle: link.title.slice(0, 30) + '...',
-        createdAt: link.createdAt.toLocaleString(),
-        scheduledFor: notificationDate.toLocaleString(),
         notificationId,
-        actuallyScheduled: !!ourNotification,
-        scheduledTime: ourNotification?.trigger?.dateComponents || ourNotification?.trigger,
-        totalScheduledNotifications: scheduledNotifications.length
+        scheduledFor: threeDaysLater.toISOString()
       });
 
       return notificationId;
+
+
     } catch (error) {
       console.error('❌ 3日間リマインダー設定エラー:', error);
-      return null;
-    }
-  }
-
-  /**
-   * リンク未アクセス通知を即座スケジュール（主にCloud Functionsからの呼び出し用）
-   */
-  async scheduleUnusedLinkNotification(link: Link): Promise<string | null> {
-    try {
-      if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません - スケジュールをスキップ');
-        return null;
-      }
-
-      // 🔒 厳格な安全チェック: 作成から最低3日経過していないリンクは絶対に通知しない
-      const now = new Date();
-      const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
-      
-      console.log('🔍 scheduleUnusedLinkNotification: 時間チェック', {
-        linkId: link.id,
-        linkTitle: link.title.slice(0, 30) + '...',
-        createdAt: link.createdAt.toISOString(),
-        threeDaysAgo: threeDaysAgo.toISOString(),
-        currentTime: now.toISOString(),
-        isOldEnough: link.createdAt <= threeDaysAgo,
-        ageInHours: Math.floor((now.getTime() - link.createdAt.getTime()) / (1000 * 60 * 60))
-      });
-      
-      if (link.createdAt > threeDaysAgo) {
-        console.log('🚫 scheduleUnusedLinkNotification: リンクが新しすぎるためスキップ', {
-          linkId: link.id,
-          ageInHours: Math.floor((now.getTime() - link.createdAt.getTime()) / (1000 * 60 * 60)),
-          requiredHours: 72
-        });
-        return null;
-      }
-
-      // 3日間経過後の未読チェック時に即座通知を送信
-      const notificationDate = new Date();
-      notificationDate.setSeconds(notificationDate.getSeconds() + 5); // 5秒後に即座通知（即座性を保つ）
-
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '📖 未読のリンクがあります',
-          body: `「${link.title}」を確認してみませんか？`,
-          data: {
-            type: 'unused_link_reminder',
-            linkId: link.id,
-            linkUrl: link.url,
-            linkTitle: link.title,
-          },
-          sound: true,
-        },
-        trigger: {
-          date: notificationDate,
-        },
-      });
-
-      console.log('📅 リンク通知スケジュール完了:', {
-        linkId: link.id,
-        linkTitle: link.title.slice(0, 30) + '...',
-        scheduledFor: notificationDate.toLocaleString(),
-        notificationId,
-      });
-
-      return notificationId;
-    } catch (error) {
-      console.error('❌ 通知スケジュールエラー:', error);
       return null;
     }
   }
@@ -347,6 +236,79 @@ class NotificationService {
       console.log('🗑️ 全てのスケジュール済み通知をクリアしました');
     } catch (error) {
       console.error('❌ 通知クリアエラー:', error);
+    }
+  }
+
+  /**
+   * スケジュール済み通知を表示（デバッグ用）
+   */
+  async debugScheduledNotifications(): Promise<void> {
+    try {
+      if (!isNotificationAvailable()) {
+        console.log('⚠️ 通知機能は利用できません');
+        return;
+      }
+
+      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      
+      console.log('📅 スケジュール済み通知一覧:', {
+        totalCount: scheduledNotifications.length
+      });
+      
+      const now = new Date();
+      
+      scheduledNotifications.forEach((notification: any, index: number) => {
+        const trigger = notification.trigger;
+        const data = notification.content?.data;
+        const scheduledDate = trigger?.date ? new Date(trigger.date) : null;
+        
+        console.log(`🔔 [通知 ${index + 1}]:`, {
+          id: notification.identifier,
+          title: notification.content?.title,
+          linkId: data?.linkId,
+          type: data?.type,
+          scheduledFor: scheduledDate?.toISOString(),
+          hoursFromNow: scheduledDate ? Math.floor((scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60)) : null,
+          daysFromNow: scheduledDate ? Math.floor((scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null
+        });
+      });
+      
+      if (scheduledNotifications.length === 0) {
+        console.log('🚫 スケジュール済み通知はありません');
+      }
+      
+    } catch (error) {
+      console.error('❌ 通知デバッグエラー:', error);
+    }
+  }
+
+  /**
+   * テスト通知を送信（デバッグ用）
+   */
+  async sendTestNotification(): Promise<void> {
+    try {
+      if (!isNotificationAvailable()) {
+        console.log('⚠️ 通知機能は利用できません');
+        return;
+      }
+
+      // 即座通知を送信（テスト用）
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🗺️ テスト通知',
+          body: '通知システムが正常に動作しています。',
+          data: {
+            type: 'test',
+            timestamp: new Date().toISOString()
+          },
+          sound: true,
+        },
+        trigger: null, // 即座送信
+      });
+
+      console.log('📨 テスト通知送信完了:', { notificationId });
+    } catch (error) {
+      console.error('❌ テスト通知エラー:', error);
     }
   }
 
