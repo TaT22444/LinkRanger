@@ -104,28 +104,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       return null;
     }).filter(Boolean);
 
-    console.log('🔍 AI Status Links分類:', {
-      総リンク数: links.length,
-      処理中リンク数: processing.length,
-      未処理リンク数: untagged.length,
-      処理中リンクIDs: processing.map(l => l.id),
-      未処理リンクIDs: untagged.map(l => ({ id: l.id, status: l.status, tagIds: l.tagIds?.length || 0 })),
-      aiProcessingStatusキー: Object.keys(aiProcessingStatus),
-      // 🔍 詳細なフィルタリング情報を追加
-      全リンク詳細: links.map(l => ({
-        id: l.id,
-        status: l.status,
-        tagIds: l.tagIds?.length || 0,
-        title: l.title?.slice(0, 20) + '...'
-      })),
-      フィルタリング条件: {
-        status条件: 'pending || error',
-        tagIds条件: 'tagIds.length === 0',
-        aiProcessingStatus条件: 'aiProcessingStatus[id] === undefined'
-      },
-      // 🔍 フィルタリングで除外されたリンクの詳細
-      除外されたリンク: filteredOutLinks
-    });
+
 
     return { processingLinks: processing, failedLinks: failed, untaggedLinks: untagged };
   }, [links, aiProcessingStatus]);

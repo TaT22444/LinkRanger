@@ -7,32 +7,32 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		006C5D76477DE8D9387D90A4 /* Pods_Wink.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6EF3F36BE2D07652C1628DDC /* Pods_Wink.framework */; };
+		05216E3D8718B09500DC47D5 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1448DE1CCA112A61F4708CED /* ExpoModulesProvider.swift */; };
+		05AB76228BC663236D7E4823 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1DA9153D22C14ABC3939EE6D /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		1BC355A3A32A6E10A1BCBBC8 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6762D53761BAB11100EDCC68 /* ExpoModulesProvider.swift */; };
+		1F83B423B1439D9097441040 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3438281A077605C78DAAD8E2 /* ExpoModulesProvider.swift */; };
+		2F2ABFCA0B619BBB48346B4C /* Pods_Wink.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B8D656872CA97F03740CDF87 /* Pods_Wink.framework */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		4A72CB9945DAAFBC230FC800 /* Pods_WinkShareExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F2A388B297A0D060D16FA2DD /* Pods_WinkShareExtension.framework */; };
+		9FB5C48C4DEA54C3667448F1 /* Pods_WinkShareExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50DFF47E8B99D16298262605 /* Pods_WinkShareExtension.framework */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		D6E44DA708D89936E5A6BC1D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DD2E57D5E08EE2A45F48B62F /* PrivacyInfo.xcprivacy */; };
-		DCCC343FF4C24366993FEF13 /* WinkShareExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = E0F0F94CA5C24A769778E110 /* WinkShareExtension.appex */; };
-		EF8D77889DBA4108A465EA01 /* ShareExtensionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C523DA22E8741A9BB1E2956 /* ShareExtensionViewController.swift */; };
+		BD33881B9EF34371B7E47E66 /* ShareExtensionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D57B5D877D6941459ED479C5 /* ShareExtensionViewController.swift */; };
+		CE7C3F3E6502422D87B18ABE /* WinkShareExtension.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = 07D4C540C7A748739B5F460C /* WinkShareExtension.appex */; };
+		DAE8D0B8554F4140BA08F41B /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 61E4200C9C6648609B3D3208 /* GoogleService-Info.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		F12F06656EB0411F8ACA2F61 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 7D5FA4EC3C984D068CB99080 /* GoogleService-Info.plist */; };
-		FE14195E0FC54DE5966B6614 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EA03ADBB6E6233B1D89EB7 /* ExpoModulesProvider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		34718A1B52A840278534784A /* PBXContainerItemProxy */ = {
+		5B8CAD28ABDF4918B221EED3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 7F489123B1DD4584A231BA54;
+			remoteGlobalIDString = 002C750422AF4926A4470969;
 			remoteInfo = WinkShareExtension;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		133876B5FE4B4C10BF63E9CB /* Embed Foundation Extensions */ = {
+		62A4607354FC4A519A8C9295 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
@@ -42,13 +42,13 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D2398ACB33E5401DA136AA18 /* Copy Files */ = {
+		B028EF344BB94F45B6134FD3 /* Copy Files */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				DCCC343FF4C24366993FEF13 /* WinkShareExtension.appex in Copy Files */,
+				CE7C3F3E6502422D87B18ABE /* WinkShareExtension.appex in Copy Files */,
 			);
 			name = "Copy Files";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -56,28 +56,28 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		12F64749CE206BAB96F1D030 /* Pods-Wink.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Wink.release.xcconfig"; path = "Target Support Files/Pods-Wink/Pods-Wink.release.xcconfig"; sourceTree = "<group>"; };
+		045B9BF364A626328656B02F /* Pods-WinkShareExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WinkShareExtension.release.xcconfig"; path = "Target Support Files/Pods-WinkShareExtension/Pods-WinkShareExtension.release.xcconfig"; sourceTree = "<group>"; };
+		07D4C540C7A748739B5F460C /* WinkShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = 9; includeInIndex = 0; path = WinkShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07F961A680F5B00A75B9A /* Wink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wink.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Wink/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Wink/Info.plist; sourceTree = "<group>"; };
-		58341892750B300B3EBD4BCD /* Pods-Wink.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Wink.debug.xcconfig"; path = "Target Support Files/Pods-Wink/Pods-Wink.debug.xcconfig"; sourceTree = "<group>"; };
-		5A0B96F9D8CC596396580E3B /* Pods-WinkShareExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WinkShareExtension.debug.xcconfig"; path = "Target Support Files/Pods-WinkShareExtension/Pods-WinkShareExtension.debug.xcconfig"; sourceTree = "<group>"; };
-		5C523DA22E8741A9BB1E2956 /* ShareExtensionViewController.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; path = ShareExtensionViewController.swift; sourceTree = "<group>"; };
-		64EA03ADBB6E6233B1D89EB7 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Wink/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		6762D53761BAB11100EDCC68 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-WinkShareExtension/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		6EF3F36BE2D07652C1628DDC /* Pods_Wink.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Wink.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		7D5FA4EC3C984D068CB99080 /* GoogleService-Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "Wink/GoogleService-Info.plist"; sourceTree = "<group>"; };
-		887786AA470D4EFDAA44D1B4 /* WinkShareExtension.entitlements */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; path = WinkShareExtension.entitlements; sourceTree = "<group>"; };
-		A63CE5B800554DF380F9CCFB /* Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1448DE1CCA112A61F4708CED /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-WinkShareExtension/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		1DA9153D22C14ABC3939EE6D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Wink/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		3438281A077605C78DAAD8E2 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Wink/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		50DFF47E8B99D16298262605 /* Pods_WinkShareExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_WinkShareExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		61E4200C9C6648609B3D3208 /* GoogleService-Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "Wink/GoogleService-Info.plist"; sourceTree = "<group>"; };
+		89908CC6478C4AC66A68520F /* Pods-Wink.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Wink.debug.xcconfig"; path = "Target Support Files/Pods-Wink/Pods-Wink.debug.xcconfig"; sourceTree = "<group>"; };
+		A41C51ED78DF4B57B75AA0E9 /* Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A85906468781E4086A93B911 /* Pods-WinkShareExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WinkShareExtension.debug.xcconfig"; path = "Target Support Files/Pods-WinkShareExtension/Pods-WinkShareExtension.debug.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Wink/SplashScreen.storyboard; sourceTree = "<group>"; };
+		B1D492A69B647B0278DF7E7A /* Pods-Wink.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Wink.release.xcconfig"; path = "Target Support Files/Pods-Wink/Pods-Wink.release.xcconfig"; sourceTree = "<group>"; };
+		B7D63F3569CC48508791C3F0 /* WinkShareExtension.entitlements */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; path = WinkShareExtension.entitlements; sourceTree = "<group>"; };
+		B8D656872CA97F03740CDF87 /* Pods_Wink.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Wink.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		DD2E57D5E08EE2A45F48B62F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Wink/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		E0F0F94CA5C24A769778E110 /* WinkShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = 9; includeInIndex = 0; path = WinkShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D57B5D877D6941459ED479C5 /* ShareExtensionViewController.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; path = ShareExtensionViewController.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		EF1449F9F9629244A369AC9B /* Pods-WinkShareExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-WinkShareExtension.release.xcconfig"; path = "Target Support Files/Pods-WinkShareExtension/Pods-WinkShareExtension.release.xcconfig"; sourceTree = "<group>"; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Wink/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Wink-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Wink-Bridging-Header.h"; path = "Wink/Wink-Bridging-Header.h"; sourceTree = "<group>"; };
-		F2A388B297A0D060D16FA2DD /* Pods_WinkShareExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_WinkShareExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,21 +85,40 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				006C5D76477DE8D9387D90A4 /* Pods_Wink.framework in Frameworks */,
+				2F2ABFCA0B619BBB48346B4C /* Pods_Wink.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		2FBD40668E9544BC9C87FF5C /* Frameworks */ = {
+		CF2FB64F31334F21A3E433E4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4A72CB9945DAAFBC230FC800 /* Pods_WinkShareExtension.framework in Frameworks */,
+				9FB5C48C4DEA54C3667448F1 /* Pods_WinkShareExtension.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		094AEB5BCA144EB0A303B1D7 /* WinkShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				D57B5D877D6941459ED479C5 /* ShareExtensionViewController.swift */,
+				A41C51ED78DF4B57B75AA0E9 /* Info.plist */,
+				B7D63F3569CC48508791C3F0 /* WinkShareExtension.entitlements */,
+			);
+			path = WinkShareExtension;
+			sourceTree = "<group>";
+		};
+		0F30F1B0ABDEBA9C2BC15136 /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				E44EF51F9DA44F05BC6BD568 /* Wink */,
+				81BCB20FAF704B84086E224E /* WinkShareExtension */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
 		13B07FAE1A68108700A75B9A /* Wink */ = {
 			isa = PBXGroup;
 			children = (
@@ -109,8 +128,8 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				7D5FA4EC3C984D068CB99080 /* GoogleService-Info.plist */,
-				DD2E57D5E08EE2A45F48B62F /* PrivacyInfo.xcprivacy */,
+				61E4200C9C6648609B3D3208 /* GoogleService-Info.plist */,
+				1DA9153D22C14ABC3939EE6D /* PrivacyInfo.xcprivacy */,
 			);
 			name = Wink;
 			sourceTree = "<group>";
@@ -119,27 +138,16 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				6EF3F36BE2D07652C1628DDC /* Pods_Wink.framework */,
-				F2A388B297A0D060D16FA2DD /* Pods_WinkShareExtension.framework */,
+				B8D656872CA97F03740CDF87 /* Pods_Wink.framework */,
+				50DFF47E8B99D16298262605 /* Pods_WinkShareExtension.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		4D95F72FACBA511165DF6371 /* Pods */ = {
+		81BCB20FAF704B84086E224E /* WinkShareExtension */ = {
 			isa = PBXGroup;
 			children = (
-				58341892750B300B3EBD4BCD /* Pods-Wink.debug.xcconfig */,
-				12F64749CE206BAB96F1D030 /* Pods-Wink.release.xcconfig */,
-				5A0B96F9D8CC596396580E3B /* Pods-WinkShareExtension.debug.xcconfig */,
-				EF1449F9F9629244A369AC9B /* Pods-WinkShareExtension.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		7646A2FA27C2034A8FFB13DB /* WinkShareExtension */ = {
-			isa = PBXGroup;
-			children = (
-				6762D53761BAB11100EDCC68 /* ExpoModulesProvider.swift */,
+				1448DE1CCA112A61F4708CED /* ExpoModulesProvider.swift */,
 			);
 			name = WinkShareExtension;
 			sourceTree = "<group>";
@@ -158,9 +166,9 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				AC8DB5E2EFBA4F74892D81C7 /* WinkShareExtension */,
-				4D95F72FACBA511165DF6371 /* Pods */,
-				E612E792FFC8DEF89E37A4EB /* ExpoModulesProviders */,
+				094AEB5BCA144EB0A303B1D7 /* WinkShareExtension */,
+				DD06988C4B024598009D4F2F /* Pods */,
+				0F30F1B0ABDEBA9C2BC15136 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -171,27 +179,9 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* Wink.app */,
-				E0F0F94CA5C24A769778E110 /* WinkShareExtension.appex */,
+				07D4C540C7A748739B5F460C /* WinkShareExtension.appex */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		A092D1AA25DB5856F9766788 /* Wink */ = {
-			isa = PBXGroup;
-			children = (
-				64EA03ADBB6E6233B1D89EB7 /* ExpoModulesProvider.swift */,
-			);
-			name = Wink;
-			sourceTree = "<group>";
-		};
-		AC8DB5E2EFBA4F74892D81C7 /* WinkShareExtension */ = {
-			isa = PBXGroup;
-			children = (
-				5C523DA22E8741A9BB1E2956 /* ShareExtensionViewController.swift */,
-				A63CE5B800554DF380F9CCFB /* Info.plist */,
-				887786AA470D4EFDAA44D1B4 /* WinkShareExtension.entitlements */,
-			);
-			path = WinkShareExtension;
 			sourceTree = "<group>";
 		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
@@ -203,55 +193,40 @@
 			path = Wink/Supporting;
 			sourceTree = "<group>";
 		};
-		E612E792FFC8DEF89E37A4EB /* ExpoModulesProviders */ = {
+		DD06988C4B024598009D4F2F /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				A092D1AA25DB5856F9766788 /* Wink */,
-				7646A2FA27C2034A8FFB13DB /* WinkShareExtension */,
+				89908CC6478C4AC66A68520F /* Pods-Wink.debug.xcconfig */,
+				B1D492A69B647B0278DF7E7A /* Pods-Wink.release.xcconfig */,
+				A85906468781E4086A93B911 /* Pods-WinkShareExtension.debug.xcconfig */,
+				045B9BF364A626328656B02F /* Pods-WinkShareExtension.release.xcconfig */,
 			);
-			name = ExpoModulesProviders;
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		E44EF51F9DA44F05BC6BD568 /* Wink */ = {
+			isa = PBXGroup;
+			children = (
+				3438281A077605C78DAAD8E2 /* ExpoModulesProvider.swift */,
+			);
+			name = Wink;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		13B07F861A680F5B00A75B9A /* Wink */ = {
+		002C750422AF4926A4470969 /* WinkShareExtension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Wink" */;
+			buildConfigurationList = FB9A832426C5437F942D627B /* Build configuration list for PBXNativeTarget "WinkShareExtension" */;
 			buildPhases = (
-				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				2EDEC6D10378C1BB8DECB2AF /* [Expo] Configure project */,
-				13B07F871A680F5B00A75B9A /* Sources */,
-				13B07F8C1A680F5B00A75B9A /* Frameworks */,
-				13B07F8E1A680F5B00A75B9A /* Resources */,
-				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				133876B5FE4B4C10BF63E9CB /* Embed Foundation Extensions */,
-				D2398ACB33E5401DA136AA18 /* Copy Files */,
-				AB77EC41F5778D27593B5618 /* [CP] Embed Pods Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				28BBDA87EA174AB6993C82A1 /* PBXTargetDependency */,
-			);
-			name = Wink;
-			productName = Wink;
-			productReference = 13B07F961A680F5B00A75B9A /* Wink.app */;
-			productType = "com.apple.product-type.application";
-		};
-		7F489123B1DD4584A231BA54 /* WinkShareExtension */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B46CEDE942684B75BD488D52 /* Build configuration list for PBXNativeTarget "WinkShareExtension" */;
-			buildPhases = (
-				440FC061F9E81976668AF986 /* [CP] Check Pods Manifest.lock */,
-				6FD787F9E6164676893F932E /* Start Packager */,
-				C0D2660F8EE1F353FDFA9501 /* [Expo] Configure project */,
-				96327215C98C44A5B93627DC /* Sources */,
-				2FBD40668E9544BC9C87FF5C /* Frameworks */,
-				BAD4200A698C48EA8E8BC366 /* Resources */,
-				71D569F9C36049FEA29C3AD5 /* Bundle React Native code and images */,
-				9C45705BFE9176DC6A91E7FF /* [CP] Copy Pods Resources */,
+				A3C0C6034AD19FB75834203B /* [CP] Check Pods Manifest.lock */,
+				FDAF2226691244399DBF98B1 /* Start Packager */,
+				E77EA91F43DABCEB8D1B7788 /* [Expo] Configure project */,
+				9A279145F5A94DFA807B1BF8 /* Sources */,
+				CF2FB64F31334F21A3E433E4 /* Frameworks */,
+				27156E3C0AA2499E931EFEF2 /* Resources */,
+				4978DEA9A6424177ADD9ABBD /* Bundle React Native code and images */,
+				8AF25057ABC754D6F173B541 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -259,8 +234,33 @@
 			);
 			name = WinkShareExtension;
 			productName = WinkShareExtension;
-			productReference = E0F0F94CA5C24A769778E110 /* WinkShareExtension.appex */;
+			productReference = 07D4C540C7A748739B5F460C /* WinkShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		13B07F861A680F5B00A75B9A /* Wink */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Wink" */;
+			buildPhases = (
+				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
+				6E9FABB01600FDB5207A581B /* [Expo] Configure project */,
+				13B07F871A680F5B00A75B9A /* Sources */,
+				13B07F8C1A680F5B00A75B9A /* Frameworks */,
+				13B07F8E1A680F5B00A75B9A /* Resources */,
+				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
+				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
+				62A4607354FC4A519A8C9295 /* Embed Foundation Extensions */,
+				B028EF344BB94F45B6134FD3 /* Copy Files */,
+				AAE3D8223470855B023BED2B /* [CP] Embed Pods Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				701E400DC0F349A4AA69ECAB /* PBXTargetDependency */,
+			);
+			name = Wink;
+			productName = Wink;
+			productReference = 13B07F961A680F5B00A75B9A /* Wink.app */;
+			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -270,10 +270,10 @@
 			attributes = {
 				LastUpgradeCheck = 1130;
 				TargetAttributes = {
-					13B07F861A680F5B00A75B9A = {
+					002C750422AF4926A4470969 = {
 						LastSwiftMigration = 1250;
 					};
-					7F489123B1DD4584A231BA54 = {
+					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
 					};
 				};
@@ -292,7 +292,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* Wink */,
-				7F489123B1DD4584A231BA54 /* WinkShareExtension */,
+				002C750422AF4926A4470969 /* WinkShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -305,12 +305,12 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				F12F06656EB0411F8ACA2F61 /* GoogleService-Info.plist in Resources */,
-				D6E44DA708D89936E5A6BC1D /* PrivacyInfo.xcprivacy in Resources */,
+				DAE8D0B8554F4140BA08F41B /* GoogleService-Info.plist in Resources */,
+				05AB76228BC663236D7E4823 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		BAD4200A698C48EA8E8BC366 /* Resources */ = {
+		27156E3C0AA2499E931EFEF2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -357,7 +357,21 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		2EDEC6D10378C1BB8DECB2AF /* [Expo] Configure project */ = {
+		4978DEA9A6424177ADD9ABBD /* Bundle React Native code and images */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle React Native code and images";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n  NODE_BINARY=${NODE_BINARY:-node}\n  \n  # Source environment files\n  if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env\"\n  fi\n  if [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env.local\"\n  fi\n  \n  # Set project root\n  export PROJECT_ROOT=\"$PROJECT_DIR\"/..\n  \n  # Set entry file\n  export ENTRY_FILE=\"$PROJECT_ROOT/index.share.js\"\n  \n  # Set up Expo CLI\n  if [[ -z \"$CLI_PATH\" ]]; then\n    export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\n  fi\n  \n  if [[ -z \"$BUNDLE_COMMAND\" ]]; then\n    export BUNDLE_COMMAND=\"export:embed\"\n  fi\n  \n  REACT_NATIVE_SCRIPTS_PATH=$(\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts'\")\n  WITH_ENVIRONMENT=\"$REACT_NATIVE_SCRIPTS_PATH/xcode/with-environment.sh\"\n  REACT_NATIVE_XCODE=\"$REACT_NATIVE_SCRIPTS_PATH/react-native-xcode.sh\"\n  \n  /bin/sh -c \"$WITH_ENVIRONMENT $REACT_NATIVE_XCODE\"";
+		};
+		6E9FABB01600FDB5207A581B /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -375,56 +389,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Wink/expo-configure-project.sh\"\n";
-		};
-		440FC061F9E81976668AF986 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-WinkShareExtension-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		6FD787F9E6164676893F932E /* Start Packager */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Start Packager";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "export RCT_METRO_PORT=\"${RCT_METRO_PORT:=8081}\"\necho \"export RCT_METRO_PORT=${RCT_METRO_PORT}\" > \"${SRCROOT}/../node_modules/react-native/scripts/.packager.env\"\nif [ -z \"${RCT_NO_LAUNCH_PACKAGER+xxx}\" ] ; then\n  if nc -w 5 -z localhost ${RCT_METRO_PORT} ; then\n    if ! curl -s \"http://localhost:${RCT_METRO_PORT}/status\" | grep -q \"packager-status:running\" ; then\n      echo \"Port ${RCT_METRO_PORT} already in use, packager is either not running or not running correctly\"\n      exit 2\n    fi\n  else\n    open \"$SRCROOT/../node_modules/react-native/scripts/launchPackager.command\" || echo \"Can't start packager automatically\"\n  fi\nfi\n";
-		};
-		71D569F9C36049FEA29C3AD5 /* Bundle React Native code and images */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Bundle React Native code and images";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n  NODE_BINARY=${NODE_BINARY:-node}\n  \n  # Source environment files\n  if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env\"\n  fi\n  if [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n    source \"$PODS_ROOT/../.xcode.env.local\"\n  fi\n  \n  # Set project root\n  export PROJECT_ROOT=\"$PROJECT_DIR\"/..\n  \n  # Set entry file\n  export ENTRY_FILE=\"$PROJECT_ROOT/index.share.js\"\n  \n  # Set up Expo CLI\n  if [[ -z \"$CLI_PATH\" ]]; then\n    export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\n  fi\n  \n  if [[ -z \"$BUNDLE_COMMAND\" ]]; then\n    export BUNDLE_COMMAND=\"export:embed\"\n  fi\n  \n  REACT_NATIVE_SCRIPTS_PATH=$(\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts'\")\n  WITH_ENVIRONMENT=\"$REACT_NATIVE_SCRIPTS_PATH/xcode/with-environment.sh\"\n  REACT_NATIVE_XCODE=\"$REACT_NATIVE_SCRIPTS_PATH/react-native-xcode.sh\"\n  \n  /bin/sh -c \"$WITH_ENVIRONMENT $REACT_NATIVE_XCODE\"";
 		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -486,7 +450,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Wink/Pods-Wink-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		9C45705BFE9176DC6A91E7FF /* [CP] Copy Pods Resources */ = {
+		8AF25057ABC754D6F173B541 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -546,7 +510,29 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-WinkShareExtension/Pods-WinkShareExtension-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		AB77EC41F5778D27593B5618 /* [CP] Embed Pods Frameworks */ = {
+		A3C0C6034AD19FB75834203B /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-WinkShareExtension-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		AAE3D8223470855B023BED2B /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -564,7 +550,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Wink/Pods-Wink-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		C0D2660F8EE1F353FDFA9501 /* [Expo] Configure project */ = {
+		E77EA91F43DABCEB8D1B7788 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -583,6 +569,20 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-WinkShareExtension/expo-configure-project.sh\"\n";
 		};
+		FDAF2226691244399DBF98B1 /* Start Packager */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Start Packager";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export RCT_METRO_PORT=\"${RCT_METRO_PORT:=8081}\"\necho \"export RCT_METRO_PORT=${RCT_METRO_PORT}\" > \"${SRCROOT}/../node_modules/react-native/scripts/.packager.env\"\nif [ -z \"${RCT_NO_LAUNCH_PACKAGER+xxx}\" ] ; then\n  if nc -w 5 -z localhost ${RCT_METRO_PORT} ; then\n    if ! curl -s \"http://localhost:${RCT_METRO_PORT}/status\" | grep -q \"packager-status:running\" ; then\n      echo \"Port ${RCT_METRO_PORT} already in use, packager is either not running or not running correctly\"\n      exit 2\n    fi\n  else\n    open \"$SRCROOT/../node_modules/react-native/scripts/launchPackager.command\" || echo \"Can't start packager automatically\"\n  fi\nfi\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -591,33 +591,59 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				FE14195E0FC54DE5966B6614 /* ExpoModulesProvider.swift in Sources */,
+				1F83B423B1439D9097441040 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		96327215C98C44A5B93627DC /* Sources */ = {
+		9A279145F5A94DFA807B1BF8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EF8D77889DBA4108A465EA01 /* ShareExtensionViewController.swift in Sources */,
-				1BC355A3A32A6E10A1BCBBC8 /* ExpoModulesProvider.swift in Sources */,
+				BD33881B9EF34371B7E47E66 /* ShareExtensionViewController.swift in Sources */,
+				05216E3D8718B09500DC47D5 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		28BBDA87EA174AB6993C82A1 /* PBXTargetDependency */ = {
+		701E400DC0F349A4AA69ECAB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 7F489123B1DD4584A231BA54 /* WinkShareExtension */;
-			targetProxy = 34718A1B52A840278534784A /* PBXContainerItemProxy */;
+			target = 002C750422AF4926A4470969 /* WinkShareExtension */;
+			targetProxy = 5B8CAD28ABDF4918B221EED3 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		131653497C064E949CA44918 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A85906468781E4086A93B911 /* Pods-WinkShareExtension.debug.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = WinkShareExtension/WinkShareExtension.entitlements;
+				CURRENT_PROJECT_VERSION = 61;
+				ENABLE_ON_DEMAND_RESOURCES = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WinkShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.2;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tat22444.wink.ShareExtension;
+				PRODUCT_NAME = WinkShareExtension;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 58341892750B300B3EBD4BCD /* Pods-Wink.debug.xcconfig */;
+			baseConfigurationReference = 89908CC6478C4AC66A68520F /* Pods-Wink.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -653,7 +679,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 12F64749CE206BAB96F1D030 /* Pods-Wink.release.xcconfig */;
+			baseConfigurationReference = B1D492A69B647B0278DF7E7A /* Pods-Wink.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -822,35 +848,9 @@
 			};
 			name = Release;
 		};
-		ACC948551B4141C7900EA83F /* Debug */ = {
+		FF00D30FDD5D4CDA86E1CC90 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 5A0B96F9D8CC596396580E3B /* Pods-WinkShareExtension.debug.xcconfig */;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = WinkShareExtension/WinkShareExtension.entitlements;
-				CURRENT_PROJECT_VERSION = 61;
-				ENABLE_ON_DEMAND_RESOURCES = NO;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = WinkShareExtension/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0.2;
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.tat22444.wink.ShareExtension;
-				PRODUCT_NAME = WinkShareExtension;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_VERSION = 5.0;
-				VERSIONING_SYSTEM = "apple-generic";
-			};
-			name = Debug;
-		};
-		C662C49F6A3F41858E2C1060 /* Release */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = EF1449F9F9629244A369AC9B /* Pods-WinkShareExtension.release.xcconfig */;
+			baseConfigurationReference = 045B9BF364A626328656B02F /* Pods-WinkShareExtension.release.xcconfig */;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = WinkShareExtension/WinkShareExtension.entitlements;
@@ -895,11 +895,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B46CEDE942684B75BD488D52 /* Build configuration list for PBXNativeTarget "WinkShareExtension" */ = {
+		FB9A832426C5437F942D627B /* Build configuration list for PBXNativeTarget "WinkShareExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				ACC948551B4141C7900EA83F /* Debug */,
-				C662C49F6A3F41858E2C1060 /* Release */,
+				131653497C064E949CA44918 /* Debug */,
+				FF00D30FDD5D4CDA86E1CC90 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

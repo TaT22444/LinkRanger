@@ -231,11 +231,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
 
   // 🚀 効率的なメタデータ取得関数
   const fetchMetadataWithCache = async (targetUrl: string) => {
-    console.log('📄 AddLinkModal: メタデータ取得開始', {
-      url: targetUrl,
-      hasCache: !!metadataCache[targetUrl],
-      lastFetchedUrl
-    });
+
 
     // キャッシュチェック
     if (metadataCache[targetUrl]) {
@@ -244,17 +240,13 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     }
 
     // 新規取得
-    console.log('🌐 AddLinkModal: 新規メタデータ取得', { url: targetUrl });
     const metadata = await metadataService.fetchMetadata(targetUrl, userId);
     
     // キャッシュ保存
     setMetadataCache(prev => ({ ...prev, [targetUrl]: metadata }));
     setLastFetchedUrl(targetUrl);
     
-    console.log('💾 AddLinkModal: メタデータをキャッシュに保存', {
-      url: targetUrl,
-      title: metadata.title?.slice(0, 50) + '...'
-    });
+
     
     return metadata;
   };
@@ -296,27 +288,14 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
             timeoutPromise
           ]);
           
-          // デバッグログ: 取得したメタデータの詳細
-          console.log('🔍 AddLinkModal: 取得したメタデータ', {
-            url: url.trim(),
-            metadataTitle: metadata.title,
-            metadataDescription: metadata.description,
-            metadataImageUrl: metadata.imageUrl,
-            metadataSiteName: metadata.siteName,
-            metadataDomain: metadata.domain
-          });
+
           
           finalTitle = metadata.title || url.trim();
           if (!finalDescription && metadata.description) {
             finalDescription = metadata.description;
           }
           
-          // デバッグログ: 最終的に使用される値
-          console.log('🔍 AddLinkModal: 最終的なリンクデータ', {
-            finalTitle,
-            finalDescription,
-            url: url.trim()
-          });
+
         } catch (error) {
           finalTitle = url.trim();
         } finally {

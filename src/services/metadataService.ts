@@ -79,7 +79,7 @@ export const metadataService = {
         return cachedEntry.data;
       }
       
-      console.log('🌐 metadataService: 新規メタデータ取得', { url: url.slice(0, 50) + '...' });
+
       
       // 一時的にGoogle Maps特別処理を無効化して、通常のWebページとして処理
       // if (this.isGoogleMapsUrl(url)) {
@@ -90,17 +90,7 @@ export const metadataService = {
       const result = await fetchMetadataFunction({ url, userId });
       const metadata = result.data as LinkMetadata;
       
-      // デバッグログ: Cloud Functionsから返されたメタデータ
-      console.log('🔍 metadataService: Cloud Functionsから返されたメタデータ', {
-        url: url.slice(0, 100) + '...',
-        title: metadata.title,
-        description: metadata.description,
-        imageUrl: metadata.imageUrl,
-        siteName: metadata.siteName,
-        domain: metadata.domain,
-        hasFullContent: !!metadata.fullContent,
-        headingsCount: metadata.headings?.length || 0
-      });
+
       
       // 🚀 キャッシュに保存
       metadataCache.set(cacheKey, { data: metadata, timestamp: Date.now() });
@@ -113,9 +103,7 @@ export const metadataService = {
         }
       }
       
-      console.log('✅ metadataService: メタデータ取得・キャッシュ保存完了', { 
-        title: metadata.title?.slice(0, 50) + '...' 
-      });
+
       return metadata;
       
     } catch (error) {
