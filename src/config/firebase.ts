@@ -4,23 +4,33 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 import { getFunctions, Functions } from 'firebase/functions';
 import { Platform } from 'react-native';
 
-// Firebase設定（環境変数優先、フォールバックあり）
+// Firebase設定（環境変数必須）
 const getFirebaseConfig = () => {
-  // 環境変数を優先、開発/本番環境でフォールバック値を使用
+  // 🔒 セキュリティ: 環境変数必須、フォールバック値なし
   const config = {
-    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyCy0GMV6rjbI5kuHlsikcjtmRAvh0fCoBw',
-    authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || 'linkranger-b096e.firebaseapp.com',
-    projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || 'linkranger-b096e',
-    storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'linkranger-b096e.firebasestorage.app',
-    messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '823369241471',
-    appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:823369241471:ios:fbe4aabdbcff92f509c04a'
+    apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
   };
 
-  // 設定の検証
-  const isValidConfig = config.apiKey && config.projectId && config.appId;
+  // 🔍 嚳密な設定検証（セキュリティ強化）
+  const requiredFields = [
+    { key: 'apiKey', value: config.apiKey, envVar: 'EXPO_PUBLIC_FIREBASE_API_KEY' },
+    { key: 'authDomain', value: config.authDomain, envVar: 'EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN' },
+    { key: 'projectId', value: config.projectId, envVar: 'EXPO_PUBLIC_FIREBASE_PROJECT_ID' },
+    { key: 'storageBucket', value: config.storageBucket, envVar: 'EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET' },
+    { key: 'messagingSenderId', value: config.messagingSenderId, envVar: 'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID' },
+    { key: 'appId', value: config.appId, envVar: 'EXPO_PUBLIC_FIREBASE_APP_ID' }
+  ];
   
-  if (!isValidConfig) {
-    throw new Error('Firebase設定が不完全です。環境変数を確認してください。');
+  const missingFields = requiredFields.filter(field => !field.value || field.value.trim() === '');
+  
+  if (missingFields.length > 0) {
+    const missingEnvVars = missingFields.map(field => field.envVar).join(', ');
+    throw new Error(`🔒 Firebase設定エラー: 以下の環境変数が設定されていません - ${missingEnvVars}`);
   }
 
   // デバッグ用（APIキーは表示しない）

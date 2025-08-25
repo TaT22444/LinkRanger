@@ -524,6 +524,8 @@ export const useTags = (userId: string | null) => {
       userId: userId,
       createdAt: new Date(),
       updatedAt: new Date(),
+      lastUsedAt: new Date(),
+      firstUsedAt: new Date(),
       type: type,
       linkCount: 0,
     };

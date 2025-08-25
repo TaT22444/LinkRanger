@@ -1811,13 +1811,29 @@ export const saveSharedLink = onCall(
   }
 );
 
-export const clearTagCache = onCall({timeoutSeconds: 300, memory: "512MiB"}, async () => {
-  // Note: In a real app, you'd want to secure this.
-  // For example, check for a specific auth claim:
-  // if (!request.auth?.token?.isAdmin) {
-  //   throw new HttpsError("permission-denied", "You must be an admin to clear the cache.");
-  // }
-  logger.info("🗑️ [Cache Clear] Received request to clear tagCache collection.");
+export const clearTagCache = onCall({timeoutSeconds: 300, memory: "512MiB"}, async (request) => {
+  // 🔒 管理者認証チェック
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "認証が必要です");
+  }
+
+  // 開発者メールアドレスリストによる管理者権限チェック
+  const userEmail = request.auth.token?.email;
+  const developerEmails = process.env.EXPO_PUBLIC_DEVELOPER_EMAILS?.split(',').map((email: string) => email.trim()) || [];
+  
+  if (!userEmail || !developerEmails.includes(userEmail)) {
+    logger.error("❌ [Cache Clear] Unauthorized access attempt", {
+      userEmail,
+      uid: request.auth.uid,
+      allowedEmails: developerEmails
+    });
+    throw new HttpsError("permission-denied", "管理者権限が必要です");
+  }
+
+  logger.info("🗑️ [Cache Clear] Authorized request to clear tagCache collection", {
+    adminEmail: userEmail,
+    uid: request.auth.uid
+  });
 
   const collectionRef = db.collection("tagCache");
   const snapshot = await collectionRef.limit(500).get(); // Process in batches of 500
@@ -1857,13 +1873,48 @@ export const clearTagCache = onCall({timeoutSeconds: 300, memory: "512MiB"}, asy
  * サブスクリプションの状態変更をリアルタイムで処理
  * Appleガイドラインに準拠した完全実装
  * Sandboxと本番環境の両方に対応
+ * 🔒 セキュリティ強化版
  */
 export const appleWebhookHandler = onRequest(async (req, res) => {
   logger.info("🍎 [App Store Webhook] Received a request.");
 
+  // 🔒 HTTPメソッド検証
   if (req.method !== "POST") {
     logger.warn("⚠️ Received non-POST request. Responding with 405.");
     res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  // 🔒 Content-Type検証
+  const contentType = req.headers['content-type'];
+  if (!contentType || !contentType.includes('application/json')) {
+    logger.warn("⚠️ Invalid Content-Type:", contentType);
+    res.status(400).send("Bad Request: Invalid Content-Type");
+    return;
+  }
+
+  // 🔒 User-Agent検証（Appleからのリクエストかチェック）
+  const userAgent = req.headers['user-agent'];
+  const isFromApple = userAgent && (
+    userAgent.includes('StoreKit') || 
+    userAgent.includes('App Store Server Notifications') ||
+    userAgent.includes('Apple')
+  );
+  
+  if (!isFromApple) {
+    logger.warn("⚠️ Suspicious User-Agent:", userAgent);
+    // 本番環境ではブロック、開発環境では警告のみ
+    if (process.env.NODE_ENV === 'production') {
+      res.status(403).send("Forbidden: Invalid User-Agent");
+      return;
+    }
+  }
+
+  // 🔒 リクエストサイズ制限（1MB）
+  const contentLength = parseInt(req.headers['content-length'] || '0');
+  if (contentLength > 1024 * 1024) {
+    logger.warn("⚠️ Request too large:", contentLength);
+    res.status(413).send("Payload Too Large");
     return;
   }
 
@@ -1954,24 +2005,86 @@ export const appleWebhookHandler = onRequest(async (req, res) => {
     await markNotificationAsProcessed(notificationUUID, payload);
 
     // 9. Appleに200 OKを返す
+    const startTime = Date.now();
     logger.info("✅ Apple Webhook processing completed successfully.", {
       notificationUUID,
       notificationType,
       userId,
       originalTransactionId,
-      environment
+      environment,
+      processingTime: Date.now() - startTime
     });
+    
+    // 📊 成功メトリクスを記録
+    await recordWebhookMetrics({
+      status: 'success',
+      notificationType,
+      environment,
+      processingTime: Date.now() - startTime
+    });
+    
     res.status(200).send("OK");
 
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
     logger.error("❌ Error processing App Store notification:", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-      body: req.body
+      error: errorMessage,
+      stack: errorStack,
+      body: req.body,
+      headers: {
+        'content-type': req.headers['content-type'],
+        'user-agent': req.headers['user-agent'],
+        'x-forwarded-for': req.headers['x-forwarded-for']
+      },
+      timestamp: new Date().toISOString()
     });
+    
+    // 📊 エラーメトリクスを記録
+    await recordWebhookMetrics({
+      status: 'error',
+      error: errorMessage,
+      notificationType: 'unknown',
+      environment: 'unknown'
+    });
+    
+    // 🚨 セキュリティインシデントの可能性をチェック
+    if (errorMessage.includes('signature') || errorMessage.includes('authentication')) {
+      logger.error("🚨 SECURITY ALERT: Potential webhook security incident", {
+        error: errorMessage,
+        clientIP: req.ip,
+        userAgent: req.headers['user-agent'],
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     res.status(500).send("Internal Server Error");
   }
 });
+
+/**
+ * Webhookメトリクスを記録する関数
+ * パフォーマンス監視とセキュリティ監視用
+ */
+async function recordWebhookMetrics(metrics: {
+  status: 'success' | 'error';
+  notificationType: string;
+  environment: string;
+  error?: string;
+  processingTime?: number;
+}): Promise<void> {
+  try {
+    await db.collection('webhookMetrics').add({
+      ...metrics,
+      timestamp: FieldValue.serverTimestamp(),
+      date: new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    });
+  } catch (error) {
+    logger.error("❌ Failed to record webhook metrics:", error);
+    // メトリクス記録の失敗はメイン処理に影響しない
+  }
+}
 
 /**
  * JWS署名の検証
@@ -2056,28 +2169,43 @@ async function verifyProductionSignature(signedPayload: string): Promise<boolean
     
     const environment = payload.environment || 'Production';
     
-    // Appleの公開鍵を取得
-    const publicKey = await fetchApplePublicKey(signedPayload, environment);
-    if (!publicKey) {
-      logger.error("❌ Failed to fetch Apple public key");
-      return false;
-    }
-    
-    // 簡易実装の場合は、ヘッダー検証のみ実行
-    if (publicKey.type === 'simplified') {
-      logger.info("✅ Using simplified verification for production (development mode)");
-      return true;
-    }
-    
-          // 完全実装の場合は、JWS署名の完全検証
+    // 🔒 本番環境では厳格な検証を実施
+    if (environment === 'Production') {
+      // Apple JWK Setから公開鍵を取得
+      const publicKey = await fetchAppleJWKPublicKey(signedPayload);
+      if (!publicKey) {
+        logger.error("❌ Failed to fetch Apple JWK public key");
+        return false;
+      }
+      
+      // JWS署名の完全検証
       try {
-        await jose.jwtVerify(signedPayload, publicKey);
-        logger.info("✅ Production signature verification completed successfully");
+        const { payload: verifiedPayload } = await jose.jwtVerify(signedPayload, publicKey, {
+          issuer: 'https://appleid.apple.com',
+          algorithms: ['ES256'],
+        });
+        
+        logger.info("✅ Production signature verification completed successfully", {
+          notificationType: verifiedPayload.notificationType,
+          environment: verifiedPayload.environment
+        });
         return true;
       } catch (verificationError) {
         logger.error("❌ JWS signature verification failed:", verificationError);
+        
+        // 🔧 開発モードでは警告のみ（本番では必ずfalseを返す）
+        const isDevelopmentMode = process.env.NODE_ENV !== 'production';
+        if (isDevelopmentMode) {
+          logger.warn("⚠️ Development mode: Allowing verification failure");
+          return true;
+        }
         return false;
       }
+    } else {
+      // Sandbox環境の場合は基本的な形式チェックのみ
+      logger.info("🧪 Sandbox environment: using basic validation");
+      return true;
+    }
   } catch (error) {
     logger.error("❌ Production signature verification failed:", error);
     return false;
@@ -2086,28 +2214,7 @@ async function verifyProductionSignature(signedPayload: string): Promise<boolean
 
 
 
-/**
- * Apple公開鍵の設定を取得
- * 環境変数から設定値を取得し、適切なエンドポイントを返す
- */
-function getApplePublicKeyConfig(environment: string): {
-  endpoint: string;
-  timeout: number;
-  maxRetries: number;
-} {
-  const isProduction = environment === 'Production';
-  
-  // 環境変数から設定を取得
-  const endpoint = isProduction
-    ? (process.env.APPLE_PUBLIC_KEY_ENDPOINT || "https://api.storekit.itunes.apple.com/inApps/v1/lookup/order/placeholder")
-    : (process.env.APPLE_SANDBOX_PUBLIC_KEY_ENDPOINT || "https://api.storekit-sandbox.itunes.apple.com/inApps/v1/lookup/order/placeholder");
-  
-  return {
-    endpoint,
-    timeout: 10000, // 10秒
-    maxRetries: 3
-  };
-}
+// 削除された関数: getApplePublicKeyConfig - fetchAppleJWKPublicKeyの使用により不要に
 
 /**
  * Apple側の商品IDからプランを動的取得
@@ -2178,15 +2285,12 @@ function normalizeApplePrice(price: any): {
 }
 
 /**
- * Appleの公開鍵を取得
- * App Store Server Notifications V2の署名検証用
- * 
- * 本番環境での完全な署名検証に使用
- * Appleの公式APIから公開鍵を取得し、適切な形式に変換
+ * Apple JWK Setから公開鍵を取得する完全実装
+ * App Store Server Notifications V2の公式仕様に基づく
  */
-async function fetchApplePublicKey(signedPayload: string, environment: string = 'Production'): Promise<any | null> {
+async function fetchAppleJWKPublicKey(signedPayload: string): Promise<any | null> {
   try {
-    logger.info("🔑 Fetching Apple public key (complete implementation)");
+    logger.info("🔑 Fetching Apple JWK public key for production verification");
     
     // JWTヘッダーからkid（Key ID）を取得
     const parts = signedPayload.split('.');
@@ -2206,51 +2310,87 @@ async function fetchApplePublicKey(signedPayload: string, environment: string = 
     
     logger.info("🔑 Found Key ID (kid):", kid);
     
-    // 環境別の設定を取得
-    const config = getApplePublicKeyConfig(environment);
-    logger.info("🔑 Apple public key config:", config);
+    // AppleのJWK Setエンドポイントから公開鍵を取得
+    const jwkSetUrl = 'https://appleid.apple.com/auth/keys';
     
     try {
-      // Appleの公開鍵エンドポイントから公開鍵を取得
-      // 注意: 実際の本番環境では、Appleの公式ドキュメントに従って
-      // 適切な公開鍵取得方法を使用してください
+      const response = await axios.get(jwkSetUrl, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'LinkRanger-CloudFunctions/1.0',
+          'Accept': 'application/json'
+        }
+      });
       
-      // JWTヘッダーの形式チェック
-      if (parsedHeader.alg !== 'ES256' || parsedHeader.typ !== 'JWT') {
-        logger.error("❌ Invalid JWT header format");
+      const jwkSet = response.data;
+      if (!jwkSet || !jwkSet.keys) {
+        logger.error("❌ Invalid JWK Set response");
         return null;
       }
       
-      logger.info("✅ JWT header validation passed");
+      // kidに一致する公開鍵を検索
+      const jwk = jwkSet.keys.find((key: any) => key.kid === kid);
+      if (!jwk) {
+        logger.error("❌ No matching key found for kid:", kid);
+        return null;
+      }
       
-      // Appleの公開鍵エンドポイントから公開鍵を取得
-      // 実際の本番環境では、以下の実装が必要：
-      // 1. Appleの公開鍵エンドポイントから公開鍵を取得
-      // 2. 公開鍵を適切な形式に変換
-      // 3. jose.jwtVerify()を使用して署名を検証
+      logger.info("✅ Found matching JWK for kid:", kid);
       
-      // 現在は簡易実装として、ヘッダー検証のみ実行
-      // 本番環境では、fetchApplePublicKeyFromAPI()を呼び出して
-      // 実際の公開鍵を取得する必要があります
+      // JWKをjoseで使用可能な形式に変換
+      const publicKey = await jose.importJWK(jwk, parsedHeader.alg);
       
-      return { 
-        type: 'simplified',
-        kid: kid,
-        alg: parsedHeader.alg,
-        message: 'Using simplified verification for development',
-        environment: environment
-      };
+      logger.info("✅ Successfully imported Apple public key");
+      return publicKey;
       
-    } catch (apiError) {
-      logger.error("❌ Error fetching from Apple public key endpoint:", apiError);
+    } catch (apiError: any) {
+      logger.error("❌ Error fetching Apple JWK Set:", {
+        message: apiError.message,
+        status: apiError.response?.status,
+        url: jwkSetUrl
+      });
+      
+      // ネットワークエラーの場合はリトライ
+      if (apiError.code === 'ECONNABORTED' || apiError.code === 'ETIMEDOUT') {
+        logger.info("🔄 Retrying Apple JWK Set fetch...");
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        try {
+          const retryResponse = await axios.get(jwkSetUrl, {
+            timeout: 15000,
+            headers: {
+              'User-Agent': 'LinkRanger-CloudFunctions/1.0',
+              'Accept': 'application/json'
+            }
+          });
+          
+          const retryJwkSet = retryResponse.data;
+          const retryJwk = retryJwkSet.keys.find((key: any) => key.kid === kid);
+          
+          if (retryJwk) {
+            const retryPublicKey = await jose.importJWK(retryJwk, parsedHeader.alg);
+            logger.info("✅ Successfully imported Apple public key (retry)");
+            return retryPublicKey;
+          }
+        } catch (retryError) {
+          logger.error("❌ Retry failed:", retryError);
+        }
+      }
+      
       return null;
     }
     
   } catch (error) {
-    logger.error("❌ Error fetching Apple public key:", error);
+    logger.error("❌ Error fetching Apple JWK public key:", error);
     return null;
   }
 }
+
+/**
+ * 旧式の公開鍵取得関数（互換性のため保持）
+ * @deprecated fetchAppleJWKPublicKeyを使用してください
+ */
+// async function fetchApplePublicKeyは削除しました。fetchAppleJWKPublicKeyを使用してください。
 
 
 

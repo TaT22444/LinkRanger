@@ -24,31 +24,75 @@ service cloud.firestore {
       return resource != null;
     }
 
+    // 🔒 データバリデーション: 文字列長制限
+    function isValidStringLength(value, maxLength) {
+      return value is string && value.size() <= maxLength;
+    }
+
+    // 🔒 データバリデーション: URL形式チェック
+    function isValidUrl(url) {
+      return url is string && 
+             url.size() > 0 && 
+             url.size() <= 2000 && 
+             (url.matches('https://.*') || url.matches('http://.*'));
+    }
+
+    // 🔒 データバリデーション: リンクデータの検証
+    function isValidLinkData(data) {
+      return data.keys().hasAll(['userId', 'url', 'title']) &&
+             isValidStringLength(data.title, 500) &&
+             isValidUrl(data.url) &&
+             data.userId is string;
+    }
+
+    // 🔒 データバリデーション: タグデータの検証
+    function isValidTagData(data) {
+      return data.keys().hasAll(['userId', 'name']) &&
+             isValidStringLength(data.name, 50) &&
+             data.userId is string;
+    }
+
     // --- User Profiles ---
     // ユーザーは自身のプロフィール情報のみアクセス可能
     match /users/{userId} {
       allow read, delete: if isSignedIn() && request.auth.uid == userId;
       allow create: if isSignedIn() && request.auth.uid == userId;
 
-      // (重要) 更新ルール: シンプルで確実な権限チェック
-      // ユーザーは自身のプロフィールを更新できる
-      allow update: if isSignedIn() && request.auth.uid == userId;
+      // 🔒 更新ルール: 権限チェック + データバリデーション
+      allow update: if isSignedIn() && 
+                       request.auth.uid == userId &&
+                       // 重要フィールドの改ざん防止
+                       (!('uid' in request.resource.data) || request.resource.data.uid == userId) &&
+                       (!('email' in request.resource.data) || request.resource.data.email == request.auth.token.email);
     }
 
     // --- User-Owned Content (Links, Tags, Analyses) ---
     // ユーザーは自身のコンテンツのみ作成・読み取り・更新・削除が可能
     match /links/{linkId} {
-      allow read, update, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
-      allow create: if isSignedIn() && isCreatingOwner();
+      allow read, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow update: if isSignedIn() && documentExists() && isUpdatingOwner() &&
+                       // 🔒 userId改ざん防止
+                       request.resource.data.userId == resource.data.userId;
+      allow create: if isSignedIn() && isCreatingOwner() && 
+                       // 🔒 データバリデーション
+                       isValidLinkData(request.resource.data);
     }
 
     match /tags/{tagId} {
-      allow read, update, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
-      allow create: if isSignedIn() && isCreatingOwner();
+      allow read, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow update: if isSignedIn() && documentExists() && isUpdatingOwner() &&
+                       // 🔒 userId改ざん防止
+                       request.resource.data.userId == resource.data.userId;
+      allow create: if isSignedIn() && isCreatingOwner() && 
+                       // 🔒 データバリデーション
+                       isValidTagData(request.resource.data);
     }
 
     match /savedAnalyses/{analysisId} {
-      allow read, update, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow read, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow update: if isSignedIn() && documentExists() && isUpdatingOwner() &&
+                       // 🔒 userId改ざん防止
+                       request.resource.data.userId == resource.data.userId;
       allow create: if isSignedIn() && isCreatingOwner();
     }
 
