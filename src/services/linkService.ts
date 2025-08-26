@@ -266,12 +266,13 @@ export const linkService = {
       const changes = snapshot.docChanges();
       console.log('📥 linkService: リアルタイム更新受信', {
         userId,
-        totalDocs: snapshot.docs.length,
-        changes: changes.map(c => ({ 
-          type: c.type, 
-          id: c.doc.id, 
-          data: c.doc.data() 
-        })),
+        totalDocsInCollection: snapshot.docs.length,  // 🔧 コレクション内の全ドキュメント数
+        actualChanges: changes.length,  // 🔧 実際の変更数
+        changeTypes: changes.reduce((acc, c) => {
+          acc[c.type] = (acc[c.type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),  // 🔧 変更タイプの内訳
+        changedDocIds: changes.map(c => c.doc.id),  // 🔧 変更されたドキュメントID
         hasNewDocuments: changes.some(change => change.type === 'added'),
         timestamp: new Date().toISOString()
       });
@@ -293,11 +294,12 @@ export const linkService = {
         })
         .filter((link): link is Link => link !== null && !!link.id && !!link.url);
       
-      console.log('📊 linkService: 変換後のリンク', {
+      console.log('📊 linkService: リンク変換処理完了', {
         userId,
-        originalCount: snapshot.docs.length,
-        filteredCount: links.length,
-        filteredOutCount: snapshot.docs.length - links.length
+        totalDocsReceived: snapshot.docs.length,  // 🔧 受信した全ドキュメント数
+        successfullyConverted: links.length,  // 🔧 成功した変換数
+        conversionFailures: snapshot.docs.length - links.length,  // 🔧 失敗した変換数
+        note: '全ドキュメントを再変換するのはFirestoreリアルタイムリスナーの仕様'
       });
       
       callback(links);
