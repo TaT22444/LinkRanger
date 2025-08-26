@@ -20,6 +20,7 @@ import { notificationService } from './notificationService';
 
 /**
  * 3日間未読リンクの通知処理を実行する共通関数
+ * 🔥 FCM一元化: ローカル通知を削除、FCMのみで処理
  */
 const processUnusedLinksNotifications = async (unusedLinks: Array<{
   id: string;
@@ -29,91 +30,19 @@ const processUnusedLinksNotifications = async (unusedLinks: Array<{
   lastAccessedAt?: Date;
   createdAt: Date;
 }>) => {
-  console.log('📱 processUnusedLinksNotifications開始:', { count: unusedLinks.length });
+  console.log('📱 processUnusedLinksNotifications開始 (FCM一元化):', { count: unusedLinks.length });
   
-  // ローカル通知を送信（追加の安全チェック付き）
-  for (const link of unusedLinks) {
-    // 🔧 データ形式修正: createdAtをDateオブジェクトに変換
-    let linkCreatedAt: Date;
-    try {
-      if (link.createdAt instanceof Date) {
-        linkCreatedAt = link.createdAt;
-      } else if (typeof link.createdAt === 'string') {
-        linkCreatedAt = new Date(link.createdAt);
-      } else if (link.createdAt && typeof link.createdAt === 'object' && 'seconds' in link.createdAt) {
-        // Firebase Timestamp形式の場合
-        linkCreatedAt = new Date((link.createdAt as any).seconds * 1000);
-      } else {
-        console.error('⚠️ 無効なcreatedAt形式:', { linkId: link.id, createdAt: link.createdAt, type: typeof link.createdAt });
-        continue;
-      }
-    } catch (error) {
-      console.error('⚠️ createdAt変換エラー:', { linkId: link.id, createdAt: link.createdAt, error });
-      continue;
-    }
-
-    // 🔒 厳格な安全チェック: 作成から最低3日経過していないリンクは絶対に通知しない
-    const now = new Date();
-    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
-    
-    console.log('🔍 backgroundTaskService: 時間チェック', {
-      linkId: link.id,
-      linkTitle: link.title.slice(0, 30) + '...',
-      createdAt: linkCreatedAt.toISOString(),
-      threeDaysAgo: threeDaysAgo.toISOString(),
-      currentTime: now.toISOString(),
-      isOldEnough: linkCreatedAt <= threeDaysAgo,
-      ageInHours: Math.floor((now.getTime() - linkCreatedAt.getTime()) / (1000 * 60 * 60))
-    });
-    
-    if (linkCreatedAt > threeDaysAgo) {
-      console.log('🚫 backgroundTaskService: リンクが新しすぎるためスキップ', {
-        linkId: link.id,
-        ageInHours: Math.floor((now.getTime() - linkCreatedAt.getTime()) / (1000 * 60 * 60)),
-        requiredHours: 72
-      });
-      continue; // この新しいリンクの通知をスキップ
-    }
-    
-    console.log('📱 通知送信:', {
-      linkId: link.id,
-      title: link.title.slice(0, 30) + '...',
-      createdAt: linkCreatedAt.toISOString()
-    });
-    
-    // 直接ローカル通知を送信（Cloud Functionsからの呼び出し用）
-    try {
-      if (notificationService && typeof (notificationService as any).scheduleNotificationAsync === 'function') {
-        // Notificationsモジュールが利用可能な場合のみ
-        const Notifications = require('expo-notifications');
-        if (Notifications && typeof Notifications.scheduleNotificationAsync === 'function') {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: '📚 未読リンクのリマインダー',
-              body: `「${link.title}」を3日前に保存しました。まだ読んでいませんか？`,
-              data: {
-                type: '3day_reminder_background',
-                linkId: link.id,
-                linkUrl: link.url,
-                linkTitle: link.title,
-                scheduledBy: 'background_task'
-              },
-              sound: true,
-            },
-            trigger: null, // 即座送信
-          });
-          
-          console.log('✅ バックグラウンド通知送信完了:', link.id);
-        } else {
-          console.log('⚠️ expo-notificationsモジュールが利用できません');
-        }
-      }
-    } catch (notificationError) {
-      console.error('❌ 通知送信エラー:', notificationError);
-    }
-  }
+  // 🔥 FCM一元化: ローカル通知を送信せず、Cloud SchedulerのFCMに任せる
+  console.log('🌩️ バックグラウンドタスク: FCMはサーバーサイドで処理', {
+    unusedLinksCount: unusedLinks.length,
+    notificationSystem: 'Cloud Scheduler + FCM',
+    schedule: '6時間ごと'
+  });
   
-  console.log('✅ processUnusedLinksNotifications完了');
+  // バックグラウンドタスクではローカル通知を送信せず、
+  // Cloud Schedulerが定期的に全ユーザーをチェックしてFCM通知を送信
+  
+  console.log('✅ processUnusedLinksNotifications完了 (FCM一元化)');
 };
 
 // バックグラウンドタスクの定義

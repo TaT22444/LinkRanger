@@ -10,6 +10,7 @@ import {
 import { globalCache } from '../hooks/useFirestore';
 import { db } from '../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { fcmService } from '../services/fcmService';
 
 interface AuthContextType extends AuthState {
   loginWithGoogle: () => Promise<void>;
@@ -43,7 +44,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     try {
-      const unsubscribe = onAuthStateChange((user) => {
+      const unsubscribe = onAuthStateChange(async (user) => {
         setState({
           user: user ? {
             ...user,
@@ -55,6 +56,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           loading: false,
           error: null,
         });
+
+        // 🔥 ユーザーログイン時にFCM初期化を実行
+        if (user) {
+          try {
+            console.log('🔐 ユーザーログイン検出: FCM初期化を開始');
+            await fcmService.initializeFCM();
+            console.log('✅ FCMトークン登録完了 - Cloud Schedulerが通知送信で使用');
+          } catch (fcmError) {
+            console.error('❌ FCM初期化エラー:', fcmError);
+            // FCMエラーは認証の妨げにならないようにログのみ
+          }
+        }
       });
 
       return () => unsubscribe();

@@ -18,6 +18,7 @@ import {initializeApp} from "firebase-admin/app";
 import {GoogleGenerativeAI} from "@google/generative-ai";
 import {getTaggingPrompt, getMainEntitiesPrompt} from "./prompts";
 import * as jose from 'jose';
+import {getMessaging} from 'firebase-admin/messaging';
 
 // Firebase Admin初期化
 initializeApp();
@@ -3097,4 +3098,297 @@ async function handleUnknownNotification(userId: string, notificationType: strin
     logger.error("❌ Error handling unknown notification:", error);
     // 未知の通知のエラーは致命的ではないので、処理を続行
   }
+}
+
+// ===================================================================
+//
+// FCM プッシュ通知システム
+//
+// ===================================================================
+
+/**
+ * FCMトークンを登録
+ * セキュリティ強化: 認証済みユーザーのみ実行可能
+ */
+export const registerFCMToken = onCall(async (request) => {
+  // 🔒 認証チェック（セキュリティ強化要件に準拠）
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "認証が必要です");
+  }
+
+  const userId = request.auth.uid;
+  const { fcmToken, platform, deviceInfo } = request.data;
+
+  if (!fcmToken || typeof fcmToken !== 'string') {
+    throw new HttpsError("invalid-argument", "有効なFCMトークンが必要です");
+  }
+
+  try {
+    logger.info("📱 FCMトークン登録開始:", { 
+      userId, 
+      platform: platform || 'unknown',
+      tokenPreview: fcmToken.slice(0, 20) + '...' 
+    });
+
+    // ユーザードキュメントにFCMトークンを保存
+    const userRef = db.collection("users").doc(userId);
+    await userRef.update({
+      fcmToken: fcmToken,
+      fcmTokenUpdatedAt: FieldValue.serverTimestamp(),
+      fcmPlatform: platform || 'unknown',
+      fcmDeviceInfo: deviceInfo || {},
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    logger.info("✅ FCMトークン登録完了:", { userId });
+    
+    return {
+      success: true,
+      message: "FCMトークンが正常に登録されました"
+    };
+  } catch (error) {
+    logger.error("❌ FCMトークン登録エラー:", { userId, error });
+    throw new HttpsError("internal", "FCMトークン登録に失敗しました");
+  }
+});
+
+/**
+ * 3日間未読リンクをチェックしてFCM通知を送信（スケジュール実行用）
+ * セキュリティ強化: 管理者認証または内部呼び出しのみ
+ */
+export const checkUnusedLinksScheduled = onRequest(async (req, res) => {
+  try {
+    // 🔒 セキュリティチェック: POSTメソッドのみ許可
+    if (req.method !== "POST") {
+      logger.warn("⚠️ Invalid method for scheduled check:", req.method);
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
+
+    // 🔒 セキュリティチェック: Cloud Schedulerまたは管理者からのリクエストのみ許可
+    const authHeader = req.headers['authorization'];
+    const userAgent = req.headers['user-agent'];
+    const isFromScheduler = userAgent && userAgent.includes('Google-Cloud-Scheduler');
+    const isFromAdmin = await isAdminRequest(authHeader);
+
+    if (!isFromScheduler && !isFromAdmin) {
+      logger.warn("🚨 SECURITY ALERT: Unauthorized scheduled check attempt:", {
+        userAgent,
+        authHeader: authHeader ? '[HIDDEN]' : 'none',
+        clientIP: req.ip,
+        timestamp: new Date().toISOString()
+      });
+      res.status(403).send("Forbidden: Not authorized");
+      return;
+    }
+
+    logger.info("🔍 スケジュール実行: 3日間未読リンクチェック開始");
+
+    // 全ユーザーのFCMトークンを取得
+    const usersQuery = db.collection("users")
+      .where("fcmToken", "!=", null)
+      .limit(1000); // バッチ処理制限
+
+    const usersSnapshot = await usersQuery.get();
+    let totalNotificationsSent = 0;
+    let totalUsersProcessed = 0;
+
+    // 各ユーザーの未読リンクをチェック
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+      const fcmToken = userData.fcmToken;
+
+      if (!fcmToken) continue;
+
+      try {
+        // ユーザーの3日間未読リンクを取得
+        const unusedLinks = await getUnusedLinksForUser(userId);
+
+        if (unusedLinks.length > 0) {
+          // FCM通知を送信
+          await sendFCMNotification(fcmToken, unusedLinks, userId);
+          totalNotificationsSent++;
+          
+          // 通知送信フラグを更新（重複送信防止）
+          await markLinksAsNotified(unusedLinks);
+        }
+
+        totalUsersProcessed++;
+      } catch (userError) {
+        logger.error("❌ ユーザー処理エラー:", { userId, error: userError });
+        // 個別ユーザーのエラーは処理を継続
+      }
+    }
+
+    logger.info("✅ スケジュール実行完了:", {
+      totalUsersProcessed,
+      totalNotificationsSent,
+      executionTime: new Date().toISOString()
+    });
+
+    res.status(200).json({
+      success: true,
+      totalUsersProcessed,
+      totalNotificationsSent,
+      message: "3日間未読リンクチェック完了"
+    });
+
+  } catch (error) {
+    logger.error("❌ スケジュール実行エラー:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+/**
+ * 管理者リクエストかチェック（セキュリティ強化）
+ */
+async function isAdminRequest(authHeader: string | undefined): Promise<boolean> {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return false;
+  }
+
+  try {
+    // 開発者メールアドレスリスト（環境変数から取得）
+    const adminEmails = process.env.EXPO_PUBLIC_DEVELOPER_EMAILS || 'test@example.com';
+    const adminEmailList = adminEmails.split(',').map(email => email.trim());
+
+    // Firebase Authトークン検証
+    const idToken = authHeader.substring(7);
+    const admin = await import('firebase-admin/auth');
+    const decodedToken = await admin.getAuth().verifyIdToken(idToken);
+    
+    return adminEmailList.includes(decodedToken.email || '');
+  } catch (error) {
+    logger.warn("⚠️ 管理者認証検証エラー:", error);
+    return false;
+  }
+}
+
+/**
+ * ユーザーの3日間未読リンクを取得
+ */
+async function getUnusedLinksForUser(userId: string): Promise<Array<{
+  id: string;
+  title: string;
+  url: string;
+  createdAt: Date;
+}>> {
+  const now = new Date();
+  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+  const query = db.collection("links")
+    .where("userId", "==", userId)
+    .where("isRead", "==", false)
+    .where("isArchived", "==", false)
+    .where("createdAt", "<=", threeDaysAgo);
+
+  const snapshot = await query.get();
+  const unusedLinks: Array<{
+    id: string;
+    title: string;
+    url: string;
+    createdAt: Date;
+  }> = [];
+
+  for (const doc of snapshot.docs) {
+    const linkData = doc.data();
+    
+    // 既に通知済みかチェック
+    const alreadyNotified = linkData.notificationsSent?.unused3Days || 
+                           linkData.notificationsSent?.fcm3Days;
+    
+    if (!alreadyNotified) {
+      unusedLinks.push({
+        id: doc.id,
+        title: linkData.title || "無題のリンク",
+        url: linkData.url,
+        createdAt: linkData.createdAt.toDate()
+      });
+    }
+  }
+
+  return unusedLinks;
+}
+
+/**
+ * FCM通知を送信
+ */
+async function sendFCMNotification(
+  fcmToken: string, 
+  unusedLinks: Array<{id: string; title: string; url: string; createdAt: Date}>,
+  userId: string
+): Promise<void> {
+  try {
+    const messaging = getMessaging();
+    
+    const message = {
+      token: fcmToken,
+      notification: {
+        title: '📚 未読リンクのリマインダー',
+        body: unusedLinks.length === 1 
+          ? `「${unusedLinks[0].title}」を3日前に保存しました`
+          : `${unusedLinks.length}件の未読リンクがあります`,
+      },
+      data: {
+        type: 'unused_links_fcm',
+        linkCount: unusedLinks.length.toString(),
+        linkIds: JSON.stringify(unusedLinks.map(l => l.id)),
+        userId: userId,
+        timestamp: new Date().toISOString()
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: unusedLinks.length
+          }
+        }
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          sound: 'default',
+          channelId: 'unused_links'
+        }
+      }
+    };
+
+    await messaging.send(message);
+    
+    logger.info("✅ FCM通知送信完了:", {
+      userId,
+      linkCount: unusedLinks.length,
+      tokenPreview: fcmToken.slice(0, 20) + '...'
+    });
+    
+  } catch (error) {
+    logger.error("❌ FCM通知送信エラー:", {
+      userId,
+      error,
+      tokenPreview: fcmToken.slice(0, 20) + '...'
+    });
+    throw error;
+  }
+}
+
+/**
+ * リンクに通知送信済みフラグを設定
+ */
+async function markLinksAsNotified(
+  links: Array<{id: string; title: string; url: string; createdAt: Date}>
+): Promise<void> {
+  const batch = db.batch();
+  
+  for (const link of links) {
+    const linkRef = db.collection("links").doc(link.id);
+    batch.update(linkRef, {
+      "notificationsSent.fcm3Days": true,
+      "notificationsSent.unused3Days": true, // 既存との互換性
+      "fcmNotifiedAt": FieldValue.serverTimestamp(),
+      "updatedAt": FieldValue.serverTimestamp(),
+    });
+  }
+  
+  await batch.commit();
 }

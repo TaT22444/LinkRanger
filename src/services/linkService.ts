@@ -61,28 +61,16 @@ export const linkService = {
         const data = createdDoc.data();
 
 
-        // 🔒 通知スケジュールの安全制御
-        console.log('🔍 linkService: 通知スケジュール判定開始', {
+        // 🔥 FCM一元化: ローカル通知スケジュールを削除
+        // 3日間未読通知はCloud Scheduler + FCMで処理
+        console.log('🔍 linkService: FCM一元化システム - ローカル通知スケジュールをスキップ', {
           linkId: docRef.id,
-          isDev: __DEV__,
-          hasCreatedAt: !!(data.createdAt && typeof data.createdAt.toDate === 'function')
+          notificationSystem: 'FCM_ONLY',
+          cloudScheduler: '6時間ごとにチェック'
         });
-
-        // serverTimestamp()が解決されているかチェック
-        if (data.createdAt && typeof data.createdAt.toDate === 'function') {
-          const createdLink = convertToLink(createdDoc);
-          
-          // 3日間リマインダーをスケジュール
-          try {
-            await notificationService.schedule3DayReminder(createdLink);
-            console.log('📅 3日間リマインダー設定完了:', docRef.id);
-          } catch (error) {
-            console.error('❌ 通知スケジュール設定エラー:', error);
-            // 通知設定に失敗してもリンク作成は続行
-          }
-        } else {
-          console.log('🚫 serverTimestamp未解決のため通知スケジュールをスキップ:', docRef.id);
-        }
+        
+        // ローカル通知は設定せず、FCMシステムに完全依存
+        // Cloud Schedulerが6時間ごとに3日間未読リンクをチェックして通知
       }
     } catch (error) {
       console.error('❌ linkService: 作成確認エラー', error);

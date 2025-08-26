@@ -16,6 +16,7 @@ import { Tag } from './src/types';
 import { GOOGLE_SIGN_IN_CONFIG } from './src/config/auth';
 import { notificationService } from './src/services/notificationService';
 import { backgroundTaskService } from './src/services/backgroundTaskService';
+import { fcmService } from './src/services/fcmService';
 import { IapService } from './src/services/applePayService';
 
 type RootStackParamList = {
@@ -215,6 +216,10 @@ const App: React.FC = () => {
         // 通知サービス初期化
         await notificationService.initializeNotifications();
         console.log('✅ 通知サービス初期化完了');
+        
+        // 🔥 FCM初期化: AuthContext でユーザーログイン後に実行
+        // 認証が必要なため、App.tsx では初期化せず AuthProvider で処理
+        console.log('🔐 FCM初期化: ユーザーログイン後に AuthContext で実行されます');
         
         // バックグラウンドタスクサービス初期化（遅延実行で即座実行を防止）
         setTimeout(async () => {
