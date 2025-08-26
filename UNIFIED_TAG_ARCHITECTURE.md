@@ -107,7 +107,7 @@ interface Tag {
   linkCount: number;
   lastUsedAt: Date;
   firstUsedAt: Date;
-  type: 'manual' | 'ai' | 'recommended';
+  type: 'manual' | 'ai';
   source?: string;
 }
 
@@ -117,7 +117,7 @@ interface TagWithInfo {
   name: string;
   color?: string;
   count: number;
-  type: 'manual' | 'ai' | 'recommended';
+  type: 'manual' | 'ai';
 }
 ```
 
@@ -524,7 +524,7 @@ service cloud.firestore {
       return data.keys().hasAll(['userId', 'name', 'type']) &&
              data.userId is string &&
              data.name is string &&
-             data.type in ['manual', 'ai', 'recommended'];
+             data.type in ['manual', 'ai'];
     }
     
     function isValidLinkData(data) {

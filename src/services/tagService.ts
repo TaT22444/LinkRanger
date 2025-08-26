@@ -22,7 +22,7 @@ import { userService } from './userService';
 // ===== タグ関連 =====
 export const tagService = {
   // タグを作成または既存タグIDを取得（新設計の中核機能）
-  async createOrGetTag(userId: string, tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual'): Promise<string> {
+  async createOrGetTag(userId: string, tagName: string, type: 'manual' | 'ai' = 'manual'): Promise<string> {
     // 既存タグをチェック
     const existingTag = await this.getTagByName(userId, tagName);
     if (existingTag) {
@@ -154,31 +154,6 @@ export const tagService = {
     
     const snapshot = await getDocs(q);
     return snapshot.docs.map(convertToLink);
-  },
-
-  // おすすめタグを生成（ユーザー固有）
-  async generateRecommendedTags(userId: string): Promise<string[]> {
-    const SUGGESTED_TAGS = [
-      'プログラミング', 'デザイン', 'マーケティング', 'ビジネス', 'ニュース',
-      'エンターテイメント', '教育', 'ライフスタイル', 'テクノロジー', 'AI',
-      'ツール', '音楽', '映画', '本', '料理', '旅行', 'スポーツ', '健康',
-      'ファッション', '写真', 'DIY', 'ガジェット', 'レビュー', 'チュートリアル'
-    ];
-    
-    // ユーザーの既存タグを取得
-    const existingTags = await this.getUserTags(userId);
-    const existingTagNames = existingTags.map(tag => tag.name.toLowerCase());
-    
-    // 未使用のタグを抽出
-    const availableTags = SUGGESTED_TAGS.filter(tag => 
-      !existingTagNames.includes(tag.toLowerCase())
-    );
-    
-    // ランダムに5-8個選択
-    const shuffled = availableTags.sort(() => 0.5 - Math.random());
-    const count = Math.min(Math.max(5, Math.floor(Math.random() * 4) + 5), shuffled.length);
-    
-    return shuffled.slice(0, count);
   },
 
   // リアルタイムリスナー（タグ用）

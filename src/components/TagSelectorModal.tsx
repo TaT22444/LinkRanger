@@ -25,7 +25,7 @@ interface TagSelectorModalProps {
   availableTags?: Tag[];
   selectedTags?: string[];
   onTagsChange: (tags: string[]) => void;
-  onCreateTag: (tagName: string, type?: 'manual' | 'ai' | 'recommended') => Promise<string>;
+  onCreateTag: (tagName: string, type?: 'manual' | 'ai') => Promise<string>;
   onDeleteTag?: (tagName: string) => Promise<void>;
   onAITagSuggestion?: () => Promise<void>;
   linkTitle?: string;

@@ -259,7 +259,7 @@ export const TagDetailScreen: React.FC = () => {
     }
   }, [user?.uid, safeLinks, tag.id, tag.name, updateLink]);
 
-  const handleAddTag = useCallback(async (tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual') => {
+  const handleAddTag = useCallback(async (tagName: string, type: 'manual' | 'ai' = 'manual') => {
     if (!user?.uid) return '';
     
     try {

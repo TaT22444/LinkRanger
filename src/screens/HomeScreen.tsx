@@ -858,7 +858,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
     return getUserEmail()?.charAt(0).toUpperCase() || 'U';
   };
 
-  const handleAddTag = async (tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual') => {
+  const handleAddTag = async (tagName: string, type: 'manual' | 'ai' = 'manual') => {
     if (!user?.uid) return '';
     
     // プラン制限チェック

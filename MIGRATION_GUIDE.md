@@ -42,7 +42,7 @@ const [customTags, setCustomTags] = useState<string[]>([]);
 
 ### **1. 型定義の更新**
 - `Link.tags: string[]` → `Link.tagIds: string[]`
-- `Tag.type: 'auto' | 'manual'` → `Tag.type: 'manual' | 'ai' | 'recommended'`
+- `Tag.type: 'auto' | 'manual'` → `Tag.type: 'manual' | 'ai'`
 - `Tag.isSystem: boolean` → 削除
 - `Tag.firstUsedAt: Date` → 追加
 

@@ -30,7 +30,7 @@ interface AddTagModalProps {
   availableTags?: Tag[];
   selectedTags?: string[];
   onTagsChange: (tags: string[]) => void;
-  onCreateTag: (tagName: string, type?: 'manual' | 'ai' | 'recommended') => Promise<string>;
+  onCreateTag: (tagName: string, type?: 'manual' | 'ai') => Promise<string>;
   onDeleteTag?: (tagName: string) => Promise<void>;
   onAITagSuggestion?: () => Promise<void>;
   linkTitle?: string;
@@ -42,17 +42,6 @@ interface UndoState {
   tagName: string;
   timeoutId?: NodeJS.Timeout;
 }
-
-// 一般的なタグのサンプル（ユーザーが持っていない場合のおすすめ用）
-const SUGGESTED_TAGS = [
-  'プログラミング', 'デザイン', 'マーケティング', 'ビジネス', 'ニュース',
-  'エンターテイメント', '教育', 'ライフスタイル', 'テクノロジー', 'AI',
-  'ソフトウェア', 'ハードウェア', 'クラウド', 'セキュリティ', 'データ',
-  'アプリ', 'ウェブ', 'モバイル', 'ゲーム', 'アート',
-  '音楽', '映画', '本', '料理', '旅行',
-  'スポーツ', '健康', 'フィットネス', 'ファッション', '写真',
-  'DIY', 'ガジェット', 'レビュー', 'チュートリアル', 'ツール'
-];
 
 // モーダルの高さ状態
 const MODAL_HEIGHTS = {
@@ -78,7 +67,6 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
   const [isAIAnalyzing, setIsAIAnalyzing] = useState(false);
   const [undoState, setUndoState] = useState<UndoState>({ visible: false, tagName: '' });
   const [deletedTags, setDeletedTags] = useState<Set<string>>(new Set());
-  const [recommendedTags, setRecommendedTags] = useState<string[]>([]);
   const [isVisible, setIsVisible] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [pendingTags, setPendingTags] = useState<string[]>([]); // 作成予定のタグ
@@ -96,22 +84,6 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
   const createSectionGestureRef = useRef<PanGestureHandler>(null);
   const dividerGestureRef = useRef<PanGestureHandler>(null);
 
-  // おすすめタグを生成する関数
-  const generateRecommendedTags = (tags: Tag[]) => {
-    const existingTagNames = tags.map(tag => tag.name.toLowerCase());
-    
-    // ユーザーが持っていないタグを提案
-    const newTagSuggestions = SUGGESTED_TAGS.filter(tag => 
-      !existingTagNames.includes(tag.toLowerCase())
-    );
-    
-    // ランダムに5-8個選択
-    const shuffled = newTagSuggestions.sort(() => 0.5 - Math.random());
-    const selectedCount = Math.min(Math.max(5, Math.floor(Math.random() * 4) + 5), shuffled.length);
-    
-    return shuffled.slice(0, selectedCount);
-  };
-
   // データの初期化
   useEffect(() => {
     if (visible) {
@@ -120,18 +92,12 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       console.log('availableTags length:', availableTags?.length || 0);
       console.log('selectedTags:', selectedTags);
       
-      // setLocalSelectedTags(selectedTags || []); // この行は削除
       setCreatedTags([]);
       setPendingTags([]);
       setNewTagName('');
       setDeletedTags(new Set());
       setUndoState({ visible: false, tagName: '' });
       setIsExpanded(false);
-      
-      // おすすめタグを生成
-      const newRecommendedTags = generateRecommendedTags(availableTags);
-      console.log('Generated recommended tags:', newRecommendedTags);
-      setRecommendedTags(newRecommendedTags);
       
       console.log('=== End Data Initialization ===');
     }
@@ -249,15 +215,6 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       // ジェスチャー開始時の処理
       gestureTranslateY.setOffset(0);
       gestureTranslateY.setValue(0);
-    }
-  };
-
-  const handleRecommendedTagCreate = async (tagName: string) => {
-    // 既に作成予定リストにある場合は削除、ない場合は追加
-    if (pendingTags.includes(tagName)) {
-      setPendingTags(prev => prev.filter(tag => tag !== tagName));
-    } else {
-      setPendingTags(prev => [...prev, tagName]);
     }
   };
 
@@ -384,12 +341,6 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       setIsExpanded(true);
     }
   };
-
-  // デバッグ用（visibleの時のみ、かつ初回レンダリング時のみ）
-  if (visible && recommendedTags.length > 0) {
-    console.log('AddTagModal render - recommendedTags:', recommendedTags);
-    console.log('AddTagModal render - recommendedTags.length:', recommendedTags.length);
-  }
 
   return (
     <Modal
@@ -518,64 +469,6 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
                   </TouchableOpacity>
                 </View>
               )}
-
-              {/* 区切り線 */}
-              <View style={styles.dividerContainer}>
-                <View style={styles.divider} />
-              </View>
-
-              {/* おすすめタグセクション (ScrollViewをViewに変更) */}
-              <View style={styles.recommendedSection}>
-                  {/* おすすめタグのヘッダー */}
-                  <View style={styles.sectionHeader}>
-                    <View style={styles.sectionTitleContainer}>
-                      <Text style={styles.sectionTitle}>おすすめタグ</Text>
-                      <View style={styles.tagCount}>
-                        <Text style={styles.tagCountText}>{recommendedTags.length}</Text>
-                      </View>
-                    </View>
-                  </View>
-                  {/* おすすめタグ */}
-                  {recommendedTags.length > 0 ? (
-                    <View style={styles.tagsGrid}>
-                      {recommendedTags.map((tagName, index) => {
-                        const isInPending = pendingTags.includes(tagName);
-                        return (
-                          <TouchableOpacity
-                            key={`recommended-${tagName}-${index}`}
-                            style={[
-                              styles.recommendedTagButton,
-                              isInPending && styles.recommendedTagButtonSelected,
-                            ]}
-                            onPress={() => handleRecommendedTagCreate(tagName)}
-                            disabled={isCreating}
-                          >
-                            <Feather 
-                              name={isInPending ? "check" : "plus"} 
-                              size={14} 
-                              color={isInPending ? "#8A2BE2" : "#666"} 
-                              style={styles.recommendedTagIcon}
-                            />
-                            <Text
-                              style={[
-                                styles.recommendedTagText,
-                                isInPending && styles.recommendedTagTextSelected,
-                              ]}
-                            >
-                              #{tagName}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  ) : (
-                    <View style={styles.emptyState}>
-                      <Feather name="star" size={24} color="#666" />
-                      <Text style={styles.emptyText}>おすすめタグを生成中...</Text>
-                      <Text style={styles.emptySubText}>上のフィールドから新しいタグを作成してください</Text>
-                    </View>
-                  )}
-              </View>
             </Animated.View>
           </PanGestureHandler>
         </Animated.View>
@@ -741,111 +634,4 @@ const styles = StyleSheet.create({
     marginHorizontal: 0, // containerで管理するため0に変更
     marginBottom: 0,
   },
-  recommendedSection: {
-    flex: 1,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-    paddingHorizontal: 20,
-    marginTop: 0,
-  },
-  sectionTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#888',
-  },
-  tagCount: {
-    backgroundColor: '#2A2A2A',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#333',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  tagCountText: {
-    fontSize: 11,
-    color: '#888',
-    fontWeight: '500',
-  },
-  aiButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  aiButtonText: {
-    fontSize: 11,
-    color: '#8A2BE2',
-    fontWeight: '500',
-  },
-  scrollContainer: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  scrollContent: {
-    paddingBottom: 100, // 固定ボタンのスペースを確保
-    flexGrow: 1,
-  },
-  tagsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    marginHorizontal: 0,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  emptySubText: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  recommendedTagButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#2A2A2A',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#333',
-    marginBottom: 6,
-  },
-  recommendedTagButtonSelected: {
-    backgroundColor: '#8A2BE220',
-    borderColor: '#8A2BE2',
-  },
-  recommendedTagIcon: {
-    marginRight: 6,
-  },
-  recommendedTagText: {
-    fontSize: 13,
-    color: '#CCC',
-    fontWeight: '400',
-  },
-  recommendedTagTextSelected: {
-    color: '#8A2BE2',
-    fontWeight: '500',
-  },
-
 }); 

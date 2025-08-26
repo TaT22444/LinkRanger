@@ -504,7 +504,7 @@ export const useTags = (userId: string | null) => {
     }
   }, [userId]);
 
-  const createOrGetTag = useCallback(async (tagName: string, type: 'manual' | 'ai' | 'recommended' = 'manual') => {
+  const createOrGetTag = useCallback(async (tagName: string, type: 'manual' | 'ai' = 'manual') => {
     if (!userId) throw new Error('User ID is not available');
 
     const normalizedTagName = tagName.trim();
@@ -571,24 +571,12 @@ export const useTags = (userId: string | null) => {
     }
   }, [userId, tags]);
 
-  const generateRecommendedTags = useCallback(async () => {
-    if (!userId) return [];
-    
-    try {
-      return await tagService.generateRecommendedTags(userId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate recommended tags');
-      return [];
-    }
-  }, [userId]);
-
   return {
     tags,
     loading,
     error,
     createOrGetTag,
     deleteTag,
-    generateRecommendedTags,
   };
 };
 

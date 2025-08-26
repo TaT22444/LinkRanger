@@ -27,7 +27,7 @@ interface LinkDetailScreenProps {
   onUpdateLink?: (linkId: string, updates: Partial<Link>) => Promise<void>;
   userPlan?: UserPlan;
   availableTags?: Tag[];
-  onCreateTag?: (tagName: string, type?: 'manual' | 'ai' | 'recommended') => Promise<string>;
+  onCreateTag?: (tagName: string, type?: 'manual' | 'ai') => Promise<string>;
   onDeleteTag?: (tagName: string) => Promise<void>;
   onDelete?: () => void;
 }

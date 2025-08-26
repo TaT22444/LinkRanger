@@ -166,8 +166,8 @@ export interface Tag {
   firstUsedAt: Date; // 初回使用日時
   
   // タグの種類
-  type: 'manual' | 'ai' | 'recommended'; // 作成方法
-  source?: string; // AI/推奨タグの場合の元情報
+  type: 'manual' | 'ai'; // 作成方法
+  source?: string; // AIタグの場合の元情報
 }
 
 // UI表示用のタグ情報
@@ -176,7 +176,7 @@ export interface TagWithInfo {
   name: string;
   color?: string;
   count: number;
-  type: 'manual' | 'ai' | 'recommended';
+  type: 'manual' | 'ai';
 }
 
 // リンクとタグ情報を結合した型（UI表示用）
