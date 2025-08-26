@@ -1674,7 +1674,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                     autoComplete="off"
                     keyboardType="default"
                     autoFocus
-                    clearButtonMode="while-editing"
+                    clearButtonMode="never"
                     onSubmitEditing={() => {
                       // 検索実行時にキーボードを隠す
                       if (searchQuery.trim()) {
@@ -1987,6 +1987,8 @@ const styles = StyleSheet.create({
   searchClearButton: {
     padding: 4,
     marginLeft: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
   },
 
   accountButton: {

@@ -93,8 +93,9 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     setGeneratingAITags(false);
     setLoading(false);
     setIsExpanded(false);
+    // 🔧 URLもリセットして前回の入力が残らないようにする
+    setUrl('');
     // キャッシュはリセットしない（セッション中は保持）
-    // URLは個別に管理するため、ここではリセットしない
   };
 
   // モーダル表示/非表示の状態管理とアニメーション
@@ -102,11 +103,14 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
     if (visible && !isVisible) {
       // モーダルを開く
       setIsVisible(true);
+      
+      // 🔧 フォームを先にリセットしてから、initialUrlがある場合のみ設定
+      resetForm();
+      
       // initialUrlが設定されている場合はURLを更新
-      if (initialUrl && initialUrl !== url) {
+      if (initialUrl && initialUrl.trim()) {
         setUrl(initialUrl);
       }
-      resetForm();
       
       // アニメーション開始
       Animated.parallel([
