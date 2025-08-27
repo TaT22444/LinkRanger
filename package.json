@@ -10,7 +10,10 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "build:dev": "eas build --profile development --platform ios",
-    "build:preview": "eas build --profile preview --platform ios"
+    "build:preview": "eas build --profile preview --platform ios",
+    "announcement:create": "node scripts/create-announcement.js",
+    "announcement:notify": "node scripts/send-notification.js",
+    "announcement:quick": "node scripts/create-and-notify.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",

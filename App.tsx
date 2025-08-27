@@ -1,5 +1,5 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, AppState, AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
@@ -12,6 +12,8 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { EditProfileScreen } from './src/screens/EditProfileScreen';
 import { TagDetailScreen } from './src/screens/TagDetailScreen';
+import { AnnouncementsScreen } from './src/screens/AnnouncementsScreen';
+import { AnnouncementDetailScreen } from './src/screens/AnnouncementDetailScreen';
 import { Tag } from './src/types';
 import { GOOGLE_SIGN_IN_CONFIG } from './src/config/auth';
 import { notificationService } from './src/services/notificationService';
@@ -38,12 +40,16 @@ type MainStackParamList = {
   LinkList: undefined;
   TagManagement: undefined;
   TagDetail: { tag: Tag };
+  Announcements: undefined;
+  AnnouncementDetail: { announcementId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const MainStack = createNativeStackNavigator<MainStackParamList>();
 
 const MainNavigator: React.FC<{ sharedLinkData: SharedLinkData | null }> = ({ sharedLinkData }) => {
+  const HomeScreenWrapper = () => <HomeScreen sharedLinkData={sharedLinkData} />;
+  
   return (
     <MainStack.Navigator
       screenOptions={{
@@ -51,9 +57,7 @@ const MainNavigator: React.FC<{ sharedLinkData: SharedLinkData | null }> = ({ sh
         contentStyle: { backgroundColor: '#121212' },
       }}
     >
-      <MainStack.Screen name="Home">
-        {() => <HomeScreen sharedLinkData={sharedLinkData} />}
-      </MainStack.Screen>
+      <MainStack.Screen name="Home" component={HomeScreenWrapper} />
       <MainStack.Screen 
         name="Account" 
         component={AccountScreen}
@@ -81,6 +85,29 @@ const MainNavigator: React.FC<{ sharedLinkData: SharedLinkData | null }> = ({ sh
         component={TagDetailScreen}
         options={{
           headerShown: false,
+          contentStyle: { backgroundColor: '#121212' },
+        }}
+      />
+      <MainStack.Screen 
+        name="Announcements" 
+        component={AnnouncementsScreen}
+        options={{
+          headerTitle: 'お知らせ',
+          headerShown: true,
+          headerStyle: { backgroundColor: '#121212' },
+          headerTintColor: '#fff',
+          headerTitleStyle: { fontWeight: 'bold' },
+        }}
+      />
+      <MainStack.Screen 
+        name="AnnouncementDetail" 
+        component={AnnouncementDetailScreen}
+        options={{
+          headerTitle: 'お知らせ詳細',
+          headerShown: true,
+          headerStyle: { backgroundColor: '#121212' },
+          headerTintColor: '#fff',
+          headerTitleStyle: { fontWeight: 'bold' },
           contentStyle: { backgroundColor: '#121212' },
         }}
       />
@@ -121,6 +148,12 @@ const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const [sharedLinkData, setSharedLinkData] = useState<SharedLinkData | null>(null);
   const navigationRef = useRef<any>(null);
+
+  // MainNavigatorをメモ化してパフォーマンスを改善
+  const MainNavigatorWrapper = useMemo(
+    () => () => <MainNavigator sharedLinkData={sharedLinkData} />,
+    [sharedLinkData]
+  );
 
   // Deep Link の初回URL & ランタイムイベントの両方を処理（既存）
   useEffect(() => {
@@ -198,7 +231,7 @@ const AppContent: React.FC = () => {
         {!user ? (
           <Stack.Screen name="Auth" component={AuthScreen} />
         ) : (
-          <Stack.Screen name="Main" component={() => <MainNavigator sharedLinkData={sharedLinkData} />} />
+          <Stack.Screen name="Main" component={MainNavigatorWrapper} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

@@ -32,6 +32,10 @@
       {
         "source": "/share**",
         "destination": "/share.html"
+      },
+      {
+        "source": "/admin**",
+        "destination": "/admin.html"
       }
     ],
     "headers": [

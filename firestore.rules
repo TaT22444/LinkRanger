@@ -37,6 +37,14 @@ service cloud.firestore {
              (url.matches('https://.*') || url.matches('http://.*'));
     }
 
+    // 🔒 管理者権限チェック
+    function isAdmin() {
+      return request.auth != null && 
+             request.auth.token.email in [
+               'tatsu0823takasago@icloud.com'
+             ];
+    }
+
     // 🔒 データバリデーション: リンクデータの検証
     function isValidLinkData(data) {
       return data.keys().hasAll(['userId', 'url', 'title']) &&
@@ -116,6 +124,25 @@ service cloud.firestore {
       // 認証済みユーザーは誰でも読み取り可能
       allow read: if isSignedIn();
       allow write: if false; // クライアントからの書き込みは全面禁止
+    }
+
+    // --- お知らせ機能 ---
+    // お知らせ。すべての認証済みユーザーが読み取り可能。
+    match /announcements/{announcementId} {
+      // 認証済みユーザーは誰でも読み取り可能
+      allow read: if isSignedIn();
+      // 管理者のみ書き込み可能
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // お知らせ既読状態。ユーザーは自身の既読情報のみアクセス可能。
+    match /userAnnouncementReads/{readId} {
+      allow read, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
+      allow update: if isSignedIn() && documentExists() && isUpdatingOwner() &&
+                       // 🔒 userId改ざん防止
+                       request.resource.data.userId == resource.data.userId;
+      allow create: if isSignedIn() && isCreatingOwner();
     }
   }
 }

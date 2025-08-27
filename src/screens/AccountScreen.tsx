@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import { useLinks, useTags } from '../hooks/useFirestore';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { UserPlan } from '../types';
 import { PlanService } from '../services/planService';
+import { announcementService } from '../services/announcementService';
 
 import { UpgradeModal } from '../components/UpgradeModal';
 import { deleteUserAccount } from '../services/authService';
@@ -29,12 +30,58 @@ export const AccountScreen: React.FC = () => {
   
   const userEmail = getUserEmail() || 'No Email';
   const [appVersion, setAppVersion] = useState('');
+  
+  // お知らせ関連のstate
+  const [unreadAnnouncementsCount, setUnreadAnnouncementsCount] = useState(0);
 
   useEffect(() => {
     const version = Application.nativeApplicationVersion;
     const buildVersion = Application.nativeBuildVersion;
     setAppVersion(`${version} (${buildVersion})`);
   }, []);
+  
+  // お知らせの未読数を取得
+  useEffect(() => {
+    if (!user?.uid) return;
+    
+    // 実際のFirestoreプラン値を使用
+    const actualPlan = user?.subscription?.plan === 'plus' ? 'plus' : 'free';
+    
+    const unsubscribe = announcementService.subscribeToAnnouncements(
+      user.uid,
+      actualPlan as UserPlan,
+      (data) => {
+        setUnreadAnnouncementsCount(data.unreadCount);
+      }
+    );
+    
+    return unsubscribe;
+  }, [user?.uid, user?.subscription?.plan]);
+
+  const handleAnnouncements = () => {
+    navigation.navigate('Announcements');
+  };
+
+  // headerに通知アイコンを設定
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          style={styles.headerNotificationButton}
+          onPress={handleAnnouncements}
+        >
+          <Feather name="bell" size={18} color="#fff" />
+          {unreadAnnouncementsCount > 0 && (
+            <View style={styles.headerNotificationBadge}>
+              <Text style={styles.headerNotificationBadgeText}>
+                {unreadAnnouncementsCount > 99 ? '99+' : unreadAnnouncementsCount.toString()}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, unreadAnnouncementsCount, handleAnnouncements]);
   
   // PlanServiceを使用してプラン情報を取得（useMemoで最適化）
   const userPlan = useMemo(() => PlanService.getDisplayPlan(user), [user]); // 表示用プラン
@@ -505,6 +552,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#AAA',
     marginLeft: 8,
+  },
+  
+  // headerの通知アイコン用スタイル
+  headerNotificationButton: {
+    position: 'relative',
+    height: 44,
+    width: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 100,
+  },
+  headerNotificationBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 8,
+    backgroundColor: '#e74c3c',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerNotificationBadgeText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: 'bold',
   },
 
 });

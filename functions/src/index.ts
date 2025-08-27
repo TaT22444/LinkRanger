@@ -3392,3 +3392,129 @@ async function markLinksAsNotified(
   
   await batch.commit();
 }
+
+// ===================================================================
+//
+// お知らせ管理機能
+//
+// ===================================================================
+
+/**
+ * サンプルお知らせを作成（管理者用）
+ */
+exports.createSampleAnnouncement = onCall(async (request) => {
+  try {
+    logger.info('📢 サンプルお知らせ作成開始');
+    
+    // サンプルお知らせデータ
+    const announcementData = {
+      title: 'Winkへようこそ！',
+      content: 'Winkをダウンロードいただき、ありがとうございます。このアプリを使って、お気に入りのWebページを効率的に整理・管理できます。ご不明な点がございましたら、お気軽にお問い合わせください。',
+      type: 'info',
+      priority: 'medium',
+      isActive: true,
+      targetUserPlans: [], // 全ユーザーが対象
+      publishedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      actionText: null,
+      actionUrl: null,
+      expiresAt: null,
+    };
+    
+    // Firestoreに保存
+    const docRef = await db.collection('announcements').add(announcementData);
+    
+    logger.info('✅ サンプルお知らせ作成完了:', { id: docRef.id });
+    
+    return {
+      success: true,
+      announcementId: docRef.id,
+      message: 'サンプルお知らせを作成しました',
+    };
+  } catch (error) {
+    logger.error('❌ サンプルお知らせ作成エラー:', error);
+    throw new HttpsError('internal', 'サンプルお知らせの作成に失敗しました');
+  }
+});
+
+/**
+ * お知らせのプッシュ通知送信
+ */
+exports.sendAnnouncementNotification = onCall(async (request) => {
+  const { announcementId, title, content, targetUserPlans = [] } = request.data;
+  
+  try {
+    logger.info('📱 お知らせプッシュ通知送信開始:', { announcementId, targetUserPlans });
+    
+    // 対象ユーザーを取得
+    let usersQuery = db.collection('users').where('fcmToken', '!=', null);
+    
+    // プラン指定がある場合はフィルタリング
+    if (targetUserPlans.length > 0) {
+      usersQuery = usersQuery.where('subscription.plan', 'in', targetUserPlans);
+    }
+    
+    const usersSnapshot = await usersQuery.get();
+    const messaging = getMessaging();
+    let successCount = 0;
+    let failureCount = 0;
+    
+    // バッチで通知送信
+    const promises = usersSnapshot.docs.map(async (userDoc) => {
+      const userData = userDoc.data();
+      const fcmToken = userData.fcmToken;
+      
+      if (!fcmToken) return;
+      
+      try {
+        const message = {
+          token: fcmToken,
+          notification: {
+            title: `📢 ${title}`,
+            body: content.length > 100 ? content.substring(0, 100) + '...' : content,
+          },
+          data: {
+            type: 'announcement',
+            announcementId: announcementId,
+            userId: userDoc.id,
+            timestamp: new Date().toISOString(),
+          },
+          apns: {
+            payload: {
+              aps: {
+                sound: 'default',
+              },
+            },
+          },
+          android: {
+            priority: 'high' as const,
+            notification: {
+              sound: 'default',
+              channelId: 'announcements',
+            },
+          },
+        };
+        
+        await messaging.send(message);
+        successCount++;
+      } catch (error) {
+        logger.warn('⚠️ 個別通知送信失敗:', { userId: userDoc.id, error });
+        failureCount++;
+      }
+    });
+    
+    await Promise.all(promises);
+    
+    logger.info('✅ お知らせプッシュ通知送信完了:', { successCount, failureCount });
+    
+    return {
+      success: true,
+      successCount,
+      failureCount,
+      message: `プッシュ通知を送信しました（成功: ${successCount}件、失敗: ${failureCount}件）`,
+    };
+  } catch (error) {
+    logger.error('❌ お知らせプッシュ通知送信エラー:', error);
+    throw new HttpsError('internal', 'プッシュ通知の送信に失敗しました');
+  }
+});

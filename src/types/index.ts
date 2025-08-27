@@ -1,6 +1,38 @@
 // ユーザープラン型
 export type UserPlan = 'free' | 'plus';
 
+// お知らせの種類
+export type AnnouncementType = 'info' | 'update' | 'maintenance' | 'feature' | 'warning';
+
+// お知らせの優先度
+export type AnnouncementPriority = 'low' | 'medium' | 'high';
+
+// お知らせ型
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  type: AnnouncementType;
+  priority: AnnouncementPriority;
+  targetUserPlans?: UserPlan[]; // 対象プラン（未指定の場合は全ユーザー）
+  createdAt: Date;
+  publishedAt?: Date; // 公開日時（未来日時で予約投稿可能）
+  expiresAt?: Date; // 有効期限
+  isActive: boolean;
+  imageUrl?: string; // 添付画像URL
+  actionUrl?: string; // アクションURL（詳細ページなど）
+  actionText?: string; // アクションボタンのテキスト
+  createdBy: string; // 作成者のUID（管理者）
+}
+
+// ユーザーのお知らせ既読状態
+export interface UserAnnouncementRead {
+  id: string;
+  userId: string;
+  announcementId: string;
+  readAt: Date;
+}
+
 // リンク表示モード型
 export type LinkViewMode = 'list' | 'folder' | 'tag';
 
