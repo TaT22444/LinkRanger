@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../hooks/useFirestore';
@@ -244,6 +244,58 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       console.log('📱 HomeScreen: 通知タップコールバッククリーンアップ');
     };
   }, []); // 依存配列を空にして一度だけ実行
+
+  // お知らせ画面からの遷移を処理
+  const route = useRoute<RouteProp<{ Home: { linkIdToOpen?: string } }, 'Home'>>();
+  const linkIdToOpen = route.params?.linkIdToOpen;
+
+  useEffect(() => {
+    const openLinkFromParam = async (linkId: string) => {
+      console.log('🔗 HomeScreen: パラメータからリンクを開きます - ID:', linkId);
+      try {
+        // 既存の通知タップ処理とほぼ同じロジック
+        let targetLink = links.find(link => link.id === linkId);
+        if (!targetLink) {
+          const linkDoc = await getDoc(doc(db, 'links', linkId));
+          if (linkDoc.exists()) {
+            const linkData = linkDoc.data();
+            targetLink = {
+              id: linkDoc.id,
+              title: linkData.title || '無題のリンク',
+              url: linkData.url,
+              userId: linkData.userId,
+              status: linkData.status || 'pending',
+              createdAt: linkData.createdAt?.toDate() || new Date(),
+              updatedAt: linkData.updatedAt?.toDate() || new Date(),
+              isRead: linkData.isRead || false,
+              isArchived: linkData.isArchived || false,
+              tagIds: linkData.tagIds || [],
+              notificationsSent: linkData.notificationsSent || { unused3Days: false },
+              expiresAt: linkData.expiresAt?.toDate(),
+              isExpired: linkData.isExpired || false,
+              error: linkData.error,
+            } as Link;
+          }
+        }
+
+        if (targetLink) {
+          setSelectedLink(targetLink);
+          setShowDetailModal(true);
+          // 処理後にパラメータをクリアして、意図しない再実行を防ぐ
+          navigation.setParams({ linkIdToOpen: undefined } as any);
+        } else {
+          Alert.alert('エラー', '指定されたリンクが見つかりません');
+        }
+      } catch (error) {
+        console.error('❌ パラメータからのリンク表示エラー:', error);
+        Alert.alert('エラー', 'リンクの表示に失敗しました');
+      }
+    };
+
+    if (linkIdToOpen) {
+      openLinkFromParam(linkIdToOpen);
+    }
+  }, [linkIdToOpen, links, navigation]);
   
   // インライン検索用の状態
   const [searchQuery, setSearchQuery] = useState('');

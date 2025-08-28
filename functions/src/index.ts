@@ -3453,6 +3453,7 @@ exports.sendAnnouncementNotification = onCall(async (request) => {
 //
 // ===================================================================
 
+
 /**
  * 個別の未読リマインダー通知を1件送信する（Cloud Tasksから呼び出される）
  */
@@ -3495,8 +3496,28 @@ export const sendSingleReminderNotification = onRequest(
         return;
       }
 
+      // 4. Firestoreのannouncementsコレクションに通知を保存
+      const announcementData = {
+        title: `${linkData.title}を忘れていませんか!?`,
+        content: "Winkで確認しましょう！",
+        type: "reminder",
+        priority: "medium",
+        isActive: true,
+        targetUserPlans: [], // 全ユーザーが対象
+        publishedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        actionText: null,
+        actionUrl: null,
+        expiresAt: null,
+        createdBy: "system",
+        linkId: linkId, // リンクIDを追加
+        userId: userId, // ユーザーIDを追加
+      };
+      
+      const announcementRef = await db.collection('announcements').add(announcementData);
+      logger.info('✅ リマインダーお知らせ作成完了:', { id: announcementRef.id });
 
-      // 4. 通知メッセージを作成して送信
+      // 5. 通知メッセージを作成して送信
       const message = {
         token: fcmToken,
         notification: {
@@ -3527,7 +3548,7 @@ export const sendSingleReminderNotification = onRequest(
 
       await getMessaging().send(message);
 
-      // 5. 通知済みフラグを更新
+      // 6. 通知済みフラグを更新
       await linkRef.update({
         "notificationsSent.fcm3Days": true,
         "notificationsSent.unused3Days": true, // 互換性のための古いフラグ
@@ -3544,4 +3565,4 @@ export const sendSingleReminderNotification = onRequest(
       res.status(500).send("Internal Server Error");
     }
   }
-);
+)

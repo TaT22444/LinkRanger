@@ -23,6 +23,8 @@ export interface Announcement {
   actionUrl?: string; // アクションURL（詳細ページなど）
   actionText?: string; // アクションボタンのテキスト
   createdBy: string; // 作成者のUID（管理者）
+  linkId?: string; // リンクID（リマインダーの場合）
+  userId?: string; // ユーザーID（リマインダーの場合）
 }
 
 // ユーザーのお知らせ既読状態

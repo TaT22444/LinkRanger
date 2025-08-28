@@ -363,16 +363,9 @@ class NotificationService {
     // 通知ハンドラーを設定
     setupNotificationHandler();
 
-    // 通知受信時のリスナー
-    this.notificationListener = Notifications.addNotificationReceivedListener((notification: any) => {
-      console.log('📱 通知受信:', notification);
-    });
-
-    // 通知タップ時のリスナー
+    // 1. アプリが起動中に通知をタップした場合のリスナー
     this.responseListener = Notifications.addNotificationResponseReceivedListener((response: any) => {
-      console.log('👆 通知タップ:', response);
-      
-      // 通知データからlinkIdを取得
+      console.log('👆 通知タップ (Foreground/Background):', response);
       const notificationData = response?.notification?.request?.content?.data;
       if (notificationData?.linkId && this.onNotificationTapCallback) {
         console.log('🔗 通知タップ - リンクID検出:', notificationData.linkId);
@@ -382,7 +375,29 @@ class NotificationService {
       }
     });
 
-    console.log('�� 通知リスナー設定完了');
+    // 2. アプリが終了している状態から通知タップで起動した場合の処理
+    Notifications.getInitialNotificationAsync().then((response: any) => {
+      if (response) {
+        console.log('🚀 アプリが通知から起動:', response);
+        const notificationData = response?.notification?.request?.content?.data;
+        if (notificationData?.linkId && this.onNotificationTapCallback) {
+          console.log('🔗 初期通知 - リンクID検出:', notificationData.linkId);
+          // UIの準備が整うのを待つために少し遅延させる
+          setTimeout(() => {
+            if (this.onNotificationTapCallback) {
+              this.onNotificationTapCallback(notificationData.linkId);
+            }
+          }, 500);
+        }
+      }
+    });
+
+    // 通知受信時のリスナー (デバッグ用)
+    this.notificationListener = Notifications.addNotificationReceivedListener((notification: any) => {
+      console.log('📱 通知受信 (Foreground):', notification);
+    });
+
+    console.log('🎧 通知リスナー設定完了');
   }
 }
 
