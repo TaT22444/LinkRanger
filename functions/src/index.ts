@@ -7,6 +7,7 @@
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
 
+import {CloudTasksClient} from "@google-cloud/tasks";
 import {setGlobalOptions} from "firebase-functions";
 import {onCall, HttpsError, onRequest} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
@@ -37,6 +38,14 @@ const getGeminiClient = () => {
 setGlobalOptions({region: "asia-northeast1"});
 
 const db = getFirestore();
+
+// Cloud Tasksクライアントを初期化
+const tasksClient = new CloudTasksClient();
+// タスクキューの設定（環境変数から取得するのが望ましい）
+const project = process.env.GCLOUD_PROJECT || "wink-2024";
+const location = "asia-northeast1";
+const queue = "reminders"; // GCPで作成するキューの名前
+const childFunctionUrl = `https://${location}-${project}.cloudfunctions.net/sendSingleReminderNotification`;
 
 const AI_LIMITS = {
   free: {maxTagsPerRequest: 5, costPerRequest: 0.025},
@@ -1253,7 +1262,7 @@ function generateCompoundKeywords(keywords: string[]): string[] {
   const compounds: string[] = [];
 
   // 英語略語 + 日本語の組み合わせ
-  const englishTerms = keywords.filter((k) => /^[A-Z][A-Za-z0-9]*$/.test(k));
+  const englishTerms = keywords.filter((k) => /^\b[A-Z][A-Za-z0-9]*$\b/.test(k));
   const japaneseTerms = keywords.filter((k) => /[ひらがなカタカナ漢字]/.test(k));
 
   englishTerms.forEach((eng) => {
@@ -1998,7 +2007,6 @@ export const appleWebhookHandler = onRequest(async (req, res) => {
       res.status(404).send("User not found");
       return;
     }
-
     // 7. 通知タイプ別の処理実行
     await processNotificationByType(userId, notificationType, payload);
 
@@ -2521,9 +2529,9 @@ async function findUserByTransactionIdFallback(originalTransactionId: string): P
 async function processNotificationByType(userId: string, notificationType: string, payload: any): Promise<void> {
   try {
     const environment = payload.environment;
-    logger.info("🔄 Processing notification:", { 
+    logger.info("🔄 Processing notification:", {
       userId,
-      notificationType, 
+      notificationType,
       environment,
       originalTransactionId: payload.originalTransactionId
     });
@@ -2535,7 +2543,6 @@ async function processNotificationByType(userId: string, notificationType: strin
     throw error;
   }
 }
-
 
 
 
@@ -2856,11 +2863,11 @@ async function handleSubscriptionStatusChange(userId: string, notificationType: 
           'subscription.applePrice': priceInfo,
           updatedAt: FieldValue.serverTimestamp(),
         });
-        logger.info("✅ Subscription renewal processed:", { 
-          userId, 
-          plan, 
-          productId, 
-          expiresDate, 
+        logger.info("✅ Subscription renewal processed:", {
+          userId,
+          plan,
+          productId,
+          expiresDate,
           environment: payload.environment,
           price: priceInfo
         });
@@ -2886,11 +2893,11 @@ async function handleSubscriptionStatusChange(userId: string, notificationType: 
         
         // データ制限を即座に適用
         await applyImmediatePlanLimits(userId, expiredPlan);
-        logger.info("✅ Subscription expiration processed:", { 
-          userId, 
-          plan: expiredPlan, 
-          productId: expiredProductId, 
-          environment: payload.environment 
+        logger.info("✅ Subscription expiration processed:", {
+          userId,
+          plan: expiredPlan,
+          productId: expiredProductId,
+          environment: payload.environment
         });
         break;
       
@@ -3038,11 +3045,11 @@ async function handleSubscriptionRecovery(userId: string, payload: any): Promise
       updatedAt: FieldValue.serverTimestamp(),
     });
     
-    logger.info("✅ Subscription recovery processed:", { 
-      userId, 
-      plan: recoveryPlan, 
-      productId: recoveryProductId, 
-      environment: payload.environment 
+    logger.info("✅ Subscription recovery processed:", {
+      userId,
+      plan: recoveryPlan,
+      productId: recoveryProductId,
+      environment: payload.environment
     });
   } catch (error) {
     logger.error("❌ Error handling subscription recovery:", error);
@@ -3153,47 +3160,33 @@ export const registerFCMToken = onCall(async (request) => {
 });
 
 /**
- * 3日間未読リンクをチェックしてFCM通知を送信（スケジュール実行用）
- * セキュリティ強化: 管理者認証または内部呼び出しのみ
+ * 3日間未読リンクをチェックし、時間差での個別通知タスクを作成する（スケジュール実行用）
  */
 export const checkUnusedLinksScheduled = onRequest(async (req, res) => {
   try {
-    // 🔒 セキュリティチェック: POSTメソッドのみ許可
+    // 🔒 セキュリティチェック (変更なし)
     if (req.method !== "POST") {
       logger.warn("⚠️ Invalid method for scheduled check:", req.method);
       res.status(405).send("Method Not Allowed");
       return;
     }
-
-    // 🔒 セキュリティチェック: Cloud Schedulerまたは管理者からのリクエストのみ許可
     const authHeader = req.headers['authorization'];
     const userAgent = req.headers['user-agent'];
     const isFromScheduler = userAgent && userAgent.includes('Google-Cloud-Scheduler');
     const isFromAdmin = await isAdminRequest(authHeader);
-
     if (!isFromScheduler && !isFromAdmin) {
-      logger.warn("🚨 SECURITY ALERT: Unauthorized scheduled check attempt:", {
-        userAgent,
-        authHeader: authHeader ? '[HIDDEN]' : 'none',
-        clientIP: req.ip,
-        timestamp: new Date().toISOString()
-      });
+      logger.warn("🚨 SECURITY ALERT: Unauthorized scheduled check attempt:", { userAgent, clientIP: req.ip });
       res.status(403).send("Forbidden: Not authorized");
       return;
     }
 
-    logger.info("🔍 スケジュール実行: 3日間未読リンクチェック開始");
+    logger.info("⏰ [Task Creation] スケジュール実行: 未読リンクの通知タスク作成を開始");
 
-    // 全ユーザーのFCMトークンを取得
-    const usersQuery = db.collection("users")
-      .where("fcmToken", "!=", null)
-      .limit(1000); // バッチ処理制限
-
+    const usersQuery = db.collection("users").where("fcmToken", "!=", null).limit(1000);
     const usersSnapshot = await usersQuery.get();
-    let totalNotificationsSent = 0;
+    let totalTasksCreated = 0;
     let totalUsersProcessed = 0;
 
-    // 各ユーザーの未読リンクをチェック
     for (const userDoc of usersSnapshot.docs) {
       const userId = userDoc.id;
       const userData = userDoc.data();
@@ -3202,40 +3195,56 @@ export const checkUnusedLinksScheduled = onRequest(async (req, res) => {
       if (!fcmToken) continue;
 
       try {
-        // ユーザーの3日間未読リンクを取得
         const unusedLinks = await getUnusedLinksForUser(userId);
 
         if (unusedLinks.length > 0) {
-          // FCM通知を送信
-          await sendFCMNotification(fcmToken, unusedLinks, userId);
-          totalNotificationsSent++;
+          logger.info(`📬 Found ${unusedLinks.length} unused links for user ${userId}. Creating tasks...`);
           
-          // 通知送信フラグを更新（重複送信防止）
-          await markLinksAsNotified(unusedLinks);
-        }
+          let delayInSeconds = 300; // 最初の通知は5分後
+          const TEN_MINUTES_IN_SECONDS = 600;
 
+          for (const link of unusedLinks) {
+            const taskPayload = { userId, linkId: link.id, fcmToken };
+            const task = {
+              httpRequest: {
+                httpMethod: 'POST' as const,
+                url: childFunctionUrl,
+                headers: { 'Content-Type': 'application/json' },
+                body: Buffer.from(JSON.stringify(taskPayload)).toString('base64'),
+              },
+              scheduleTime: {
+                seconds: Math.floor(Date.now() / 1000) + delayInSeconds,
+              },
+            };
+
+            const queuePath = tasksClient.queuePath(project, location, queue);
+            await tasksClient.createTask({ parent: queuePath, task });
+            
+            totalTasksCreated++;
+            delayInSeconds += TEN_MINUTES_IN_SECONDS; // 次のタスクは10分後
+          }
+        }
         totalUsersProcessed++;
       } catch (userError) {
-        logger.error("❌ ユーザー処理エラー:", { userId, error: userError });
-        // 個別ユーザーのエラーは処理を継続
+        logger.error("❌ ユーザー処理中のエラー:", { userId, error: userError });
       }
     }
 
-    logger.info("✅ スケジュール実行完了:", {
+    logger.info("✅ [Task Creation] スケジュール実行完了:", {
       totalUsersProcessed,
-      totalNotificationsSent,
+      totalTasksCreated,
       executionTime: new Date().toISOString()
     });
 
     res.status(200).json({
       success: true,
       totalUsersProcessed,
-      totalNotificationsSent,
-      message: "3日間未読リンクチェック完了"
+      totalTasksCreated,
+      message: "時間差通知タスクの作成が完了しました。"
     });
 
   } catch (error) {
-    logger.error("❌ スケジュール実行エラー:", error);
+    logger.error("❌ スケジュール実行全体のエラー:", error);
     res.status(500).send("Internal Server Error");
   }
 });
@@ -3311,105 +3320,7 @@ async function getUnusedLinksForUser(userId: string): Promise<Array<{
   return unusedLinks;
 }
 
-/**
- * FCM通知を送信
- */
-async function sendFCMNotification(
-  fcmToken: string, 
-  unusedLinks: Array<{id: string; title: string; url: string; createdAt: Date}>,
-  userId: string
-): Promise<void> {
-  try {
-    const messaging = getMessaging();
-    
-    const message = {
-      token: fcmToken,
-      notification: {
-        title: `${unusedLinks[0].title}を忘れていませんか!?`,
-        body: unusedLinks.length === 1 
-          ? "Winkで確認しましょう！"
-          : `他にも${unusedLinks.length - 1}件の未読リンクがあります`,
-      },
-      data: {
-        type: 'unused_links_fcm',
-        linkCount: unusedLinks.length.toString(),
-        linkIds: JSON.stringify(unusedLinks.map(l => l.id)),
-        userId: userId,
-        timestamp: new Date().toISOString()
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: unusedLinks.length
-          }
-        }
-      },
-      android: {
-        priority: 'high' as const,
-        notification: {
-          sound: 'default',
-          channelId: 'unused_links'
-        }
-      }
-    };
 
-    await messaging.send(message);
-    
-    logger.info("✅ FCM通知送信完了:", {
-      userId,
-      linkCount: unusedLinks.length,
-      tokenPreview: fcmToken.slice(0, 20) + '...'
-    });
-    
-  } catch (error: any) {
-    // 無効なFCMトークンに関連するエラーコードかチェック
-    const isInvalidTokenError = error.code === 'messaging/invalid-registration-token' ||
-                                error.code === 'messaging/registration-token-not-registered';
-
-    if (isInvalidTokenError) {
-      logger.warn(`🗑️ 無効なFCMトークンを検出したため、DBから削除します。`, { 
-        userId, 
-        tokenPreview: fcmToken.slice(0, 20) + '...' 
-      });
-      // 該当ユーザーのFCMトークンをDBから削除
-      const userRef = db.collection("users").doc(userId);
-      await userRef.update({
-        fcmToken: FieldValue.delete(),
-        fcmTokenUpdatedAt: FieldValue.serverTimestamp(),
-      });
-    } else {
-      // その他の通知エラー
-      logger.error("❌ FCM通知送信エラー:", {
-        userId,
-        error,
-        tokenPreview: fcmToken.slice(0, 20) + '...'
-      });
-    }
-    // 個々のユーザーの通知エラーで全体の処理を止めない
-  }
-}
-
-/**
- * リンクに通知送信済みフラグを設定
- */
-async function markLinksAsNotified(
-  links: Array<{id: string; title: string; url: string; createdAt: Date}>
-): Promise<void> {
-  const batch = db.batch();
-  
-  for (const link of links) {
-    const linkRef = db.collection("links").doc(link.id);
-    batch.update(linkRef, {
-      "notificationsSent.fcm3Days": true,
-      "notificationsSent.unused3Days": true, // 既存との互換性
-      "fcmNotifiedAt": FieldValue.serverTimestamp(),
-      "updatedAt": FieldValue.serverTimestamp(),
-    });
-  }
-  
-  await batch.commit();
-}
 
 // ===================================================================
 //
@@ -3536,3 +3447,101 @@ exports.sendAnnouncementNotification = onCall(async (request) => {
     throw new HttpsError('internal', 'プッシュ通知の送信に失敗しました');
   }
 });
+// ===================================================================
+//
+// 時間差通知用の子関数
+//
+// ===================================================================
+
+/**
+ * 個別の未読リマインダー通知を1件送信する（Cloud Tasksから呼び出される）
+ */
+export const sendSingleReminderNotification = onRequest(
+  { region: "asia-northeast1", memory: "256MiB" },
+  async (req, res) => {
+    // 1. 呼び出し元がCloud Tasksであるかセキュリティチェック
+    if (!req.headers["x-cloudtasks-queuename"]) {
+      logger.error("🚨 SECURITY ALERT: Unauthorized attempt to call sendSingleReminderNotification.");
+      res.status(403).send("Forbidden: Caller is not Cloud Tasks.");
+      return;
+    }
+
+    try {
+      // 2. リクエストボディからパラメータをパース
+      const { userId, linkId, fcmToken } = req.body;
+      if (!userId || !linkId || !fcmToken) {
+        logger.error("❌ Invalid request body.", { body: req.body });
+        // リトライ不要なエラーのため200を返す
+        res.status(200).send("Bad Request: Missing required parameters.");
+        return;
+      }
+
+      // 3. リンク情報をFirestoreから取得
+      const linkRef = db.collection("links").doc(linkId);
+      const linkDoc = await linkRef.get();
+
+      // リンクが存在しない、またはすでに対応済みの場合は処理を終了
+      if (!linkDoc.exists) {
+        logger.warn(`⏭️ Link ${linkId} not found. Skipping notification.`);
+        res.status(200).send("Link not found or already processed.");
+        return;
+      }
+      const linkData = linkDoc.data()!;
+      
+      // 既に通知済みの場合は何もしない（タスクの重複実行対策）
+      if (linkData.notificationsSent?.fcm3Days === true) {
+        logger.info(`⏭️ Link ${linkId} has already been notified. Skipping.`);
+        res.status(200).send("Already notified.");
+        return;
+      }
+
+
+      // 4. 通知メッセージを作成して送信
+      const message = {
+        token: fcmToken,
+        notification: {
+          title: `${linkData.title}を忘れていませんか!?`,
+          body: "Winkで確認しましょう！",
+        },
+        data: {
+          type: "reminder",
+          linkId: linkId,
+          url: linkData.url,
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+              badge: 1, // バッジは1件ずつ
+            },
+          },
+        },
+        android: {
+          priority: "high" as const,
+          notification: {
+            sound: "default",
+            channelId: "reminders" // リマインダー用のチャネルID
+          }
+        }
+      };
+
+      await getMessaging().send(message);
+
+      // 5. 通知済みフラグを更新
+      await linkRef.update({
+        "notificationsSent.fcm3Days": true,
+        "notificationsSent.unused3Days": true, // 互換性のための古いフラグ
+        "fcmNotifiedAt": FieldValue.serverTimestamp(),
+        "updatedAt": FieldValue.serverTimestamp(),
+      });
+
+      logger.info(`✅ Successfully sent single reminder for link ${linkId} to user ${userId}`);
+      res.status(200).send("Success");
+
+    } catch (error: any) {
+      logger.error("❌ Error in sendSingleReminderNotification:", { error, body: req.body });
+      // Cloud Tasksが5xxエラーを検知して自動的にリトライするように設定
+      res.status(500).send("Internal Server Error");
+    }
+  }
+);
