@@ -3325,10 +3325,10 @@ async function sendFCMNotification(
     const message = {
       token: fcmToken,
       notification: {
-        title: '📚 未読リンクのリマインダー',
+        title: `${unusedLinks[0].title}を忘れていませんか!?`,
         body: unusedLinks.length === 1 
-          ? `「${unusedLinks[0].title}」を3日前に保存しました`
-          : `${unusedLinks.length}件の未読リンクがあります`,
+          ? "Winkで確認しましょう！"
+          : `他にも${unusedLinks.length - 1}件の未読リンクがあります`,
       },
       data: {
         type: 'unused_links_fcm',
@@ -3362,13 +3362,31 @@ async function sendFCMNotification(
       tokenPreview: fcmToken.slice(0, 20) + '...'
     });
     
-  } catch (error) {
-    logger.error("❌ FCM通知送信エラー:", {
-      userId,
-      error,
-      tokenPreview: fcmToken.slice(0, 20) + '...'
-    });
-    throw error;
+  } catch (error: any) {
+    // 無効なFCMトークンに関連するエラーコードかチェック
+    const isInvalidTokenError = error.code === 'messaging/invalid-registration-token' ||
+                                error.code === 'messaging/registration-token-not-registered';
+
+    if (isInvalidTokenError) {
+      logger.warn(`🗑️ 無効なFCMトークンを検出したため、DBから削除します。`, { 
+        userId, 
+        tokenPreview: fcmToken.slice(0, 20) + '...' 
+      });
+      // 該当ユーザーのFCMトークンをDBから削除
+      const userRef = db.collection("users").doc(userId);
+      await userRef.update({
+        fcmToken: FieldValue.delete(),
+        fcmTokenUpdatedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      // その他の通知エラー
+      logger.error("❌ FCM通知送信エラー:", {
+        userId,
+        error,
+        tokenPreview: fcmToken.slice(0, 20) + '...'
+      });
+    }
+    // 個々のユーザーの通知エラーで全体の処理を止めない
   }
 }
 

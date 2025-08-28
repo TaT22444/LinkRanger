@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
+import * as Notifications from 'expo-notifications';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -273,6 +274,27 @@ const App: React.FC = () => {
     // アプリ終了時にIAP接続を終了
     return () => {
       iapService.terminate();
+    };
+  }, []);
+
+  // AppStateの変更を監視してバッジをリセット
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        // アプリがアクティブになったらバッジをリセット
+        await Notifications.setBadgeCountAsync(0);
+        console.log('✅ バッジをリセットしました');
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    // 初回起動時にもバッジをリセット
+    Notifications.setBadgeCountAsync(0);
+    console.log('✅ アプリ起動時にバッジをリセットしました');
+
+    return () => {
+      subscription.remove();
     };
   }, []);
 
