@@ -1564,7 +1564,7 @@ export const validateAppleReceipt = onCall<AppleReceiptValidationRequest>(async 
 
     // プロダクトIDの確認
     const validProducts = [
-      "com.tat22444.wink.plus.monthly",
+      process.env.APPLE_PLUS_MONTHLY || "com.tat22444.wink.plus.monthly",
     ];
 
     if (!validProducts.includes(productId)) {
@@ -2233,15 +2233,15 @@ function getPlanFromProductId(productId: string): 'free' | 'plus' {
   // Apple側の商品IDとプランのマッピング
   const productPlanMap: Record<string, 'free' | 'plus'> = {
     // Plusプランの商品ID
-    'com.tat22444.wink.plus.monthly': 'plus',
-    'com.tat22444.wink.plus.yearly': 'plus',
+    [process.env.APPLE_PLUS_MONTHLY || 'com.tat22444.wink.plus.monthly']: 'plus',
+    [process.env.APPLE_PLUS_YEARLY || 'com.tat22444.wink.plus.yearly']: 'plus',
     
     // 将来的に追加される可能性のあるプラン
-    'com.tat22444.wink.pro.monthly': 'plus', // ProプランもPlusとして扱う
-    'com.tat22444.wink.pro.yearly': 'plus',
+    [process.env.APPLE_PRO_MONTHLY || 'com.tat22444.wink.pro.monthly']: 'plus', // ProプランもPlusとして扱う
+    [process.env.APPLE_PRO_YEARLY || 'com.tat22444.wink.pro.yearly']: 'plus',
     
     // 無料プラン（通常は存在しないが、安全のため）
-    'com.tat22444.wink.free': 'free'
+    [process.env.APPLE_FREE || 'com.tat22444.wink.free']: 'free'
   };
   
   // 商品IDからプランを取得、見つからない場合は'free'を返す

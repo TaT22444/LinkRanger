@@ -18,6 +18,7 @@ import {
 import { UserPlan } from '../types';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../config/firebase';
+import Constants from 'expo-constants';
 
 // バックエンドの検証関数を呼び出す準備
 const validateAppleReceiptFunction = httpsCallable(functions, 'validateAppleReceipt');
@@ -28,11 +29,11 @@ const validateAppleReceiptFunction = httpsCallable(functions, 'validateAppleRece
 // NOTE: App Store Connectで設定したProduct IDと正確に一致させる必要がある
 const productSkus = Platform.select({
   ios: [
-    'com.tat22444.wink.plus.monthly',     // Apple Store Connectで設定した正しいID
+    process.env.EXPO_PUBLIC_APPLE_PLUS_MONTHLY || 'com.tat22444.wink.plus.monthly',     // Apple Store Connectで設定した正しいID
   ],
   android: [
     // TODO: Google Play Consoleで設定したIDを追加
-    'com.tat22444.wink.plus.monthly',
+    process.env.EXPO_PUBLIC_GOOGLE_PLUS_MONTHLY || 'com.tat22444.wink.plus.monthly',
   ],
 }) || [];
 
@@ -367,8 +368,12 @@ export class IapService {
       platform: Platform.OS
     });
     
-    // Development環境では模擬的な購入成功
-    if (__DEV__) {
+    // TestFlight環境の判定: standaloneアプリで、開発モードではないが、TestFlightビルドである場合
+    const isTestFlight = !__DEV__ && Constants.executionEnvironment === 'standalone' &&
+                         process.env.EXPO_PUBLIC_ENABLE_TEST_ACCOUNTS === 'true';
+    
+    // Development環境のみ模擬的な購入成功（TestFlight環境は除く）
+    if (__DEV__ && !isTestFlight) {
       console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - simulating purchase flow', {
         plan,
         sku,
@@ -426,8 +431,12 @@ export class IapService {
       platform: Platform.OS
     });
     
-    // Development環境では模擬的なリストア処理
-    if (__DEV__) {
+    // TestFlight環境の判定: standaloneアプリで、開発モードではないが、TestFlightビルドである場合
+    const isTestFlight = !__DEV__ && Constants.executionEnvironment === 'standalone' &&
+                         process.env.EXPO_PUBLIC_ENABLE_TEST_ACCOUNTS === 'true';
+    
+    // Development環境のみ模擬的なリストア処理（TestFlight環境は除く）
+    if (__DEV__ && !isTestFlight) {
       console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - simulating restore purchases', {
         foundPurchases: 0,
         message: 'No previous purchases found in development mode'
@@ -442,6 +451,11 @@ export class IapService {
         await this.validateReceipt(purchase);
       }
       // iOSではリストア完了のポップアップが自動で表示される
+      
+      // TestFlight環境では特別なメッセージを表示
+      if (isTestFlight) {
+        console.log('[SUB-MONITOR] [' + timestamp + '] TestFlight mode - restore purchases completed (no actual charge)');
+      }
     } catch (error) {
       console.error('❌ Failed to restore purchases', error);
       throw error;
@@ -454,7 +468,7 @@ export class IapService {
    */
   private getSkuForPlan(plan: UserPlan): string | null {
     const planMap = {
-      plus: 'com.tat22444.wink.plus.monthly',   // Apple Store Connectで設定した正しいID
+      plus: process.env.EXPO_PUBLIC_APPLE_PLUS_MONTHLY || 'com.tat22444.wink.plus.monthly',   // Apple Store Connectで設定した正しいID
     };
     
     const sku = planMap[plan as keyof typeof planMap] || null;

@@ -51,7 +51,11 @@ export const AccountScreen: React.FC = () => {
       user.uid,
       actualPlan as UserPlan,
       (data) => {
-        setUnreadAnnouncementsCount(data.unreadCount);
+        // 'reminder'タイプのお知らせを除外して未読数を計算
+        const filteredUnreadCount = data.announcements
+          .filter(announcement => announcement.type !== 'reminder' && !announcement.isRead)
+          .length;
+        setUnreadAnnouncementsCount(filteredUnreadCount);
       }
     );
     

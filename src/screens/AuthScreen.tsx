@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   Linking,
+  Image,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { FontAwesome } from '@expo/vector-icons';
@@ -34,11 +35,10 @@ export const AuthScreen: React.FC = () => {
 
   return (
     <KeyboardAvoidingView style={styles.container} keyboardVerticalOffset={-30} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.content}>
           <View style={styles.titleSection}>
             <Text style={styles.title}>.Wink</Text>
-            {/* <Text style={styles.subtitle}>あなたの知の羅針盤</Text> */}
+            <Text style={styles.subtitle}>「後で読む」を、忘れない。</Text>
           </View>
           <View style={styles.form}>
             <TouchableOpacity style={styles.optionButton} onPress={handleGoogleLogin} disabled={loading}>
@@ -51,16 +51,19 @@ export const AuthScreen: React.FC = () => {
             </TouchableOpacity>
             <View style={styles.termsContainer}>
               <Text style={styles.termsText}>
-                続行することにより.Winkの{' '}
-                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://wink.app/terms')}>
+                続行することにより、
+                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://dot-wink.netlify.app/terms/')}>
                   利用規約
+                </Text>
+                および{'\n'}
+                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://dot-wink.netlify.app/privacy/')}>
+                  プライバシーポリシー
                 </Text>
                 に同意したことになります。
               </Text>
             </View>
           </View>
         </View>
-      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
@@ -76,15 +79,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   content: {
-    marginTop: 80,
     alignItems: 'center',
+    flex: 1,
   },
   titleSection: {
     alignItems: 'center',
-    marginBottom: 120,
+    flex: 1,
+    marginTop: `70%`,
   },
   title: {
-    fontSize: 40,
+    fontSize: 56,
     fontWeight: 'bold',
     color: '#00FFFF',
     marginRight: 10,
@@ -92,10 +96,12 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#888',
+    marginTop: 10,
   },
   form: {
     width: '100%',
     maxWidth: 320,
+    marginBottom: 80,
   },
   optionButton: {
     flexDirection: 'row',

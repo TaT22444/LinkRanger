@@ -19,6 +19,7 @@ import { IapService } from '../services/applePayService';
 import { useAuth } from '../contexts/AuthContext';
 import { useUser } from '../hooks/useFirestore';
 import { Product, Subscription } from 'react-native-iap';
+import Constants from 'expo-constants';
 
 interface UpgradeModalProps {
   visible: boolean;
@@ -269,8 +270,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       return;
     }
 
-    // TestFlight環境での特別処理
-    if (__DEV__) {
+    // 開発環境のみ特別処理（TestFlight環境は除く）
+    // TestFlight環境の判定: standaloneアプリで、開発モードではないが、TestFlightビルドである場合
+    const isTestFlight = !__DEV__ && Constants.executionEnvironment === 'standalone' &&
+                         process.env.EXPO_PUBLIC_ENABLE_TEST_ACCOUNTS === 'true';
+    
+    if (__DEV__ && !isTestFlight) {
       console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - showing TestFlight guidance');
       Alert.alert(
         'テストフライト環境',
@@ -294,15 +299,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       return;
     }
 
-    // 本番環境での実際の購入処理
+    // TestFlight環境と本番環境での実際の購入処理
     try {
       setIsProcessing(true);
       setProcessingPlan(planName);
       
-      console.log('[SUB-MONITOR] [' + timestamp + '] Production purchase flow initiated', {
+      console.log('[SUB-MONITOR] [' + timestamp + '] Purchase flow initiated', {
         planName,
         userId: user.uid,
-        environment: 'production',
+        environment: isTestFlight ? 'testflight' : 'production',
         processingState: 'started'
       });
       
@@ -312,15 +317,24 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       console.log('[SUB-MONITOR] [' + completionTimestamp + '] Purchase plan completed', {
         planName,
         userId: user.uid,
-        environment: 'production',
+        environment: isTestFlight ? 'testflight' : 'production',
         processingState: 'completed'
       });
       
-      Alert.alert(
-        '購入処理完了',
-        '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。\n\n変更内容が反映されるまで少し時間がかかる場合があります。',
-        [{ text: 'OK' }]
-      );
+      // TestFlight環境では特別なメッセージを表示
+      if (isTestFlight) {
+        Alert.alert(
+          'TestFlight環境',
+          'TestFlight版では実際の課金は行われませんが、購入処理が正常に完了しました。\n\nApp Store正式リリース後には実際の課金が行われます。',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          '購入処理完了',
+          '購入処理が完了しました。プランが反映されるまでしばらくお待ちください。\n\n変更内容が反映されるまで少し時間がかかる場合があります。',
+          [{ text: 'OK' }]
+        );
+      }
       
       // 完了メッセージを表示
       setIsWaitingForUpdate(true);
@@ -331,7 +345,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       console.error('[SUB-MONITOR] [' + errorTimestamp + '] Purchase plan failed', {
         planName,
         userId: user.uid,
-        environment: 'production',
+        environment: isTestFlight ? 'testflight' : 'production',
         errorCode: error.code,
         errorMessage: error.message,
         processingState: 'failed'
@@ -358,8 +372,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
   // App Storeのサブスクリプション管理ページにリダイレクト
   const handleManageSubscription = () => {
+    // TestFlight環境の判定: standaloneアプリで、開発モードではないが、TestFlightビルドである場合
+    const isTestFlight = !__DEV__ && Constants.executionEnvironment === 'standalone' &&
+                         process.env.EXPO_PUBLIC_ENABLE_TEST_ACCOUNTS === 'true';
+    
     // TestFlight環境での適切な案内
-    if (__DEV__) {
+    if (__DEV__ && !isTestFlight) {
       Alert.alert(
         'テストフライト環境',
         'TestFlight版では、実際のサブスクリプション管理は制限されています。\n\nApp Store正式リリース後に以下が可能になります：\n• プランの変更・キャンセル\n• 請求履歴の確認\n• 自動更新設定の変更',
@@ -379,13 +397,13 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       return;
     }
     
-    // 本番環境: 通常のサブスクリプション管理ページ
+    // TestFlight環境と本番環境: 通常のサブスクリプション管理ページ
     const url = 'https://apps.apple.com/account/subscriptions';
     
     console.log('🔗 サブスクリプション管理ページに遷移:', {
       url,
       platform: Platform.OS,
-      environment: 'production'
+      environment: isTestFlight ? 'testflight' : 'production'
     });
     
     Linking.canOpenURL(url).then(supported => {

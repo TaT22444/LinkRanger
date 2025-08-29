@@ -77,6 +77,18 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
   };
 
   const handleAnnouncementPress = (announcement: AnnouncementWithReadStatus) => {
+    // ローカルで既読状態を更新
+    if (!announcement.isRead) {
+      setAnnouncements(prev => 
+        prev.map(item => 
+          item.id === announcement.id ? {...item, isRead: true} : item
+        )
+      );
+      
+      // Firebaseにも既読情報を送信
+      announcementService.markAsRead(user!.uid, announcement.id);
+    }
+    
     // 詳細画面へ遷移
     navigation.navigate('AnnouncementDetail', {
       announcementId: announcement.id
@@ -267,8 +279,7 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
             <Text style={styles.emptyTitle}>お知らせはありません</Text>
             <Text style={styles.emptyDescription}>
               {filter === 'all' && '新しいお知らせがあると、ここに表示されます'}
-              {filter === 'admin' && '運営からのお知らせはありません'}
-              {filter === 'links' && '未読リンクのお知らせはありません'}
+              {filter === 'important' && '重要なお知らせはありません'}
             </Text>
           </View>
         ) : (
@@ -411,6 +422,27 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   activeFilterText: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  badge: {
+    backgroundColor: '#FF5722',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+  },
+  badgeText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filterButtonText: {
+    fontSize: 14,
     color: '#FFF',
     fontWeight: '600',
   },
