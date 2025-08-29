@@ -13,6 +13,9 @@ import { AntDesign } from '@expo/vector-icons';
 import { Announcement, AnnouncementType, AnnouncementPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { announcementService } from '../services/announcementService';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { linkService } from '../services/linkService';
 
 interface AnnouncementDetailScreenProps {
   navigation: any;
@@ -64,7 +67,7 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
   };
 
   const markAsRead = async () => {
-    if (!user || !announcementId) return;
+    if (!user || !announcementId || isRead) return;
 
     try {
       await announcementService.markAsRead(user.uid, announcementId);
@@ -88,6 +91,38 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
     } catch (error) {
       console.error('リンクオープンエラー:', error);
       Alert.alert('エラー', 'リンクを開くことができません');
+    }
+  };
+
+  const handleOpenLinkPress = async () => {
+    if (!user || !announcement?.linkId) return;
+
+    try {
+      // 既読状態に更新
+      await markAsRead();
+      
+      // リンクの既読状態も更新（所有者チェックを追加）
+      const link = await linkService.getLink(announcement.linkId);
+      if (link && link.userId === user.uid) {
+        await linkService.markAsRead(announcement.linkId);
+      }
+
+      // HomeScreenに遷移し、リンクIDをパラメータとして渡す
+      navigation.navigate('Main', {
+        screen: 'Home',
+        params: { linkIdToOpen: announcement.linkId },
+      });
+    } catch (error) {
+      console.error('リンクオープンエラー:', error);
+      // Firebaseの権限エラーの場合、HomeScreenに遷移するだけにする
+      if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
+        navigation.navigate('Main', {
+          screen: 'Home',
+          params: { linkIdToOpen: announcement.linkId },
+        });
+      } else {
+        Alert.alert('エラー', 'リンクの処理中にエラーが発生しました');
+      }
     }
   };
 
@@ -152,7 +187,7 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
         <Text style={styles.errorDescription}>
           お知らせが削除されたか、アクセス権限がない可能性があります
         </Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backButtonText}>戻る</Text>
         </TouchableOpacity>
       </View>
@@ -161,30 +196,45 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+      >
         {/* 日付 */}
         <View style={styles.dateSection}>
           <Text style={styles.dateText}>
-            {formatDate(announcement.publishedAt || announcement.createdAt)}
+            {formatDate(announcement?.publishedAt || announcement?.createdAt)}
           </Text>
         </View>
 
         {/* タイトル */}
         <View style={styles.titleSection}>
-          <Text style={styles.title}>{announcement.title}</Text>
+          <Text style={styles.title}>{announcement?.title}</Text>
         </View>
 
         {/* コンテンツ */}
         <View style={styles.contentSection}>
-          <Text style={styles.contentText}>{announcement.content}</Text>
+          {announcement?.type !== 'reminder' && (
+            <Text style={styles.contentText}>{announcement?.content}</Text>
+          )}
         </View>
 
         {/* アクションボタン */}
-        {announcement.actionText && announcement.actionUrl && (
+        {announcement?.actionText && announcement?.actionUrl && (
           <View style={styles.actionSection}>
             <TouchableOpacity style={styles.actionButton} onPress={handleActionPress}>
               <Text style={styles.actionButtonText}>{announcement.actionText}</Text>
               <AntDesign name="right" size={16} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* リンクを開くボタン（未読リンクのお知らせの場合） */}
+        {announcement?.type === 'reminder' && announcement?.linkId && (
+          <View style={styles.actionSection}>
+            <TouchableOpacity style={styles.openLinkButton} onPress={handleOpenLinkPress}>
+              <AntDesign name="link" size={16} color="#FFF" />
+              <Text style={styles.openLinkButtonText}>リンクを開く</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -285,11 +335,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  backButton: {
+  openLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#8A2BE2',
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  openLinkButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   backButtonText: {
     color: '#FFF',

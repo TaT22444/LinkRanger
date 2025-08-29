@@ -2,7 +2,7 @@
 export type UserPlan = 'free' | 'plus';
 
 // お知らせの種類
-export type AnnouncementType = 'info' | 'update' | 'maintenance' | 'feature' | 'warning';
+export type AnnouncementType = 'info' | 'update' | 'maintenance' | 'feature' | 'warning' | 'reminder';
 
 // お知らせの優先度
 export type AnnouncementPriority = 'low' | 'medium' | 'high';

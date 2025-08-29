@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
   Linking,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native'; // 追加
 import { AntDesign } from '@expo/vector-icons';
 import { Announcement, AnnouncementType, AnnouncementPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -31,6 +32,7 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastFetch, setLastFetch] = useState<number>(0);
+  const [filter, setFilter] = useState<'all' | 'important'>('all'); // フィルター状態を変更
 
   // キャッシュ有効期限（5分）
   const CACHE_DURATION = 5 * 60 * 1000;
@@ -136,6 +138,59 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
     return `${weeks}週間前`;
   };
 
+  // お知らせを再読み込みする関数
+  const reloadAnnouncements = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      // 実際のFirestoreプラン値を使用
+      const actualPlan = user?.subscription?.plan === 'plus' ? 'plus' : 'free';
+      const data = await announcementService.getAnnouncements(user.uid, actualPlan);
+      setAnnouncements(data.announcements);
+      setUnreadCount(data.unreadCount);
+      setLastFetch(Date.now());
+      console.log(`✅ お知らせ再読み込み完了: ${data.announcements.length}件`);
+    } catch (error) {
+      console.error('お知らせ再読み込みエラー:', error);
+    }
+  }, [user]);
+
+  // 画面がフォーカスされたときに再読み込み
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🔄 お知らせを再読み込み（フォーカス時）');
+      reloadAnnouncements();
+    }, [reloadAnnouncements])
+  );
+
+  // フィルターされたお知らせを計算
+  const filteredAnnouncements = useMemo(() => {
+    // 日付順にソート（新しい順）
+    const sortedAnnouncements = [...announcements].sort((a, b) => {
+      const dateA = a.publishedAt || a.createdAt;
+      const dateB = b.publishedAt || b.createdAt;
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    return sortedAnnouncements.filter(announcement => {
+      // 'reminder'タイプのお知らせは表示しない
+      if (announcement.type === 'reminder') return false;
+      
+      // 'all' フィルターでは'reminder'以外のすべて表示
+      if (filter === 'all') return true;
+      
+      // 'important' フィルターでは高優先度のお知らせのみ表示
+      if (filter === 'important') return announcement.priority === 'high';
+      
+      return true;
+    });
+  }, [announcements, filter]);
+
+  // フィルターされた未読数を計算
+  const filteredUnreadCount = useMemo(() => {
+    return filteredAnnouncements.filter(a => !a.isRead).length;
+  }, [filteredAnnouncements]);
+
   const renderAnnouncement = (announcement: AnnouncementWithReadStatus) => {
     const isRead = announcement.isRead;
     
@@ -161,6 +216,18 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
     );
   };
 
+  // フィルターボタンのスタイル
+  const getFilterButtonStyle = (filterType: 'all' | 'important') => [
+    styles.filterButton,
+    filter === filterType && styles.activeFilterButton
+  ];
+
+  // フィルターボタンのテキストスタイル
+  const getFilterTextStyle = (filterType: 'all' | 'important') => [
+    styles.filterText,
+    filter === filterType && styles.activeFilterText
+  ];
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -172,6 +239,21 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
 
   return (
     <View style={styles.container}>
+      {/* フィルターボタンを変更 */}
+      <View style={styles.filterContainer}>
+        <TouchableOpacity 
+          style={getFilterButtonStyle('all')}
+          onPress={() => setFilter('all')}
+        >
+          <Text style={getFilterTextStyle('all')}>全て</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={getFilterButtonStyle('important')}
+          onPress={() => setFilter('important')}
+        >
+          <Text style={getFilterTextStyle('important')}>重要</Text>
+        </TouchableOpacity>
+      </View>
 
       <ScrollView
         style={styles.scrollView}
@@ -179,17 +261,19 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {announcements.length === 0 ? (
+        {filteredAnnouncements.length === 0 ? (
           <View style={styles.emptyContainer}>
             <AntDesign name="notification" size={64} color="#555" />
             <Text style={styles.emptyTitle}>お知らせはありません</Text>
             <Text style={styles.emptyDescription}>
-              新しいお知らせがあると、ここに表示されます
+              {filter === 'all' && '新しいお知らせがあると、ここに表示されます'}
+              {filter === 'admin' && '運営からのお知らせはありません'}
+              {filter === 'links' && '未読リンクのお知らせはありません'}
             </Text>
           </View>
         ) : (
           <View style={styles.announcementsList}>
-            {announcements.map(renderAnnouncement)}
+            {filteredAnnouncements.map(renderAnnouncement)}
           </View>
         )}
       </ScrollView>
@@ -202,42 +286,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: '#121212',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 12,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFF',
-  },
-  unreadBadge: {
-    backgroundColor: '#e74c3c',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 24,
-    alignItems: 'center',
-  },
-  unreadText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   scrollView: {
     flex: 1,
-    marginTop: 16,
+    marginTop: 8,
   },
   loadingContainer: {
     flex: 1,
@@ -274,7 +325,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   announcementCard: {
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#1f1f1f',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -283,7 +334,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   readCard: {
-    backgroundColor: '#222',
+    backgroundColor: '#1a1a1a',
     opacity: 1,
   },
   leftSection: {
@@ -331,6 +382,36 @@ const styles = StyleSheet.create({
   priorityText: {
     color: '#FFF',
     fontSize: 10,
+    fontWeight: '600',
+  },
+  // フィルターボタン用の新しいスタイルを追加
+  filterContainer: {
+    flexDirection: 'row',
+    marginTop: 16,
+    paddingHorizontal: 16,
+  },
+  filterButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 4,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  activeFilterButton: {
+    backgroundColor: '#1f1f1f',
+    borderColor: '#333',
+  },
+  filterText: {
+    fontSize: 14,
+    color: '#999',
+    fontWeight: '500',
+  },
+  activeFilterText: {
+    color: '#FFF',
     fontWeight: '600',
   },
 });

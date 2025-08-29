@@ -58,7 +58,7 @@ export const announcementService = {
         expiresAt: doc.data().expiresAt?.toDate(),
       })) as Announcement[];
 
-      // ユーザープランでフィルタリングし、優先度でソート
+      // ユーザープランでフィルタリングし、日付でソート
       const filteredAnnouncements = allAnnouncements
         .filter(announcement => {
           // 対象プランが指定されていない場合は全ユーザーが対象
@@ -69,15 +69,10 @@ export const announcementService = {
           return userPlan && announcement.targetUserPlans.includes(userPlan);
         })
         .sort((a, b) => {
-          // 優先度でソート (high > medium > low)
-          const priorityOrder = { high: 3, medium: 2, low: 1 };
-          const aPriority = priorityOrder[a.priority] || 1;
-          const bPriority = priorityOrder[b.priority] || 1;
-          if (aPriority !== bPriority) {
-            return bPriority - aPriority; // 降順
-          }
-          // 優先度が同じ場合は公開日時でソート
-          return (b.publishedAt?.getTime() || 0) - (a.publishedAt?.getTime() || 0);
+          // 日付でソート（新しい順）
+          const dateA = a.publishedAt || a.createdAt;
+          const dateB = b.publishedAt || b.createdAt;
+          return dateB.getTime() - dateA.getTime();
         });
 
       // 既読状態を取得

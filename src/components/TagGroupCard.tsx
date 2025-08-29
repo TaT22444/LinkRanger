@@ -238,7 +238,7 @@ export const TagGroupCard: React.FC<TagGroupCardProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#1F1F1F',
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 8,
