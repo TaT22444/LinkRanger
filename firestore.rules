@@ -77,8 +77,8 @@ service cloud.firestore {
     // --- User-Owned Content (Links, Tags, Analyses) ---
     // ユーザーは自身のコンテンツのみ作成・読み取り・更新・削除が可能
     match /links/{linkId} {
-      allow read, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
-      allow update: if isSignedIn() && documentExists() && isUpdatingOwner() &&
+      allow read, delete: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin());
+      allow update: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin()) &&
                        // 🔒 userId改ざん防止
                        request.resource.data.userId == resource.data.userId;
       allow create: if isSignedIn() && isCreatingOwner() && 
@@ -87,8 +87,8 @@ service cloud.firestore {
     }
 
     match /tags/{tagId} {
-      allow read, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
-      allow update: if isSignedIn() && documentExists() && isUpdatingOwner() &&
+      allow read, delete: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin());
+      allow update: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin()) &&
                        // 🔒 userId改ざん防止
                        request.resource.data.userId == resource.data.userId;
       allow create: if isSignedIn() && isCreatingOwner() && 
@@ -96,9 +96,34 @@ service cloud.firestore {
                        isValidTagData(request.resource.data);
     }
 
+    match /folders/{folderId} {
+      allow read, delete: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin());
+      allow update: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin()) &&
+                       // 🔒 userId改ざん防止
+                       request.resource.data.userId == resource.data.userId;
+      allow create: if isSignedIn() && isCreatingOwner();
+    }
+
+    match /searchHistory/{historyId} {
+      allow read, delete: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin());
+      allow update: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin()) &&
+                       // 🔒 userId改ざん防止
+                       request.resource.data.userId == resource.data.userId;
+      allow create: if isSignedIn() && isCreatingOwner();
+    }
+
+    match /appSettings/{settingId} {
+      allow read: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin());
+      allow delete: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin());
+      allow update: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin()) &&
+                       // 🔒 userId改ざん防止
+                       request.resource.data.userId == resource.data.userId;
+      allow create: if isSignedIn() && isCreatingOwner();
+    }
+
     match /savedAnalyses/{analysisId} {
-      allow read, delete: if isSignedIn() && documentExists() && isUpdatingOwner();
-      allow update: if isSignedIn() && documentExists() && isUpdatingOwner() &&
+      allow read, delete: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin());
+      allow update: if isSignedIn() && documentExists() && (isUpdatingOwner() || isAdmin()) &&
                        // 🔒 userId改ざん防止
                        request.resource.data.userId == resource.data.userId;
       allow create: if isSignedIn() && isCreatingOwner();

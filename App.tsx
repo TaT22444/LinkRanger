@@ -8,6 +8,7 @@ import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { AnnouncementProvider } from './src/contexts/AnnouncementContext';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { AccountScreen } from './src/screens/AccountScreen';
@@ -152,7 +153,11 @@ const AppContent: React.FC = () => {
 
   // MainNavigatorをメモ化してパフォーマンスを改善
   const MainNavigatorWrapper = useMemo(
-    () => () => <MainNavigator sharedLinkData={sharedLinkData} />,
+    () => () => (
+      <AnnouncementProvider>
+        <MainNavigator sharedLinkData={sharedLinkData} />
+      </AnnouncementProvider>
+    ),
     [sharedLinkData]
   );
 
@@ -316,7 +321,9 @@ const App: React.FC = () => {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
         <AuthProvider>
-          <AppContent />
+          <AnnouncementProvider>
+            <AppContent />
+          </AnnouncementProvider>
         </AuthProvider>
       </View>
     </GestureHandlerRootView>

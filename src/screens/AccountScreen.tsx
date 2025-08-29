@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'rea
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnnouncements } from '../contexts/AnnouncementContext';
 import { useUser } from '../hooks/useFirestore';
 import { useLinks, useTags } from '../hooks/useFirestore';
 import { Feather, AntDesign } from '@expo/vector-icons';
@@ -18,6 +19,7 @@ import * as MailComposer from 'expo-mail-composer';
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const { user: authUser, logout, getUserEmail } = useAuth();
+  const { unreadCount: unreadAnnouncementsCount } = useAnnouncements();
   // リアルタイムでユーザー情報を監視
   const { user: realtimeUser, loading: userLoading } = useUser(authUser?.uid || null);
   
@@ -31,42 +33,17 @@ export const AccountScreen: React.FC = () => {
   const userEmail = getUserEmail() || 'No Email';
   const [appVersion, setAppVersion] = useState('');
   
-  // お知らせ関連のstate
-  const [unreadAnnouncementsCount, setUnreadAnnouncementsCount] = useState(0);
-
   useEffect(() => {
     const version = Application.nativeApplicationVersion;
     const buildVersion = Application.nativeBuildVersion;
     setAppVersion(`${version} (${buildVersion})`);
   }, []);
   
-  // お知らせの未読数を取得
-  useEffect(() => {
-    if (!user?.uid) return;
-    
-    // 実際のFirestoreプラン値を使用
-    const actualPlan = user?.subscription?.plan === 'plus' ? 'plus' : 'free';
-    
-    const unsubscribe = announcementService.subscribeToAnnouncements(
-      user.uid,
-      actualPlan as UserPlan,
-      (data) => {
-        // 'reminder'タイプのお知らせを除外して未読数を計算
-        const filteredUnreadCount = data.announcements
-          .filter(announcement => announcement.type !== 'reminder' && !announcement.isRead)
-          .length;
-        setUnreadAnnouncementsCount(filteredUnreadCount);
-      }
-    );
-    
-    return unsubscribe;
-  }, [user?.uid, user?.subscription?.plan]);
-
   const handleAnnouncements = () => {
     navigation.navigate('Announcements');
   };
 
-  // headerに通知アイコンを設定
+  // headerに通知アイコンを設定（Contextを使用）
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -192,7 +169,7 @@ export const AccountScreen: React.FC = () => {
       ]
     );
   };
-  const handleDeleteAccount = () => {
+  const handleDeleteAccount = async () => {
     Alert.alert(
       'アカウント削除',
       'アカウントを削除すると、すべてのデータが完全に削除され、復元できません。本当によろしいですか？',
@@ -204,13 +181,72 @@ export const AccountScreen: React.FC = () => {
         {
           text: '削除',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteUserAccount();
-              Alert.alert('成功', 'アカウントが削除されました');
-            } catch (error) {
-              Alert.alert('エラー', 'アカウントの削除に失敗しました');
-            }
+          onPress: () => {
+            // 2度目の確認アラート
+            Alert.alert(
+              'アカウント削除の確認',
+              '本当にアカウントを削除しますか？この操作は元に戻せません。',
+              [
+                {
+                  text: 'キャンセル',
+                  style: 'cancel',
+                },
+                {
+                  text: '削除する',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await deleteUserAccount();
+                      Alert.alert(
+                        '成功', 
+                        'アカウントが削除されました。',
+                        [
+                          {
+                            text: 'OK',
+                            onPress: () => {
+                              // アカウント削除成功後、ログアウト処理を実行
+                              // AuthContextのログアウト処理で自動的にAuthScreenに遷移する
+                              logout().catch((error) => {
+                                console.error('ログアウトエラー:', error);
+                                // ログアウトに失敗した場合でもAuthScreenに遷移
+                                navigation.reset({
+                                  index: 0,
+                                  routes: [{ name: 'Auth' }],
+                                });
+                              });
+                            }
+                          }
+                        ]
+                      );
+                    } catch (error: any) {
+                      console.error('アカウント削除エラー:', error);
+                      console.error('エラーコード:', error.code);
+                      console.error('エラーメッセージ:', error.message);
+                      console.error('スタックトレース:', error.stack);
+                      
+                      let errorMessage = 'アカウントの削除に失敗しました';
+                      if (error.code) {
+                        switch (error.code) {
+                          case 'auth/requires-recent-login':
+                            errorMessage = 'セキュリティのため、再度ログインしてください。';
+                            break;
+                          case 'permission-denied':
+                            errorMessage = 'データ削除の権限がありません。';
+                            break;
+                          default:
+                            errorMessage += ` (エラーコード: ${error.code})`;
+                        }
+                      }
+                      if (error.message) {
+                        errorMessage += `: ${error.message}`;
+                      }
+                      
+                      Alert.alert('エラー', errorMessage);
+                    }
+                  },
+                },
+              ]
+            );
           },
         },
       ]

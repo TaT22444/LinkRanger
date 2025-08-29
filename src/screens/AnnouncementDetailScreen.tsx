@@ -12,6 +12,7 @@ import {
 import { AntDesign } from '@expo/vector-icons';
 import { Announcement, AnnouncementType, AnnouncementPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnnouncements } from '../contexts/AnnouncementContext';
 import { announcementService } from '../services/announcementService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -31,6 +32,7 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
   route 
 }) => {
   const { user } = useAuth();
+  const { decrementUnreadCount } = useAnnouncements();
   const { announcementId } = route.params;
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,6 +74,8 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
     try {
       await announcementService.markAsRead(user.uid, announcementId);
       setIsRead(true);
+      // 未読数を減らす
+      decrementUnreadCount();
       console.log('✅ お知らせを既読にしました:', announcementId);
     } catch (error) {
       console.error('既読更新エラー:', error);

@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   form: {
     width: '100%',
     maxWidth: 320,
-    marginBottom: 80,
+    marginBottom: 96,
   },
   optionButton: {
     flexDirection: 'row',

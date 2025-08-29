@@ -376,7 +376,7 @@ class NotificationService {
     });
 
     // 2. アプリが終了している状態から通知タップで起動した場合の処理
-    Notifications.getInitialNotificationAsync().then((response: any) => {
+    Notifications.getLastNotificationResponseAsync().then((response: any) => {
       if (response) {
         console.log('🚀 アプリが通知から起動:', response);
         const notificationData = response?.notification?.request?.content?.data;

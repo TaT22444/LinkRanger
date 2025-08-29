@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native'; // 追加
 import { AntDesign } from '@expo/vector-icons';
 import { Announcement, AnnouncementType, AnnouncementPriority } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnnouncements } from '../contexts/AnnouncementContext';
 import { announcementService } from '../services/announcementService';
 
 // 既読状態を含むお知らせ型
@@ -27,6 +28,7 @@ interface AnnouncementsScreenProps {
 
 export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ navigation }) => {
   const { user } = useAuth();
+  const { decrementUnreadCount } = useAnnouncements();
   const [announcements, setAnnouncements] = useState<AnnouncementWithReadStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -84,6 +86,9 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
           item.id === announcement.id ? {...item, isRead: true} : item
         )
       );
+      
+      // 未読数を減らす
+      decrementUnreadCount();
       
       // Firebaseにも既読情報を送信
       announcementService.markAsRead(user!.uid, announcement.id);

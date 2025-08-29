@@ -83,39 +83,175 @@ export const userService = {
   },
 
   async deleteAllUserData(userId: string): Promise<void> {
-    const batch = writeBatch(db);
+    console.log('Firestoreデータ削除開始:', userId);
 
-    // Delete user document
-    const userRef = doc(db, COLLECTIONS.USERS, userId);
-    batch.delete(userRef);
+    try {
+      // Delete user document
+      try {
+        const userRef = doc(db, COLLECTIONS.USERS, userId);
+        await deleteDoc(userRef);
+        console.log('ユーザードキュメント削除完了');
+      } catch (error: any) {
+        console.error('ユーザードキュメント削除エラー:', error);
+        console.error('エラーコード:', error.code);
+        console.error('エラーメッセージ:', error.message);
+        // permission-deniedエラーの場合、ユーザーに影響を与えないように処理を続行
+        if (error.code !== 'permission-denied') {
+          throw error;
+        }
+      }
 
-    // Delete links
-    const linksQuery = query(collection(db, COLLECTIONS.LINKS), where('userId', '==', userId));
-    const linksSnapshot = await getDocs(linksQuery);
-    linksSnapshot.forEach(doc => batch.delete(doc.ref));
+      // Delete links
+      try {
+        const linksQuery = query(collection(db, COLLECTIONS.LINKS), where('userId', '==', userId));
+        const linksSnapshot = await getDocs(linksQuery);
+        if (linksSnapshot.size > 0) {
+          const batch = writeBatch(db);
+          linksSnapshot.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+          console.log('リンクデータ削除完了:', linksSnapshot.size, '件');
+        } else {
+          console.log('削除対象のリンクデータがありません');
+        }
+      } catch (error: any) {
+        console.error('リンクデータ削除エラー:', error);
+        console.error('エラーコード:', error.code);
+        console.error('エラーメッセージ:', error.message);
+        // permission-deniedエラーの場合、ユーザーに影響を与えないように処理を続行
+        if (error.code !== 'permission-denied') {
+          throw error;
+        }
+      }
 
-    // Delete tags
-    const tagsQuery = query(collection(db, COLLECTIONS.TAGS), where('userId', '==', userId));
-    const tagsSnapshot = await getDocs(tagsQuery);
-    tagsSnapshot.forEach(doc => batch.delete(doc.ref));
+      // Delete tags
+      try {
+        const tagsQuery = query(collection(db, COLLECTIONS.TAGS), where('userId', '==', userId));
+        const tagsSnapshot = await getDocs(tagsQuery);
+        if (tagsSnapshot.size > 0) {
+          const batch = writeBatch(db);
+          tagsSnapshot.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+          console.log('タグデータ削除完了:', tagsSnapshot.size, '件');
+        } else {
+          console.log('削除対象のタグデータがありません');
+        }
+      } catch (error: any) {
+        console.error('タグデータ削除エラー:', error);
+        console.error('エラーコード:', error.code);
+        console.error('エラーメッセージ:', error.message);
+        // permission-deniedエラーの場合、ユーザーに影響を与えないように処理を続行
+        if (error.code !== 'permission-denied') {
+          throw error;
+        }
+      }
 
-    // Delete folders
-    const foldersQuery = query(collection(db, COLLECTIONS.FOLDERS), where('userId', '==', userId));
-    const foldersSnapshot = await getDocs(foldersQuery);
-    foldersSnapshot.forEach(doc => batch.delete(doc.ref));
+      // Delete folders
+      try {
+        const foldersQuery = query(collection(db, COLLECTIONS.FOLDERS), where('userId', '==', userId));
+        const foldersSnapshot = await getDocs(foldersQuery);
+        if (foldersSnapshot.size > 0) {
+          const batch = writeBatch(db);
+          foldersSnapshot.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+          console.log('フォルダデータ削除完了:', foldersSnapshot.size, '件');
+        } else {
+          console.log('削除対象のフォルダデータがありません');
+        }
+      } catch (error: any) {
+        console.error('フォルダデータ削除エラー:', error);
+        console.error('エラーコード:', error.code);
+        console.error('エラーメッセージ:', error.message);
+        // permission-deniedエラーの場合、ユーザーに影響を与えないように処理を続行
+        if (error.code !== 'permission-denied') {
+          throw error;
+        }
+      }
 
-    // Delete search history
-    const searchHistoryQuery = query(collection(db, COLLECTIONS.SEARCH_HISTORY), where('userId', '==', userId));
-    const searchHistorySnapshot = await getDocs(searchHistoryQuery);
-    searchHistorySnapshot.forEach(doc => batch.delete(doc.ref));
+      // Delete search history
+      try {
+        const searchHistoryQuery = query(collection(db, COLLECTIONS.SEARCH_HISTORY), where('userId', '==', userId));
+        const searchHistorySnapshot = await getDocs(searchHistoryQuery);
+        if (searchHistorySnapshot.size > 0) {
+          const batch = writeBatch(db);
+          searchHistorySnapshot.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+          console.log('検索履歴データ削除完了:', searchHistorySnapshot.size, '件');
+        } else {
+          console.log('削除対象の検索履歴データがありません');
+        }
+      } catch (error: any) {
+        console.error('検索履歴データ削除エラー:', error);
+        console.error('エラーコード:', error.code);
+        console.error('エラーメッセージ:', error.message);
+        // permission-deniedエラーの場合、ユーザーに影響を与えないように処理を続行
+        if (error.code !== 'permission-denied') {
+          throw error;
+        }
+      }
 
-    // Delete app settings
-    const settingsRef = doc(db, COLLECTIONS.APP_SETTINGS, userId);
-    batch.delete(settingsRef);
+      // Delete app settings
+      try {
+        // appSettingsコレクションでは、ドキュメントIDがuserIdと一致しているとは限らないため、
+        // userIdフィールドでクエリする
+        const settingsQuery = query(collection(db, COLLECTIONS.APP_SETTINGS), where('userId', '==', userId));
+        const settingsSnapshot = await getDocs(settingsQuery);
+        
+        if (settingsSnapshot.size > 0) {
+          const batch = writeBatch(db);
+          let deletedCount = 0;
+          
+          settingsSnapshot.forEach(doc => {
+            try {
+              batch.delete(doc.ref);
+              deletedCount++;
+            } catch (batchError) {
+              console.error('アプリ設定データ削除エラー（バッチ処理中）:', batchError);
+            }
+          });
+          
+          if (deletedCount > 0) {
+            await batch.commit();
+            console.log('アプリ設定データ削除完了:', deletedCount, '件');
+          } else {
+            console.log('削除対象のアプリ設定データがありません（バッチ処理）');
+          }
+        } else {
+          // userIdをドキュメントIDとして試す（古いデータ形式に対応）
+          try {
+            const settingsRef = doc(db, COLLECTIONS.APP_SETTINGS, userId);
+            const settingsDoc = await getDoc(settingsRef);
+            
+            if (settingsDoc.exists()) {
+              await deleteDoc(settingsRef);
+              console.log('アプリ設定データ削除完了（ドキュメントIDを使用）');
+            } else {
+              console.log('削除対象のアプリ設定データがありません');
+            }
+          } catch (docError: any) {
+            console.error('アプリ設定データ削除エラー（ドキュメントID使用時）:', docError);
+            console.error('エラーコード:', docError.code);
+            console.error('エラーメッセージ:', docError.message);
+            // permission-deniedエラーの場合、ユーザーに影響を与えないように処理を続行
+            if (docError.code !== 'permission-denied') {
+              throw docError;
+            }
+          }
+        }
+      } catch (error: any) {
+        console.error('アプリ設定データ削除エラー:', error);
+        console.error('エラーコード:', error.code);
+        console.error('エラーメッセージ:', error.message);
+        // permission-deniedエラーの場合、ユーザーに影響を与えないように処理を続行
+        if (error.code !== 'permission-denied') {
+          throw error;
+        }
+      }
 
-
-
-    await batch.commit();
+      console.log('Firestoreデータ削除完了');
+    } catch (error) {
+      console.error('Firestoreデータ削除エラー:', error);
+      throw error;
+    }
   },
 };
 

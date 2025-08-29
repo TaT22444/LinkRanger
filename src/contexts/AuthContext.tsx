@@ -132,13 +132,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     try {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+      // ログアウト処理ではローディング状態を変更しない
+      // setState(prev => ({ ...prev, loading: true, error: null }));
       await signOut(auth);
     } catch (error: any) {
       setState(prev => ({
         ...prev,
         error: error.message || 'ログアウトに失敗しました',
-        loading: false,
+        // ログアウト処理ではローディング状態を変更しない
+        // loading: false,
       }));
       throw error;
     }
@@ -263,3 +265,5 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     </AuthContext.Provider>
   );
 };
+
+export * from './AnnouncementContext';

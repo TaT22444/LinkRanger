@@ -62,11 +62,11 @@ export const deleteUserAccount = async (): Promise<void> => {
       throw new Error('ユーザーが見つかりません');
     }
 
-    // Firebase Authからユーザーを削除（まずは認証情報を削除）
-    await deleteUser(user);
-
-    // Firestoreのデータを削除（認証情報が削除された後）
+    // まずFirestoreのデータを削除（認証情報が有効な間に実行）
     await userService.deleteAllUserData(user.uid);
+
+    // Firebase Authからユーザーを削除（最後に実行）
+    await deleteUser(user);
   } catch (error) {
     console.error('アカウント削除エラー:', error);
     throw error;
