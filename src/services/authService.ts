@@ -79,8 +79,6 @@ interface UpdateUserProfileParams {
   avatarIcon?: string;
 }
 
-
-
 // Googleログイン
 export const signInWithGoogle = async (): Promise<User> => {
   try {
@@ -275,8 +273,92 @@ export const logout = async (): Promise<void> => {
   }
 };
 
+// ユーザープロフィール更新
+export const updateUserProfile = async (params: UpdateUserProfileParams): Promise<void> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('ユーザーが見つかりません');
+    }
+
+    // Firebase Authプロフィール更新
+    await updateFirebaseProfile(user, {
+      displayName: params.displayName,
+    });
+
+    // Firestoreプロフィール更新
+    const userDocRef = doc(db, 'users', user.uid);
+    const updateData: any = {};
+    
+    if (params.displayName !== undefined) {
+      updateData.username = params.displayName;
+    }
+    if (params.avatarId !== undefined) {
+      updateData.avatarId = params.avatarId;
+    }
+    if (params.avatarIcon !== undefined) {
+      updateData.avatarIcon = params.avatarIcon;
+    }
+    
+    if (Object.keys(updateData).length > 0) {
+      await updateDoc(userDocRef, {
+        ...updateData,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+  } catch (error) {
+    console.error('プロフィール更新エラー:', error);
+    throw error;
+  }
+}; 
+
+// メールアドレスから安全なユーザー名を生成
+const generateSafeUsername = (email: string | null, displayName: string | null): string => {
+  if (displayName) {
+    return displayName; // displayNameがある場合はそのまま使用
+  }
+  
+  if (email) {
+    // メールアドレスの@より前の部分を取得
+    const localPart = email.split('@')[0];
+    
+    // Option A: シンプルに localPart のみ
+    return localPart;
+  }
+  
+  // フォールバック: 完全匿名
+  return `ユーザー${Math.floor(1000 + Math.random() * 9000)}`;
+};
+
+const createUserProfile = async (user: FirebaseUser): Promise<void> => {
+  try {
+    const userData = {
+      uid: user.uid,
+      username: generateSafeUsername(user.email, user.displayName),
+      isAnonymous: user.isAnonymous,
+      preferences: {
+        theme: 'dark' as const,
+        defaultSort: 'createdAt' as const,
+        autoTagging: true,
+        autoSummary: true,
+      },
+    };
+
+    // ユーザープロフィールを作成
+    await userService.createUser(userData);
+    console.log('User profile created successfully');
+    
+  } catch (error) {
+    console.error('Failed to create user profile:', error);
+    throw error;
+  }
+}; 
+
 // 認証状態の監視
 export const onAuthStateChange = (callback: (user: User | null) => void) => {
+  console.log('onAuthStateChange: Setting up auth state listener');
+  
   return onAuthStateChanged(auth, async (firebaseUser) => {
     console.log('onAuthStateChanged triggered, firebaseUser:', firebaseUser ? firebaseUser.uid : 'null');
     
@@ -305,18 +387,16 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
             // Firestoreを更新（非同期でバックグラウンド実行）
             setTimeout(async () => {
               try {
-                await updateDoc(doc(db, 'users', firebaseUser.uid), {
-                  username: finalUsername,
-                  updatedAt: serverTimestamp()
+                await updateDoc(doc(db, 'users', firebaseUser.uid), { 
+                  username: finalUsername 
                 });
-                console.log('🔒 Username updated from email to safe name:', finalUsername);
-              } catch (error) {
-                console.error('Failed to update username:', error);
+                console.log('Username updated in Firestore to safe version:', finalUsername);
+              } catch (updateError) {
+                console.error('Error updating username in Firestore:', updateError);
               }
-            }, 100);
+            }, 0);
           }
           
-          // Firestoreのデータを優先、emailはFirebase Authから取得
           const user = {
             ...userData,
             username: finalUsername || generateSafeUsername(firebaseUser.email, firebaseUser.displayName),
@@ -328,9 +408,7 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
           console.log('Calling callback with user data:', user.uid);
           callback(user);
         } else {
-          console.log('User document not found in Firestore, creating profile...');
-          
-          // ドキュメントが存在しない場合は作成
+          console.log('No user document found, creating new profile...');
           try {
             await createUserProfile(firebaseUser);
             console.log('User profile created, fetching again...');
@@ -367,73 +445,3 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
     }
   });
 };
-
-// プロフィール更新
-export const updateUserProfile = async (params: UpdateUserProfileParams): Promise<void> => {
-  try {
-    if (!auth.currentUser) throw new Error('ユーザーが見つかりません');
-
-    // Firebase Authのプロフィールを更新（displayNameのみ）
-    if (params.displayName) {
-      await updateFirebaseProfile(auth.currentUser, {
-        displayName: params.displayName
-      });
-    }
-
-    // Firestoreのユーザー情報を更新
-    const userRef = doc(db, 'users', auth.currentUser.uid);
-    const updateData: { [key: string]: any } = {};
-
-    if (params.displayName) updateData.username = params.displayName;
-    if (params.avatarId) updateData.avatarId = params.avatarId;
-    if (params.avatarIcon) updateData.avatarIcon = params.avatarIcon;
-
-    await updateDoc(userRef, updateData);
-
-  } catch (error) {
-    console.error('プロフィール更新エラー:', error);
-    throw error;
-  }
-}; 
-
-  // メールアドレスから安全なユーザー名を生成
-  const generateSafeUsername = (email: string | null, displayName: string | null): string => {
-    if (displayName) {
-      return displayName; // displayNameがある場合はそのまま使用
-    }
-    
-    if (email) {
-      // メールアドレスの@より前の部分を取得
-      const localPart = email.split('@')[0];
-      
-      // Option A: シンプルに localPart のみ
-      return localPart;
-    }
-    
-    // フォールバック: 完全匿名
-    return `ユーザー${Math.floor(1000 + Math.random() * 9000)}`;
-  };
-
-  const createUserProfile = async (user: FirebaseUser): Promise<void> => {
-    try {
-      const userData = {
-        uid: user.uid,
-        username: generateSafeUsername(user.email, user.displayName),
-        isAnonymous: user.isAnonymous,
-        preferences: {
-          theme: 'dark' as const,
-          defaultSort: 'createdAt' as const,
-          autoTagging: true,
-          autoSummary: true,
-        },
-      };
-
-      // ユーザープロフィールを作成
-      await userService.createUser(userData);
-      console.log('User profile created successfully');
-      
-    } catch (error) {
-      console.error('Failed to create user profile:', error);
-      throw error;
-    }
-  }; 

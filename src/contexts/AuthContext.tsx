@@ -44,21 +44,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     try {
-      const unsubscribe = onAuthStateChange(async (user) => {
-        setState({
-          user: user ? {
-            ...user,
-            // Firestoreのusernameフィールドを使用（authServiceで既にFirebase Authのemailがフォールバック設定済み）
-            username: user.username || null,
-            avatarId: user.avatarId,
-            avatarIcon: user.avatarIcon,
-          } : null,
-          loading: false,
-          error: null,
-        });
+      // 初期状態を設定
+      setState({
+        user: null,
+        loading: true,
+        error: null,
+      });
 
-        // 🔥 ユーザーログイン時にFCM初期化を実行
+      const unsubscribe = onAuthStateChange(async (user) => {
+        console.log('AuthProvider: onAuthStateChange triggered', user ? `User: ${user.uid}` : 'No user');
+        
+        // ユーザーが存在する場合
         if (user) {
+          setState({
+            user: {
+              ...user,
+              // Firestoreのusernameフィールドを使用（authServiceで既にFirebase Authのemailがフォールバック設定済み）
+              username: user.username || null,
+              avatarId: user.avatarId,
+              avatarIcon: user.avatarIcon,
+            },
+            loading: false,
+            error: null,
+          });
+
+          // 🔥 ユーザーログイン時にFCM初期化を実行
           try {
             console.log('🔐 ユーザーログイン検出: FCM初期化を開始');
             await fcmService.initializeFCM();
@@ -67,10 +77,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.error('❌ FCM初期化エラー:', fcmError);
             // FCMエラーは認証の妨げにならないようにログのみ
           }
+        } else {
+          // ユーザーが存在しない場合
+          console.log('AuthProvider: No user detected, setting loading to false');
+          setState({
+            user: null,
+            loading: false,
+            error: null,
+          });
         }
       });
 
-      return () => unsubscribe();
+      return () => {
+        console.log('AuthProvider: Unsubscribing from auth state change');
+        unsubscribe();
+      };
     } catch (error) {
       console.error('❌ AuthContext初期化エラー:', error);
       setState({
@@ -241,4 +262,4 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       {children}
     </AuthContext.Provider>
   );
-}; 
+};

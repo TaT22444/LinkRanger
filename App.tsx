@@ -240,6 +240,8 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  const [appInitialized, setAppInitialized] = useState(false);
+
   useEffect(() => {
     const initializeApp = async () => {
       try {
@@ -260,8 +262,11 @@ const App: React.FC = () => {
           await backgroundTaskService.registerBackgroundTasks();
           console.log('✅ バックグラウンドタスクサービス初期化完了（遅延実行）');
         }, 5000); // 5秒遅延でアプリ起動時の即座実行を防止
+        
+        setAppInitialized(true);
       } catch (error) {
         console.error('❌ アプリ初期化エラー:', error);
+        setAppInitialized(true); // エラー時も初期化完了として扱う
       }
     };
     
@@ -297,6 +302,15 @@ const App: React.FC = () => {
       subscription.remove();
     };
   }, []);
+
+  if (!appInitialized) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#00FFFF" />
+        <Text style={styles.loadingText}>アプリを初期化中...</Text>
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

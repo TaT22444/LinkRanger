@@ -1,8 +1,15 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth, initializeAuth, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
+import { 
+  getAuth, 
+  Auth, 
+  initializeAuth, 
+  // @ts-ignore - getReactNativePersistenceは型定義に存在しないが実際には利用可能
+  getReactNativePersistence,
+} from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getFunctions, Functions } from 'firebase/functions';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Firebase設定（環境変数必須）
 const getFirebaseConfig = () => {
@@ -57,34 +64,16 @@ try {
   app = initializeApp(firebaseConfig);
   console.log('✅ Firebase App初期化完了');
   
-  // Firebase Auth初期化
-  try {
-    auth = initializeAuth(app);
-    console.log('✅ Firebase Auth初期化完了');
-    
-    // 認証状態の永続化設定
-    if (Platform.OS === 'web') {
-      // Webの場合はローカルストレージに永続化
-      setPersistence(auth, browserLocalPersistence);
-      console.log('✅ Web用認証永続化設定完了');
-    } else {
-      // モバイルの場合はデフォルト（永続化）
-      console.log('✅ モバイル用認証永続化設定完了（デフォルト）');
-    }
-  } catch (error: any) {
-    // 既に初期化されている場合はgetAuthを使用
-    if (error.code === 'auth/already-initialized') {
-      auth = getAuth(app);
-      console.log('✅ Firebase Auth初期化完了（既存のAuth使用）');
-      
-      // 既存のAuthにも永続化設定を適用
-      if (Platform.OS === 'web') {
-        setPersistence(auth, browserLocalPersistence);
-        console.log('✅ 既存Auth用Web認証永続化設定完了');
-      }
-    } else {
-      throw error;
-    }
+  // Firebase Auth初期化（React Native対応）
+  if (Platform.OS === 'web') {
+    auth = getAuth(app);
+    console.log('✅ Firebase Auth初期化完了（Web）');
+  } else {
+    // React Native環境ではinitializeAuthとgetReactNativePersistenceを使用
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
+    console.log('✅ Firebase Auth初期化完了（React Native）');
   }
   
   db = getFirestore(app);
@@ -103,4 +92,4 @@ try {
 }
 
 export { auth, db, functions };
-export default app; 
+export default app;
