@@ -32,7 +32,7 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
   route 
 }) => {
   const { user } = useAuth();
-  const { decrementUnreadCount } = useAnnouncements();
+  const { decrementUnreadCount, announcements: contextAnnouncements } = useAnnouncements();
   const { announcementId } = route.params;
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,9 +46,36 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
     if (!user || !announcementId) return;
 
     try {
+      // Contextから既に取得済みのお知らせデータを使用
+      const cachedAnnouncement = contextAnnouncements.find(a => a.id === announcementId);
+      if (cachedAnnouncement) {
+        setAnnouncement({
+          id: cachedAnnouncement.id,
+          title: cachedAnnouncement.title,
+          content: cachedAnnouncement.content,
+          type: cachedAnnouncement.type as AnnouncementType,
+          priority: cachedAnnouncement.priority as AnnouncementPriority,
+          createdAt: cachedAnnouncement.createdAt,
+          publishedAt: cachedAnnouncement.publishedAt,
+          isActive: true,
+          createdBy: '',
+        });
+        setIsRead(cachedAnnouncement.isRead);
+        
+        // 未読の場合は既読にする
+        if (!cachedAnnouncement.isRead) {
+          await markAsRead();
+        }
+        
+        setLoading(false);
+        console.log('💾 Contextからお知らせ詳細を取得');
+        return;
+      }
+
+      // Contextにない場合はFirebaseから取得
       setLoading(true);
       const actualPlan = user?.subscription?.plan === 'plus' ? 'plus' : 'free';
-      const data = await announcementService.getAnnouncements(user.uid, actualPlan);
+      const data = await announcementService.getAnnouncements(user.uid, actualPlan, user.createdAt);
       
       const targetAnnouncement = data.announcements.find(a => a.id === announcementId);
       if (targetAnnouncement) {

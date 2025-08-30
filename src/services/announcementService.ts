@@ -36,9 +36,9 @@ export const announcementService = {
   /**
    * ユーザーのお知らせ一覧を取得
    */
-  async getAnnouncements(userId: string, userPlan?: UserPlan): Promise<AnnouncementsData> {
+  async getAnnouncements(userId: string, userPlan?: UserPlan, userCreatedAt?: Date): Promise<AnnouncementsData> {
     try {
-      console.log('📢 お知らせ取得開始:', { userId, userPlan });
+      console.log('📢 お知らせ取得開始:', { userId, userPlan, userCreatedAt });
 
       // 公開されているお知らせを取得
       const now = new Date();
@@ -58,9 +58,14 @@ export const announcementService = {
         expiresAt: doc.data().expiresAt?.toDate(),
       })) as Announcement[];
 
-      // ユーザープランでフィルタリングし、日付でソート
+      // ユーザープランとアカウント作成日時でフィルタリングし、日付でソート
       const filteredAnnouncements = allAnnouncements
         .filter(announcement => {
+          // アカウント作成日時より前のお知らせは表示しない
+          if (userCreatedAt && announcement.publishedAt && announcement.publishedAt < userCreatedAt) {
+            return false;
+          }
+          
           // 対象プランが指定されていない場合は全ユーザーが対象
           if (!announcement.targetUserPlans || announcement.targetUserPlans.length === 0) {
             return true;
@@ -159,9 +164,10 @@ export const announcementService = {
   subscribeToAnnouncements(
     userId: string,
     userPlan: UserPlan | undefined,
+    userCreatedAt: Date | undefined,
     callback: (data: AnnouncementsData) => void
   ): () => void {
-    console.log('📡 お知らせリアルタイム購読開始:', { userId, userPlan });
+    console.log('📡 お知らせリアルタイム購読開始:', { userId, userPlan, userCreatedAt });
 
     const now = new Date();
     const announcementsQuery = query(
@@ -176,7 +182,7 @@ export const announcementService = {
         console.log('📢 お知らせ更新受信:', { count: snapshot.docs.length });
         
         // 変更があった場合のみデータを再取得
-        const data = await this.getAnnouncements(userId, userPlan);
+        const data = await this.getAnnouncements(userId, userPlan, userCreatedAt);
         callback(data);
       } catch (error) {
         console.error('❌ お知らせリアルタイム更新エラー:', error);
