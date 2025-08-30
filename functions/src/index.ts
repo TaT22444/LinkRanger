@@ -2980,20 +2980,18 @@ async function handleSubscriptionCancellation(userId: string, notificationType: 
     
     switch (notificationType) {
       case 'CANCEL':
-        // 購読キャンセル処理
-        const cancelProductId = payload.productId;
-        const cancelPlan = 'free';
-        
+        // 購読キャンセル（自動更新オフ）の処理
+        // ユーザーは有効期限まで購読を継続できるため、プランは変更しない。
+        // ステータスのみを更新して、アプリ内で「自動更新オフ」などを表示できるようにする。
         await userRef.update({
-          'subscription.status': 'canceled',
-          'subscription.plan': cancelPlan,
+          'subscription.status': 'canceled', // ステータスを「キャンセル済み」に
           'subscription.canceledAt': FieldValue.serverTimestamp(),
           'subscription.lastUpdated': FieldValue.serverTimestamp(),
-          // Apple側の情報を保持
-          'subscription.appleProductId': cancelProductId,
           updatedAt: FieldValue.serverTimestamp(),
         });
-        break;
+        logger.info("✅ Subscription auto-renew has been turned off. Plan remains active until expiration.", { userId, notificationType });
+        // 注意: ここではプラン変更やデータ削除は行わない
+        return; // この後のapplyImmediatePlanLimitsをスキップするためにreturn
       
       case 'REFUND':
       case 'REFUND_DECLINED':
@@ -3015,9 +3013,9 @@ async function handleSubscriptionCancellation(userId: string, notificationType: 
         break;
     }
     
-    // データ制限を即座に適用
+    // データ制限を即座に適用（返金の場合のみ実行される）
     await applyImmediatePlanLimits(userId, 'free');
-    logger.info("✅ Subscription cancellation processed:", { userId, notificationType, environment: payload.environment });
+    logger.info("✅ Subscription cancellation/refund processed:", { userId, notificationType, environment: payload.environment });
   } catch (error) {
     logger.error("❌ Error handling subscription cancellation:", error);
     throw error;

@@ -247,7 +247,11 @@ export class PlanService {
 
   // ダウングレード情報の表示テキストを生成
   static getDowngradeInfoText(user: User | null): string | null {
-    if (!user?.subscription?.downgradeTo) return null;
+    // `downgradeTo`ではなく、`status`が`canceled`（自動更新オフ）の場合にメッセージを表示する
+    if (user?.subscription?.status !== 'canceled') {
+      // 既存のdowngradeToロジックも念のため残しておく
+      if (!user?.subscription?.downgradeTo) return null;
+    }
     
     const subscription = user.subscription;
     const nextDate = this.getNextRenewalDate(user);
