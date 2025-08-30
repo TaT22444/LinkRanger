@@ -189,12 +189,12 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
   }, [user]);
 
   // 画面がフォーカスされたときに再読み込み
-  useFocusEffect(
+  /* useFocusEffect(
     useCallback(() => {
       console.log('🔄 お知らせを再読み込み（フォーカス時）');
       reloadAnnouncements();
     }, [reloadAnnouncements])
-  );
+  );*/
 
   // フィルターされたお知らせを計算
   const filteredAnnouncements = useMemo(() => {

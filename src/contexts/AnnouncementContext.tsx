@@ -40,6 +40,8 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Firebaseからリアルタイムで未読数を取得
   useEffect(() => {
+    // パフォーマンス問題のため、一時的にリアルタイム購読を停止
+    /*
     if (!user?.uid) return;
 
     // 実際のFirestoreプラン値を使用
@@ -51,7 +53,7 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
       user.createdAt,
       (data) => {
         // お知らせデータを設定
-        setAnnouncements(data.announcements);
+        // setAnnouncements(data.announcements);
         
         // 'reminder'タイプのお知らせを除外して未読数を計算
         const filteredUnreadCount = data.announcements
@@ -62,6 +64,7 @@ export const AnnouncementProvider: React.FC<{ children: React.ReactNode }> = ({ 
     );
 
     return unsubscribe;
+    */
   }, [user?.uid, user?.subscription?.plan, user?.createdAt]);
 
   const decrementUnreadCount = () => {
