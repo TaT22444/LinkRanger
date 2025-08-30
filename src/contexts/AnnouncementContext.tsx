@@ -1,18 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { announcementService } from '../services/announcementService';
 import { useAuth } from './AuthContext';
-import { UserPlan } from '../types';
+import { UserPlan, Announcement } from '../types';
 
-interface AnnouncementWithReadStatus {
-  id: string;
+// isReadプロパティをAnnouncement型に追加
+interface AnnouncementWithReadStatus extends Announcement {
   isRead: boolean;
-  title: string;
-  content: string;
-  type: string;
-  priority: string;
-  publishedAt?: Date;
-  createdAt: Date;
-  // 他の必要なプロパティを追加
 }
 
 interface AnnouncementContextType {

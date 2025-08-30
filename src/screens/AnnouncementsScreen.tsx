@@ -28,7 +28,11 @@ interface AnnouncementsScreenProps {
 
 export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ navigation }) => {
   const { user } = useAuth();
-  const { decrementUnreadCount, announcements: contextAnnouncements } = useAnnouncements();
+  const { 
+    decrementUnreadCount, 
+    announcements: contextAnnouncements, 
+    setAnnouncements: setContextAnnouncements 
+  } = useAnnouncements();
   const [announcements, setAnnouncements] = useState<AnnouncementWithReadStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,33 +45,32 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
 
   // Contextから取得したお知らせデータを使用
   useEffect(() => {
+    // Contextにキャッシュがあれば、それを使ってローディングをスキップ
     if (contextAnnouncements.length > 0) {
-      setAnnouncements(contextAnnouncements as AnnouncementWithReadStatus[]);
+      setAnnouncements(contextAnnouncements);
       setLoading(false);
-      console.log('📡 Contextからお知らせデータを取得');
+      console.log('📡 Contextのキャッシュからお知らせデータを取得');
+      return;
     }
-  }, [contextAnnouncements]);
 
-  useEffect(() => {
+    // キャッシュがない場合のみ、新規読み込みロジックを実行
     const now = Date.now();
     const shouldRefresh = (now - lastFetch) > CACHE_DURATION;
     
-    // Contextからのデータがない場合のみ直接読み込み
-    if ((shouldRefresh || announcements.length === 0) && contextAnnouncements.length === 0) {
+    if (shouldRefresh || announcements.length === 0) {
       console.log('🔄 お知らせを新規読み込み');
       loadAnnouncements();
-    } else if (contextAnnouncements.length === 0) {
-      console.log('💾 キャッシュからお知らせを表示');
-      // キャッシュがある場合はローディングをスキップ
+    } else {
+      console.log('💾 ローカルキャッシュからお知らせを表示');
       setLoading(false);
     }
-  }, [lastFetch, announcements.length, contextAnnouncements.length]);
+  }, [contextAnnouncements]);
 
   const loadAnnouncements = async () => {
     if (!user) return;
     
     try {
-      // キャッシュがある場合はローディングを表示しない
+      // キャッシュがない場合のみローディングを表示
       const hasCache = announcements.length > 0 || contextAnnouncements.length > 0;
       if (!hasCache) {
         setLoading(true);
@@ -76,7 +79,11 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
       // 実際のFirestoreプラン値を使用
       const actualPlan = user?.subscription?.plan === 'plus' ? 'plus' : 'free';
       const data = await announcementService.getAnnouncements(user.uid, actualPlan, user.createdAt);
+      
+      // ローカルstateとContextキャッシュの両方を更新
       setAnnouncements(data.announcements);
+      setContextAnnouncements(data.announcements);
+
       setUnreadCount(data.unreadCount);
       setLastFetch(Date.now());
       console.log(`✅ お知らせ取得完了: ${data.announcements.length}件`);
