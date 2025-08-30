@@ -33,11 +33,24 @@ export const AccountScreen: React.FC = () => {
   const userEmail = getUserEmail() || 'No Email';
   const [appVersion, setAppVersion] = useState('');
   
+  // 今日の日付状態を管理するためのuseState
+  const [today, setToday] = useState(new Date().toDateString());
+  
   useEffect(() => {
     const version = Application.nativeApplicationVersion;
     const buildVersion = Application.nativeBuildVersion;
     setAppVersion(`${version} (${buildVersion})`);
-  }, []);
+    
+    // 日付変更を監視するインターバルを設定
+    const interval = setInterval(() => {
+      const newToday = new Date().toDateString();
+      if (newToday !== today) {
+        setToday(newToday);
+      }
+    }, 60000); // 1分ごとにチェック
+    
+    return () => clearInterval(interval);
+  }, [today]);
   
   const handleAnnouncements = () => {
     navigation.navigate('Announcements');
