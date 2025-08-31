@@ -1605,9 +1605,15 @@ async function validateReceiptWithApple(receiptData: string): Promise<AppleRecei
 }
 
 async function attemptReceiptValidation(receiptData: string, url: string): Promise<AppleReceiptResponse> {
+  const sharedSecret = process.env.APPLE_SHARED_SECRET || functions.config().apple?.shared_secret;
+  if (!sharedSecret) {
+    logger.error("❌ APPLE_SHARED_SECRET is not configured. Cannot validate receipt.");
+    throw new HttpsError("internal", "The server is not configured correctly for receipt validation.");
+  }
+
   const response = await axios.post<AppleReceiptResponse>(url, {
     "receipt-data": receiptData,
-    "password": process.env.APPLE_SHARED_SECRET || functions.config().apple?.shared_secret,
+    "password": sharedSecret,
     "exclude-old-transactions": true,
   }, {
     headers: {
@@ -2456,8 +2462,8 @@ async function checkDuplicateNotification(notificationUUID: string): Promise<boo
     const doc = await notificationRef.get();
     return doc.exists;
   } catch (error) {
-    logger.error("❌ Error checking duplicate notification:", error);
-    return false;
+    logger.error("❌ Error checking duplicate notification, assuming it might be a duplicate to be safe:", error);
+    return true; // 安全のため、チェックに失敗した場合は重複とみなす
   }
 }
 
@@ -2535,6 +2541,29 @@ async function processNotificationByType(userId: string, notificationType: strin
       environment,
       originalTransactionId: payload.originalTransactionId
     });
+
+    // タイムスタンプ比較による順序保証
+    const userRef = db.collection("users").doc(userId);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      logger.error("❌ User document not found during notification processing:", { userId });
+      return; // ユーザーが存在しない場合は処理しない
+    }
+
+    const subscription = userDoc.data()?.subscription;
+    const lastUpdated = subscription?.lastUpdated?.toDate()?.getTime();
+    const notificationDate = payload.notificationDate; // JWSペイロード内のタイムスタンプ
+
+    if (lastUpdated && notificationDate && notificationDate <= lastUpdated) {
+      logger.warn("🔄 Stale notification received. Skipping processing.", {
+        userId,
+        notificationType,
+        notificationUUID: payload.notificationUUID,
+        lastUpdated: new Date(lastUpdated).toISOString(),
+        notificationDate: new Date(notificationDate).toISOString(),
+      });
+      return; // 古い通知なので処理をスキップ
+    }
 
     // 通知処理を統一（環境に関係なく同じロジック）
     await processNotificationByTypeInternal(userId, notificationType, payload);

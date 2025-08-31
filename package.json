@@ -13,7 +13,9 @@
     "build:preview": "eas build --profile preview --platform ios",
     "announcement:create": "node scripts/create-announcement.js",
     "announcement:notify": "node scripts/send-notification.js",
-    "announcement:quick": "node scripts/create-and-notify.js"
+    "announcement:quick": "node scripts/create-and-notify.js",
+    "env:production": "cp .env.production .env",
+    "env:testflight": "cp .env.testflight .env"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
@@ -57,6 +59,7 @@
     "@expo/config-plugins": "^10.1.2",
     "@types/react": "~19.0.10",
     "@types/react-test-renderer": "^19.1.0",
+    "babel-plugin-transform-remove-console": "^6.9.4",
     "typescript": "~5.8.3"
   },
   "private": true

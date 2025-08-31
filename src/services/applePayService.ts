@@ -89,13 +89,24 @@ export class IapService {
       
       this.initialized = true;
 
-      // 過去の未完了トランザクションをクリア（アプリ起動時の安全策）
+      // 過去の未完了トランザクションを処理（アプリ起動時の安全策）
       if (Platform.OS === 'ios') {
         try {
           const availablePurchases = await getAvailablePurchases();
           console.log('🛒 Found available purchases:', availablePurchases.length);
           for (const purchase of availablePurchases) {
-            await finishTransaction({ purchase, isConsumable: false });
+            try {
+              // バックエンドにレシートを送信して検証
+              console.log(`[SUB-MONITOR] Initializing: Validating available purchase...`, { productId: purchase.productId });
+              await this.validateReceipt(purchase);
+
+              // 検証が成功した場合のみトランザクションを完了
+              await finishTransaction({ purchase, isConsumable: false });
+              console.log(`[SUB-MONITOR] Initializing: Finished available purchase transaction.`, { productId: purchase.productId });
+            } catch (error) {
+              console.error(`[SUB-MONITOR] Initializing: Failed to validate/finish available purchase. Will retry on next launch.`, { error });
+              // エラーが発生した場合はトランザクションを完了させず、次回のアプリ起動時に再試行されるようにする
+            }
           }
         } catch (purchaseError) {
           console.warn('⚠️ Failed to clear previous transactions:', purchaseError);
@@ -193,6 +204,12 @@ export class IapService {
           console.log(`[SUB-MONITOR] [${timestamp}] Transaction finished - Product: ${purchase.productId}`);
         } catch (error) {
           console.error(`[SUB-MONITOR] [${timestamp}] Receipt validation failed:`, error);
+          // ユーザーに状況を通知し、次のアクションを促す
+          Alert.alert(
+            "購入処理の確認に失敗しました",
+            "ネットワーク接続が不安定な可能性があります。購入は記録されていますので、ネットワークの良い環境でアプリを再起動するとプランが反映されます。",
+            [{ text: "OK" }]
+          );
         }
       }
     });

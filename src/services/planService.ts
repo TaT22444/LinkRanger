@@ -852,6 +852,15 @@ export class PlanService {
 
   // ダウングレード検出とクリーンアップの実行
   static async checkAndApplyDowngrade(user: User | null): Promise<{ applied: boolean; deletedLinks: number; deletedTags: number }> {
+    // サーバーサイドのWebhook処理に一本化されたため、クライアントサイドの処理は原則として不要。
+    // Webhookの遅延などを考慮したフェイルセーフとして残しているが、一旦ログ出力に留める。
+    if (user?.subscription?.downgradeTo) {
+        console.log('🔄 [DEPRECATED] Client-side downgrade check triggered. This process is now handled by the server.', { 
+        userId: user.uid
+      });
+    }
+    return { applied: false, deletedLinks: 0, deletedTags: 0 };
+    /*
     if (!user?.subscription?.downgradeTo) {
       return { applied: false, deletedLinks: 0, deletedTags: 0 };
     }
@@ -906,6 +915,7 @@ export class PlanService {
     }
     
     return { applied: false, deletedLinks: 0, deletedTags: 0 };
+    */
   }
 
   // 削除されたタグのIDをリンクからクリーンアップ
