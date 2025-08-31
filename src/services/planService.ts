@@ -89,7 +89,6 @@ export class PlanService {
   // Firebase Timestampを Dateに変換するヘルパー
   private static getDateFromFirebaseTimestamp(timestamp: any): Date | null {
     if (!timestamp) {
-      console.log('🔍 getDateFromFirebaseTimestamp - timestamp is null/undefined');
       return null;
     }
     
@@ -138,15 +137,10 @@ export class PlanService {
   static getPlanStartDate(user: User | null): Date | null {
     if (!user) return null;
 
-    console.log('🔍 getPlanStartDate - user:', user.uid, 'createdAt:', user.createdAt, 'subscription:', user.subscription);
-
-
-
     const subscription = user.subscription;
     if (!subscription) {
       // サブスクリプション情報がない場合はアカウント作成日を返す
       const date = this.getDateFromFirebaseTimestamp(user.createdAt) || new Date();
-      console.log('📅 No subscription, using createdAt:', date);
       return date;
     }
 
@@ -157,7 +151,6 @@ export class PlanService {
       
       // ダウングレード日が過ぎている場合はダウングレード日を返す
       if (downgradeDate && now >= downgradeDate) {
-        console.log('📅 Using downgrade date:', downgradeDate);
         return downgradeDate;
       }
     }
@@ -165,7 +158,6 @@ export class PlanService {
     // プラン開始日を返す（Firebase Timestampの変換）
     const startDate = this.getDateFromFirebaseTimestamp(subscription.startDate);
     const finalDate = startDate || this.getDateFromFirebaseTimestamp(user.createdAt) || new Date();
-    console.log('📅 Final date:', finalDate, 'from startDate:', startDate, 'createdAt conversion:', this.getDateFromFirebaseTimestamp(user.createdAt));
     return finalDate;
   }
 
@@ -438,7 +430,7 @@ export class PlanService {
         }
       });
       
-      console.log('✅ 今日のリンク追加数を増加:', { userId, today });
+
       
     } catch (error) {
       console.error('❌ 今日のリンク追加数増加エラー:', error);
@@ -572,13 +564,10 @@ export class PlanService {
   // プラン変更とダウングレード時のデータクリーンアップ
   static async updateUserPlan(userId: string, newPlan: UserPlan): Promise<void> {
     // TODO: Firestore更新処理
-    console.log(`プラン変更: ${userId} → ${newPlan}`);
   }
 
   // ダウングレード時のデータクリーンアップ
   static async enforceNewPlanLimits(userId: string, newPlan: UserPlan, showNotification = true): Promise<{ deletedLinks: number; deletedTags: number }> {
-    console.log('🔧 プラン制限の適用を開始:', { userId, newPlan });
-    
     const newLimits = this.PLAN_LIMITS[newPlan];
     
     let deletedLinks = 0;
@@ -588,13 +577,9 @@ export class PlanService {
       // 1. 現在のリンク・タグ数を取得
       const { totalLinks, totalTags } = await this.getCurrentDataCounts(userId);
       
-      console.log('📊 現在のデータ数:', { totalLinks, totalTags });
-      console.log('📏 新しい制限:', { maxLinks: newLimits.maxLinks, maxTags: newLimits.maxTags });
-      
       // 2. リンクの削除処理（新しいもの優先で残す）
       if (totalLinks > newLimits.maxLinks) {
         const excessCount = totalLinks - newLimits.maxLinks;
-        console.log(`🗑️ リンク削除実行: ${excessCount}個を削除`);
         
         try {
           if (showNotification) {
@@ -602,7 +587,6 @@ export class PlanService {
           }
           
           deletedLinks = await this.deleteExcessLinks(userId, newLimits.maxLinks);
-          console.log(`✅ リンク削除完了: ${deletedLinks}個削除`);
         } catch (error) {
           console.error('❌ リンク削除処理でエラー:', error);
           throw error;
@@ -612,7 +596,6 @@ export class PlanService {
       // 3. タグの削除処理（使用頻度優先で残す）
       if (totalTags > newLimits.maxTags) {
         const excessCount = totalTags - newLimits.maxTags;
-        console.log(`🗑️ タグ削除実行: ${excessCount}個を削除`);
         
         try {
           if (showNotification) {
@@ -620,7 +603,6 @@ export class PlanService {
           }
           
           deletedTags = await this.deleteExcessTags(userId, newLimits.maxTags);
-          console.log(`✅ タグ削除完了: ${deletedTags}個削除`);
         } catch (error) {
           console.error('❌ タグ削除処理でエラー:', error);
           throw error;
@@ -629,10 +611,8 @@ export class PlanService {
       
       // 4. タグ削除後のクリーンアップ：削除されたタグのIDをリンクから除去
       if (deletedTags > 0) {
-        console.log('🧹 削除されたタグのIDをリンクからクリーンアップ開始');
         try {
           await this.cleanupDeletedTagReferences(userId);
-          console.log('✅ タグ参照のクリーンアップ完了');
         } catch (error) {
           console.error('❌ タグ参照のクリーンアップエラー:', error);
           // クリーンアップエラーは致命的ではないので、処理を続行
@@ -641,11 +621,8 @@ export class PlanService {
       
       // 4. ユーザー統計の更新（統計更新は後で別途実行）
       if (deletedLinks > 0 || deletedTags > 0) {
-        console.log('📊 統計更新が必要:', { deletedLinks, deletedTags });
         // 統計更新は削除処理完了後に別途実行
       }
-      
-      console.log('🎉 プラン制限適用完了:', { deletedLinks, deletedTags });
       
       // 5. 完了通知
       if (showNotification && (deletedLinks > 0 || deletedTags > 0)) {
@@ -687,11 +664,7 @@ export class PlanService {
       // 削除対象のリンクIDを取得（古いものから）
       const linksToDelete = sortedDocs.slice(0, deleteCount).map(doc => doc.id);
       
-      console.log(`🔗 リンク削除対象: ${linksToDelete.length}個`, {
-        total: totalLinks,
-        keep: keepCount,
-        delete: deleteCount
-      });
+
       
       // 直接削除処理を実行
       const batch = writeBatch(db);
@@ -701,7 +674,7 @@ export class PlanService {
       });
       
       await batch.commit();
-      console.log(`✅ リンク削除完了: ${linksToDelete.length}個`);
+
       
       return linksToDelete.length;
       
@@ -748,11 +721,7 @@ export class PlanService {
       // 削除対象のタグIDを取得（使用頻度の低いものから）
       const tagsToDelete = sortedDocs.slice(0, deleteCount).map(doc => doc.id);
       
-      console.log(`🏷️ タグ削除対象: ${tagsToDelete.length}個`, {
-        total: totalTags,
-        keep: keepCount,
-        delete: deleteCount
-      });
+
       
       // 直接削除処理を実行
       const batch = writeBatch(db);
@@ -762,7 +731,7 @@ export class PlanService {
       });
       
       await batch.commit();
-      console.log(`✅ タグ削除完了: ${tagsToDelete.length}個`);
+
       
       return tagsToDelete.length;
       
@@ -855,9 +824,7 @@ export class PlanService {
     // サーバーサイドのWebhook処理に一本化されたため、クライアントサイドの処理は原則として不要。
     // Webhookの遅延などを考慮したフェイルセーフとして残しているが、一旦ログ出力に留める。
     if (user?.subscription?.downgradeTo) {
-        console.log('🔄 [DEPRECATED] Client-side downgrade check triggered. This process is now handled by the server.', { 
-        userId: user.uid
-      });
+        // [DEPRECATED] Client-side downgrade check triggered. This process is now handled by the server.
     }
     return { applied: false, deletedLinks: 0, deletedTags: 0 };
     /*
@@ -871,10 +838,6 @@ export class PlanService {
     
     // 🔧 ダウングレード処理が既に完了している場合はスキップ
     if (subscription.downgradeCompletedAt) {
-      console.log('🔄 ダウングレード処理は既に完了済み:', { 
-        userId: user.uid, 
-        completedAt: subscription.downgradeCompletedAt 
-      });
       return { applied: false, deletedLinks: 0, deletedTags: 0 };
     }
     
@@ -884,20 +847,13 @@ export class PlanService {
       
       // intendedPlanが存在し、まだダウングレード処理が実行されていない場合
       if (intendedPlan && subscription.plan !== intendedPlan) {
-        console.log('🔄 ダウングレード実行:', { 
-          userId: user.uid, 
-          from: subscription.plan, 
-          to: intendedPlan, 
-          downgradeDate 
-        });
+
         
         const result = await this.enforceNewPlanLimits(user.uid, intendedPlan, true);
         
         // 🔧 強制的なタグ参照クリーンアップ（削除処理が不要でも実行）
-        console.log('🧹 強制的なタグ参照クリーンアップを実行');
         try {
           await this.cleanupDeletedTagReferences(user.uid);
-          console.log('✅ 強制タグ参照クリーンアップ完了');
         } catch (error) {
           console.error('❌ 強制タグ参照クリーンアップエラー:', error);
         }
@@ -926,7 +882,7 @@ export class PlanService {
       const tagsSnapshot = await getDocs(tagsQuery);
       const existingTagIds = new Set(tagsSnapshot.docs.map(doc => doc.id));
       
-      console.log('🔍 既存タグID数:', existingTagIds.size);
+
       
       // 2. リンクから削除されたタグのIDを除去
       const linksQuery = query(collection(db, 'links'), where('userId', '==', userId));
@@ -948,22 +904,13 @@ export class PlanService {
           batch.update(linkRef, { tagIds: validTagIds });
           updatedLinks++;
           
-          console.log('🧹 リンクのタグ参照をクリーンアップ:', {
-            linkId: linkDoc.id,
-            originalTagIds: tagIds,
-            validTagIds: validTagIds,
-            removedCount: tagIds.length - validTagIds.length
-          });
+
         }
       });
       
       if (updatedLinks > 0) {
         await batch.commit();
-        console.log(`✅ タグ参照クリーンアップ完了: ${updatedLinks}個のリンクを更新`);
-      } else {
-        console.log('✅ タグ参照クリーンアップ: 更新不要');
       }
-      
     } catch (error) {
       console.error('❌ タグ参照クリーンアップエラー:', error);
       throw error;
@@ -973,7 +920,7 @@ export class PlanService {
   // ダウングレード完了のマーク
   private static async markDowngradeCompleted(userId: string, newPlan: UserPlan): Promise<void> {
     try {
-      console.log('🔧 ダウングレード完了マーク開始:', { userId, newPlan });
+
       
       const userRef = doc(db, 'users', userId);
       
@@ -987,11 +934,11 @@ export class PlanService {
         updatedAt: serverTimestamp()
       };
       
-      console.log('🔧 更新データ:', updateData);
+
       
       await updateDoc(userRef, updateData);
       
-      console.log('✅ ダウングレード完了マーク完了:', { userId, newPlan });
+
       
     } catch (error) {
       console.error('❌ ダウングレード完了マークエラー:', error);

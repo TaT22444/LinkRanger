@@ -38,7 +38,7 @@ export const announcementService = {
    */
   async getAnnouncements(userId: string, userPlan?: UserPlan, userCreatedAt?: Date): Promise<AnnouncementsData> {
     try {
-      console.log('📢 お知らせ取得開始:', { userId, userPlan, userCreatedAt });
+
 
       // 公開されているお知らせを取得
       const now = new Date();
@@ -98,10 +98,7 @@ export const announcementService = {
 
       const unreadCount = announcementsWithReadStatus.filter(a => !a.isRead).length;
 
-      console.log('✅ お知らせ取得完了:', {
-        total: announcementsWithReadStatus.length,
-        unread: unreadCount,
-      });
+
 
       return {
         announcements: announcementsWithReadStatus,
@@ -118,7 +115,7 @@ export const announcementService = {
    */
   async markAsRead(userId: string, announcementId: string): Promise<void> {
     try {
-      console.log('📖 お知らせ既読処理:', { userId, announcementId });
+
 
       // 既読レコードが存在するかチェック
       const readQuery = query(
@@ -135,9 +132,6 @@ export const announcementService = {
           announcementId,
           readAt: serverTimestamp(),
         });
-        console.log('✅ お知らせ既読完了');
-      } else {
-        console.log('ℹ️ 既に既読済み');
       }
     } catch (error) {
       console.error('❌ お知らせ既読エラー:', error);
@@ -167,7 +161,7 @@ export const announcementService = {
     userCreatedAt: Date | undefined,
     callback: (data: AnnouncementsData) => void
   ): () => void {
-    console.log('📡 お知らせリアルタイム購読開始:', { userId, userPlan, userCreatedAt });
+
 
     const now = new Date();
     const announcementsQuery = query(
@@ -179,7 +173,7 @@ export const announcementService = {
 
     return onSnapshot(announcementsQuery, async (snapshot) => {
       try {
-        console.log('📢 お知らせ更新受信:', { count: snapshot.docs.length });
+
         
         // 変更があった場合のみデータを再取得
         const data = await this.getAnnouncements(userId, userPlan, userCreatedAt);
@@ -195,7 +189,7 @@ export const announcementService = {
    */
   async sendAnnouncement(announcement: Omit<Announcement, 'id' | 'createdAt'>): Promise<string> {
     try {
-      console.log('📤 お知らせ送信開始:', announcement);
+
 
       const docRef = await addDoc(collection(db, COLLECTIONS.ANNOUNCEMENTS), {
         ...announcement,
@@ -204,7 +198,7 @@ export const announcementService = {
         expiresAt: announcement.expiresAt ? Timestamp.fromDate(announcement.expiresAt) : null,
       });
 
-      console.log('✅ お知らせ作成完了:', docRef.id);
+
 
       // プッシュ通知を送信（高優先度のみ）
       if (announcement.priority === 'high') {
@@ -215,7 +209,7 @@ export const announcementService = {
             content: announcement.content,
             targetUserPlans: announcement.targetUserPlans || [],
           });
-          console.log('📱 プッシュ通知送信完了');
+
         } catch (notificationError) {
           console.error('❌ プッシュ通知送信エラー:', notificationError);
           // 通知エラーはお知らせ作成の成功を妨げない
@@ -234,7 +228,7 @@ export const announcementService = {
    */
   async updateAnnouncement(announcementId: string, updates: Partial<Announcement>): Promise<void> {
     try {
-      console.log('📝 お知らせ更新:', { announcementId, updates });
+
 
       const updateData: any = { ...updates };
       
@@ -246,7 +240,7 @@ export const announcementService = {
       }
 
       await updateDoc(doc(db, COLLECTIONS.ANNOUNCEMENTS, announcementId), updateData);
-      console.log('✅ お知らせ更新完了');
+
     } catch (error) {
       console.error('❌ お知らせ更新エラー:', error);
       throw error;

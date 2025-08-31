@@ -145,12 +145,8 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         user?.subscription?.downgradeEffectiveDate && 
         !user?.subscription?.downgradeCompletedAt) {
       
-      console.log('🔍 Current user plan:', PlanService.getDisplayPlan(user));
-      console.log('🔍 Plan debug info:', PlanService.getDebugInfo(user));
-      
       // 🔧 無限ループ防止: 一度実行したらフラグを設定
       if (hasRunDowngradeRef.current) {
-        console.log('🔄 ダウングレード処理は既に実行済み');
         return;
       }
       hasRunDowngradeRef.current = true;
@@ -160,10 +156,8 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         try {
           const result = await PlanService.checkAndApplyDowngrade(user);
           if (result.applied) {
-            console.log('🔄 ダウングレード処理完了:', result);
             // データが削除された場合、リストを再取得
             if (result.deletedLinks > 0 || result.deletedTags > 0) {
-              console.log('🔄 データが削除されたため、リストの再取得をトリガー');
               // 既存のHooksが自動的に再取得することを期待
             }
           }
@@ -184,18 +178,14 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   useEffect(() => {
     // 通知タップ時のコールバックを設定（一度だけ）
     notificationService.setNotificationTapCallback(async (linkId: string) => {
-      console.log('🔗 HomeScreen: 通知タップ検出 - リンクID:', linkId);
-      
       try {
         // リンクIDからリンクデータを検索
         let targetLink = links.find(link => link.id === linkId);
         
         if (targetLink) {
-          console.log('✅ HomeScreen: リンクデータ発見 - タイトル:', targetLink.title);
           setSelectedLink(targetLink);
           setShowDetailModal(true);
         } else {
-          console.log('⚠️ HomeScreen: リンクデータが見つかりません - ID:', linkId);
           // リンクが見つからない場合は、Firestoreから再取得を試行
           try {
             const linkDoc = await getDoc(doc(db, 'links', linkId));
@@ -218,11 +208,9 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                 error: linkData.error,
               } as Link;
               
-              console.log('✅ HomeScreen: Firestoreからリンクデータ取得完了 - タイトル:', fetchedLink.title);
               setSelectedLink(fetchedLink);
               setShowDetailModal(true);
             } else {
-              console.log('❌ HomeScreen: Firestoreにもリンクデータが存在しません - ID:', linkId);
               Alert.alert('エラー', '指定されたリンクが見つかりません');
             }
           } catch (fetchError) {
@@ -235,13 +223,10 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         Alert.alert('エラー', '通知処理中にエラーが発生しました');
       }
     });
-
-    console.log('📱 HomeScreen: 通知タップコールバック設定完了');
     
     // クリーンアップ関数
     return () => {
       // 必要に応じてコールバックをクリア
-      console.log('📱 HomeScreen: 通知タップコールバッククリーンアップ');
     };
   }, []); // 依存配列を空にして一度だけ実行
 
@@ -251,7 +236,6 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
 
   useEffect(() => {
     const openLinkFromParam = async (linkId: string) => {
-      console.log('🔗 HomeScreen: パラメータからリンクを開きます - ID:', linkId);
       try {
         // 既存の通知タップ処理とほぼ同じロジック
         let targetLink = links.find(link => link.id === linkId);
@@ -421,13 +405,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
     try {
       const newLinkId = await createLink(fullLinkData);
 
-      // 🔍 リンク作成後の状態確認ログ
-      console.log('✅ handleAddLink: リンク作成完了', {
-        linkId: newLinkId,
-        status: fullLinkData.status,
-        hasTagIds: !!(fullLinkData.tagIds?.length),
-        totalLinks: links.length + 1 // 作成後の総リンク数
-      });
+
       
       // 通知は3日間未読だった場合のみ発行するため、リンク作成時の即座通知は削除
       // const newLink = { ...fullLinkData, id: newLinkId } as Link;
@@ -438,22 +416,13 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       
       if (hasManualTags) {
         // 🔧 手動選択されたタグがある場合は、それらをリンクに設定
-        console.log('🔧 handleAddLink: 手動選択されたタグを設定', { 
-          linkId: newLinkId, 
-          manualTagIds: linkData.tagIds,
-          manualTagCount: linkData.tagIds?.length || 0
-        });
-        
         // 手動選択されたタグをリンクに設定
         await updateLink(newLinkId, { 
           tagIds: linkData.tagIds || [],
           status: 'completed' // 手動タグがある場合は完了状態
         });
-        
-        console.log('✅ handleAddLink: 手動タグ設定完了');
       } else {
         // AI処理を即座に実行（タグ制限チェックを早期に行う）
-        console.log('🔄 handleAddLink: AI処理を開始', { linkId: newLinkId, hasTagIds: false });
         setTimeout(() => {
           processAITagging(newLinkId, fullLinkData);
         }, 100); // 500ms → 100ms に短縮（UI応答性向上）
@@ -462,7 +431,6 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       // 🔧 今日のリンク追加数を増加
       try {
         await PlanService.incrementTodayLinksAdded(user.uid);
-        console.log('✅ 今日のリンク追加数を増加完了');
       } catch (error) {
         console.error('❌ 今日のリンク追加数増加エラー:', error);
         // エラー時は処理を続行（統計のみの問題）
@@ -482,20 +450,12 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   const processAITagging = async (linkId: string, linkData: Partial<Link>) => {
     if (!user?.uid) return;
 
-    console.log('🔍 processAITagging: 開始', { linkId, hasTagIds: !!(linkData.tagIds?.length) });
-
     // 🔒 タグ制限の事前チェック（aiProcessingStatus設定前に実行）
     const currentTagCount = userTags.length;
     const maxTags = PlanService.getMaxTags(user);
     const canCreateNewTags = maxTags === -1 || currentTagCount < maxTags;
     
     if (!canCreateNewTags) {
-      console.log('🚫 processAITagging: タグ制限に達しているためスキップ', {
-        linkId,
-        currentTagCount,
-        maxTags,
-        canCreateNewTags
-      });
 
       Alert.alert(
         'タグ制限に達しました',
@@ -514,24 +474,17 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       
       // ⚠️ 重要: aiProcessingStatusには一切登録せずにreturn
       // これによりリンクは確実にuntaggedLinksに表示される
-      console.log('📝 processAITagging: リンクはuntaggedLinksに表示される', { linkId });
       return;
     }
 
     // タグ制限チェック通過後にのみaiProcessingStatusに登録
-    console.log('✅ processAITagging: タグ制限チェック通過、AI処理開始', { linkId });
     setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.1 }));
 
     try {
       setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.3 }));
 
       // 🚀 メタデータ取得（重複防止のため短時間のキャッシュを考慮）
-      console.log('🔄 processAITagging: メタデータ取得開始', { url: linkData.url });
       const metadata = await metadataService.fetchMetadata(linkData.url || '', user.uid);
-      console.log('📄 processAITagging: メタデータ取得完了', { 
-        title: metadata.title?.slice(0, 50) + '...',
-        hasDescription: !!metadata.description 
-      });
       setAiProcessingStatus(prev => ({ ...prev, [linkId]: 0.6 }));
 
       const aiResponse = await aiService.generateEnhancedTags(
@@ -566,16 +519,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
       const maxNewTags = Math.max(0, PlanService.getMaxTags(user) - currentTagCount);
       const canCreateTags = PlanService.getMaxTags(user) === -1 || maxNewTags >= newTagsToCreate.length;
       
-      // 🔍 デバッグログ: タグ制限チェックの詳細
-      console.log('🔍 AI生成タグ制限チェック:', {
-        currentTagCount,
-        maxTags: PlanService.getMaxTags(user),
-        requestedNewTags: newTagsToCreate.length,
-        maxNewTags,
-        canCreateTags,
-        existingTagsToAdd,
-        newTagsToCreate
-      });
+
       
       if (!canCreateTags && newTagsToCreate.length > 0) {
         console.warn('🚫 AI生成タグ制限超過:', {
@@ -645,23 +589,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
 
       await updateLink(linkId, updateData);
       
-      // 🔍 最終的なタグIDの詳細ログ
-      console.log('🎉 AIタグ付与完了:', { 
-        linkId, 
-        finalTagIds,
-        finalTagIds詳細: finalTagIds.map(tagId => {
-          const tag = userTags.find(t => t.id === tagId);
-          return {
-            tagId,
-            tagName: tag?.name || 'タグが見つかりません',
-            tagExists: !!tag
-          };
-        }),
-        aiResponseTags: aiResponse.tags,
-        existingTagsToAdd,
-        newTagsToCreate,
-        createdTagsCount: newTagsToCreate.length
-      });
+
       
       // ... (Alert表示のロジックは変更なし)
       const userTagCount = (linkData.tagIds || []).length;
@@ -716,15 +644,11 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
 
   const handleDismissUntagged = async (linkId: string) => {
     try {
-      console.log('🔘 AIタグ付けをスキップします:', linkId);
-      
       // リンクのstatusを'completed'に変更してuntaggedLinksから除外
       await updateLink(linkId, { 
         status: 'completed' as const,
         updatedAt: new Date()
       });
-      
-      console.log('✅ スキップ完了:', linkId);
       
       // 成功通知（控えめに）
       Alert.alert('完了', 'AIタグ付けをスキップしました');
@@ -1313,24 +1237,14 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
         link={item}
         tags={userTags}
         onPress={() => {
-          console.log('🔥 LinkCard tapped:', {
-            linkId: item.id,
-            title: item.title,
-            isSwipeActive,
-            isSelectionMode
-          });
-          
           // 実際にスワイプ中の場合はタップを無効化
           if (isSwipeActive) {
-            console.log('🚫 Tap blocked by active swipe gesture');
             return;
           }
           
           if (isSelectionMode) {
-            console.log('📝 Selection mode - toggling selection');
             toggleLinkSelection(item.id);
           } else {
-            console.log('✅ Opening detail modal for link:', item.title);
             setSelectedLink(item);
             setShowDetailModal(true);
           }
@@ -1565,7 +1479,6 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
           </View>
         )}
         onEndReached={() => {
-          console.log('📚 FlatList: onEndReached triggered', { hasMore, isLoadingMore, loading });
           if (hasMore && !isLoadingMore && !loading) {
             loadMore();
           }

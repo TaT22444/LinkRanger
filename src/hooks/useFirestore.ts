@@ -129,23 +129,12 @@ export const useLinks = (
     });
     const cacheKey = `${userId}-${JSON.stringify(filter)}-${JSON.stringify(sort)}-${optionsKey}`;
 
-    console.log('🔄 useLinks:init', {
-      userId,
-      initialPage: INITIAL_PAGE_SIZE,
-      loadMorePage: LOAD_MORE_PAGE_SIZE,
-      forcePaginated: !!options.forcePaginated,
-      shouldUseRealtime: cacheUtils.shouldUseRealtime(),
-    });
+
 
     // キャッシュチェック
     const cachedEntry = globalCache.links.get(cacheKey);
     if (cacheUtils.isValid(cachedEntry)) {
-      console.log('💾 useLinks: キャッシュヒット', {
-        linksCount: cachedEntry!.data.length,
-        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60)),
-        isSubscribed: cachedEntry!.isSubscribed,
-        cacheKey
-      });
+
       
       setLinks(cachedEntry!.data);
       setLoading(false);
@@ -163,30 +152,23 @@ export const useLinks = (
     const useRealtime = cacheUtils.shouldUseRealtime() && !options.forcePaginated;
 
     if (useRealtime) {
-      console.log('📡 useLinks: subscribe realtime');
+
       const unsubscribe = linkService.subscribeToUserLinks(
         userId,
         (newLinks) => {
-          console.log('📡 useLinks: リアルタイム更新受信', {
-            newLinksCount: newLinks.length,
-            userId
-          });
+
           
           setLinks(currentLinks => {
             const mergedLinks = newLinks.map(firebaseLink => {
               const local = currentLinks.find(l => l.id === firebaseLink.id);
               if (local && local.status === 'processing' && firebaseLink.status === 'processing') {
-                console.log('🔄 useLinks: ローカル処理中状態を保持', { linkId: firebaseLink.id });
+    
                 return local;
               }
               return firebaseLink;
             });
             
-            console.log('📊 useLinks: マージ結果', {
-              before: currentLinks.length,
-              after: mergedLinks.length,
-              firebase: newLinks.length
-            });
+
             
             return mergedLinks;
           });
@@ -213,9 +195,7 @@ export const useLinks = (
         globalCache.activeSubscriptions.delete(cacheKey);
       };
     } else {
-      console.log('📖 useLinks: one-time read (paginated)', {
-        initialPage: INITIAL_PAGE_SIZE
-      });
+
       const fetchLinks = async () => {
         try {
           const result = await linkService.getUserLinks(userId, filter, sort, INITIAL_PAGE_SIZE);
@@ -291,19 +271,7 @@ export const useLinks = (
 
         const newLinks = [optimisticLink, ...prev];
         
-        // 🔍 リンク作成後の状態確認ログ
-        console.log('🔍 useFirestore: createLink後の状態', {
-          linkId,
-          optimisticLinkStatus: optimisticLink.status,
-          optimisticLinkTagIds: optimisticLink.tagIds?.length || 0,
-          totalLinks: newLinks.length,
-          newLinkDetails: {
-            id: optimisticLink.id,
-            status: optimisticLink.status,
-            tagIds: optimisticLink.tagIds?.length || 0,
-            title: optimisticLink.title?.slice(0, 20) + '...'
-          }
-        });
+
         
         return newLinks;
       });
@@ -395,19 +363,12 @@ export const useTags = (userId: string | null) => {
     }
 
     const cacheKey = `tags-${userId}`;
-    console.log('🔄 useTags: 初期化', {
-      userId,
-      shouldUseRealtime: cacheUtils.shouldUseRealtime(),
-      activeSubscriptions: globalCache.activeSubscriptions.size
-    });
+
 
     // キャッシュチェック
     const cachedEntry = globalCache.tags.get(cacheKey);
     if (cacheUtils.isValid(cachedEntry)) {
-      console.log('💾 useTags: キャッシュヒット', {
-        tagsCount: cachedEntry!.data.length,
-        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60))
-      });
+
       setTags(cachedEntry!.data);
       setLoading(false);
       setError(null);
@@ -419,19 +380,13 @@ export const useTags = (userId: string | null) => {
 
     // リアルタイム監視 vs 一回限り読み取りの選択
     if (cacheUtils.shouldUseRealtime()) {
-      console.log('📡 useTags: リアルタイム監視開始', {
-        userId,
-        activeSubscriptions: globalCache.activeSubscriptions.size
-      });
+
 
       try {
         const unsubscribe = tagService.subscribeToUserTags(
           userId,
           (newTags) => {
-            console.log('📥 useTags: リアルタイム更新受信', {
-              userId,
-              tagsCount: newTags.length
-            });
+
             
             setTags(newTags);
             setLoading(false);
@@ -452,10 +407,7 @@ export const useTags = (userId: string | null) => {
 
         // クリーンアップ
         return () => {
-          console.log('🧹 useTags: リアルタイム監視停止', {
-            userId,
-            remainingSubscriptions: globalCache.activeSubscriptions.size - 1
-          });
+
           unsubscribe();
           globalCache.activeSubscriptions.delete(cacheKey);
         };
@@ -466,21 +418,13 @@ export const useTags = (userId: string | null) => {
       }
     } else {
       // 一回限り読み取り（高負荷時）
-      console.log('📖 useTags: 一回限り読み取り（高負荷対応）', {
-        userId,
-        activeSubscriptions: globalCache.activeSubscriptions.size,
-        threshold: CACHE_CONFIG.REALTIME_THRESHOLD
-      });
+
 
       const fetchTags = async () => {
         try {
           // 直接的なタグ取得（リアルタイムなし）
           const tagsResult = await tagService.getUserTags(userId);
-          console.log('📥 useTags: 一回限り読み取り完了', {
-            userId,
-            tagsCount: tagsResult.length,
-            strategy: 'one_time_read'
-          });
+
           
           setTags(tagsResult);
           setLoading(false);
@@ -864,19 +808,11 @@ export const useUser = (userId: string | null) => {
     }
 
     const cacheKey = `user-${userId}`;
-    console.log('🔄 useUser: 初期化', {
-      userId,
-      shouldUseRealtime: cacheUtils.shouldUseRealtime(),
-      activeSubscriptions: globalCache.activeSubscriptions.size
-    });
 
     // キャッシュチェック
     const cachedEntry = globalCache.users?.get(cacheKey);
     if (cacheUtils.isValid(cachedEntry)) {
-      console.log('💾 useUser: キャッシュヒット', {
-        userId,
-        ageMinutes: Math.round((Date.now() - cachedEntry!.timestamp) / (1000 * 60))
-      });
+
       setUser(cachedEntry!.data);
       setLoading(false);
       setError(null);
@@ -888,10 +824,7 @@ export const useUser = (userId: string | null) => {
 
     // リアルタイム監視
     if (cacheUtils.shouldUseRealtime()) {
-      console.log('📡 useUser: リアルタイム監視開始', {
-        userId,
-        activeSubscriptions: globalCache.activeSubscriptions.size
-      });
+
 
       try {
         const q = query(
@@ -901,7 +834,6 @@ export const useUser = (userId: string | null) => {
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
           if (snapshot.empty) {
-            console.log('❌ useUser: ユーザードキュメントが見つかりません', { userId });
             setUser(null);
             setLoading(false);
             setError('ユーザーが見つかりません');
@@ -911,11 +843,7 @@ export const useUser = (userId: string | null) => {
           const userDoc = snapshot.docs[0];
           const userData = userDoc.data() as User;
           
-          console.log('📥 useUser: リアルタイム更新受信', {
-            userId,
-            plan: userData.subscription?.plan,
-            status: userData.subscription?.status
-          });
+
           
           setUser(userData);
           setLoading(false);
@@ -942,10 +870,7 @@ export const useUser = (userId: string | null) => {
 
         // クリーンアップ
         return () => {
-          console.log('🧹 useUser: リアルタイム監視停止', {
-            userId,
-            remainingSubscriptions: globalCache.activeSubscriptions.size - 1
-          });
+          
           unsubscribe();
           globalCache.activeSubscriptions.delete(cacheKey);
         };
@@ -956,7 +881,6 @@ export const useUser = (userId: string | null) => {
       }
     } else {
       // 一回限り読み取り（高負荷時）
-      console.log('📖 useUser: one-time read', { userId });
       
       const fetchUser = async () => {
         try {

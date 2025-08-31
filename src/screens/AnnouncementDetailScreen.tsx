@@ -68,7 +68,7 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
         }
         
         setLoading(false);
-        console.log('💾 Contextからお知らせ詳細を取得');
+  
         return;
       }
 
@@ -103,7 +103,7 @@ export const AnnouncementDetailScreen: React.FC<AnnouncementDetailScreenProps> =
       setIsRead(true);
       // 未読数を減らす
       decrementUnreadCount();
-      console.log('✅ お知らせを既読にしました:', announcementId);
+      
     } catch (error) {
       console.error('既読更新エラー:', error);
     }

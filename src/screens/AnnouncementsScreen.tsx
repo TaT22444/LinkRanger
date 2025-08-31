@@ -49,7 +49,7 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
     if (contextAnnouncements.length > 0) {
       setAnnouncements(contextAnnouncements);
       setLoading(false);
-      console.log('📡 Contextのキャッシュからお知らせデータを取得');
+      
       return;
     }
 
@@ -58,10 +58,10 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
     const shouldRefresh = (now - lastFetch) > CACHE_DURATION;
     
     if (shouldRefresh || announcements.length === 0) {
-      console.log('🔄 お知らせを新規読み込み');
+      
       loadAnnouncements();
     } else {
-      console.log('💾 ローカルキャッシュからお知らせを表示');
+      
       setLoading(false);
     }
   }, [contextAnnouncements]);
@@ -86,7 +86,7 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
 
       setUnreadCount(data.unreadCount);
       setLastFetch(Date.now());
-      console.log(`✅ お知らせ取得完了: ${data.announcements.length}件`);
+      
     } catch (error) {
       console.error('お知らせ取得エラー:', error);
       Alert.alert('エラー', 'お知らせの取得に失敗しました');
@@ -189,7 +189,7 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
       setAnnouncements(data.announcements);
       setUnreadCount(data.unreadCount);
       setLastFetch(Date.now());
-      console.log(`✅ お知らせ再読み込み完了: ${data.announcements.length}件`);
+      
     } catch (error) {
       console.error('お知らせ再読み込みエラー:', error);
     }
@@ -198,7 +198,7 @@ export const AnnouncementsScreen: React.FC<AnnouncementsScreenProps> = ({ naviga
   // 画面がフォーカスされたときに再読み込み
   /* useFocusEffect(
     useCallback(() => {
-      console.log('🔄 お知らせを再読み込み（フォーカス時）');
+      
       reloadAnnouncements();
     }, [reloadAnnouncements])
   );*/

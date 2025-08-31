@@ -16,5 +16,4 @@ config.transformer.getTransformOptions = async () => ({
   transform: { experimentalImportSupport: false, inlineRequires: true },
 });
 
-// ★ これがないと拡張のバンドル解決が不安定になります
 module.exports = withShareExtension(config, { isCSSEnabled: true });

@@ -241,7 +241,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
 
     // キャッシュチェック
     if (metadataCache[targetUrl]) {
-      console.log('💾 AddLinkModal: キャッシュヒット', { url: targetUrl });
+      
       return metadataCache[targetUrl];
     }
 
@@ -348,7 +348,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
       return;
     }
 
-    console.log('🤖 AddLinkModal: AIタグ生成開始', { url: url.trim() });
+    
     setGeneratingAITags(true);
     try {
       let finalTitle = '';
@@ -356,10 +356,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
       
       // メタデータが不足している場合のみ取得（キャッシュ対応）
       if (!finalTitle || !finalDescription) {
-        console.log('📄 AddLinkModal: メタデータ補完のため取得', {
-          needTitle: !finalTitle,
-          needDescription: !finalDescription
-        });
+
         
         const metadata = await fetchMetadataWithCache(url.trim());
         finalTitle = finalTitle || metadata.title || url.trim();
@@ -375,10 +372,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
         'free' as UserPlan
       );
       
-      console.log('🎯 AddLinkModal: AIタグ生成完了', {
-        generatedTags: aiResponse.tags,
-        tagCount: aiResponse.tags.length
-      });
+
       
       const newTagIds: string[] = [];
       const preservedUserTags = [...selectedTags];
@@ -431,7 +425,7 @@ export const AddLinkModal: React.FC<AddLinkModalProps> = ({
                     onPress: () => {
                       // AddLinkModalではアップグレードモーダルを直接表示できないため、
                       // onClose後にHomeScreenでハンドリングする必要がある
-                      console.log('🔄 プランアップ要求（AddLinkModal）');
+
                     }
                   }
                 ]

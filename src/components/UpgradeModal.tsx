@@ -80,11 +80,10 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       
       const checkPlanChange = () => {
         const newPlan = PlanService.getDisplayPlan(user);
-        console.log('🔍 プラン変更チェック:', { initialPlan, newPlan, waiting: isWaitingForUpdate });
+
         
         if (newPlan !== initialPlan && newPlan === waitingPlan) {
           // プラン変更が反映された
-          console.log('✅ プラン変更反映完了:', { from: initialPlan, to: newPlan });
           setIsWaitingForUpdate(false);
           setWaitingPlan(null);
           
@@ -107,7 +106,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           clearInterval(intervalTimer);
           setIsWaitingForUpdate(false);
           setWaitingPlan(null);
-          console.log('⏰ プラン変更チェックタイムアウト');
+  
         }, 30000);
         
         return () => {
@@ -129,14 +128,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           await iapService.initialize();
           const fetchedProducts = await iapService.getProducts();
           setProducts(fetchedProducts);
-        console.log('[SUB-MONITOR] UpgradeModal: Products loaded successfully', {
-          count: fetchedProducts.length,
-          environment: __DEV__ ? 'development' : 'production',
-          products: fetchedProducts.map(p => ({
-            productId: p.productId,
-            localizedPrice: (p as any).localizedPrice
-          }))
-        });
+
         } catch (error) {
           console.error('Failed to fetch products', error);
           
@@ -249,13 +241,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   const handleUpgrade = async (planName: UserPlan) => {
     const timestamp = new Date().toISOString();
     
-    console.log('[SUB-MONITOR] [' + timestamp + '] handleUpgrade initiated', {
-      planName,
-      userId: user?.uid || 'unknown',
-      currentPlan: currentUserPlan,
-      environment: __DEV__ ? 'development' : 'production',
-      sourceContext
-    });
+
     
     if (!user?.uid) {
       console.error('[SUB-MONITOR] [' + timestamp + '] handleUpgrade failed - no user ID');
@@ -265,7 +251,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
     // ユーザーがアップグレードを選択した場合のみ処理
     if (planName !== 'plus') {
-      console.log('[SUB-MONITOR] [' + timestamp + '] handleUpgrade skipped - not plus plan', { planName });
+
       // 'plus' 以外のプラン（現状'free'）への変更はここでは扱わない
       return;
     }
@@ -276,7 +262,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                          process.env.EXPO_PUBLIC_ENABLE_TEST_ACCOUNTS === 'true';
     
     if (__DEV__ && !isTestFlight) {
-      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - showing TestFlight guidance');
+
       Alert.alert(
         'テストフライト環境',
         'TestFlight版では実際の購入処理は制限されています。\n\nApp Store正式リリース後に以下が可能になります：\n• 実際のプラン購入\n• Apple Payでの決済\n• サブスクリプション管理',
@@ -285,7 +271,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           {
             text: 'テスト用アップグレード',
             onPress: () => {
-              console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - test upgrade guidance shown');
+
               // テスト環境用の模擬アップグレード
               Alert.alert(
                 'テスト用機能',
@@ -304,22 +290,11 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       setIsProcessing(true);
       setProcessingPlan(planName);
       
-      console.log('[SUB-MONITOR] [' + timestamp + '] Purchase flow initiated', {
-        planName,
-        userId: user.uid,
-        environment: isTestFlight ? 'testflight' : 'production',
-        processingState: 'started'
-      });
+
       
       await iapService.purchasePlan(planName);
       
-      const completionTimestamp = new Date().toISOString();
-      console.log('[SUB-MONITOR] [' + completionTimestamp + '] Purchase plan completed', {
-        planName,
-        userId: user.uid,
-        environment: isTestFlight ? 'testflight' : 'production',
-        processingState: 'completed'
-      });
+
       
       // TestFlight環境では特別なメッセージを表示
       if (isTestFlight) {
@@ -352,7 +327,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       });
       
       if (error.code === 'E_USER_CANCELLED') {
-        console.log('[SUB-MONITOR] [' + errorTimestamp + '] User cancelled purchase');
+
         Alert.alert('キャンセル', '処理がキャンセルされました。');
       } else {
         Alert.alert('エラー', `プラン変更処理中にエラーが発生しました: ${error.message}`);
@@ -361,12 +336,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       setIsProcessing(false);
       setProcessingPlan(null);
       
-      const finalTimestamp = new Date().toISOString();
-      console.log('[SUB-MONITOR] [' + finalTimestamp + '] handleUpgrade completed', {
-        planName,
-        userId: user.uid,
-        processingState: 'finished'
-      });
+
     }
   };
 
@@ -400,11 +370,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     // TestFlight環境と本番環境: 通常のサブスクリプション管理ページ
     const url = 'https://apps.apple.com/account/subscriptions';
     
-    console.log('🔗 サブスクリプション管理ページに遷移:', {
-      url,
-      platform: Platform.OS,
-      environment: isTestFlight ? 'testflight' : 'production'
-    });
+
     
     Linking.canOpenURL(url).then(supported => {
       if (supported) {

@@ -134,7 +134,6 @@ export const LinkCard: React.FC<LinkCardProps> = ({
                   displayName = tag.name;
                 } else {
                   // タグが見つからない場合（削除されたタグや制限で作成されなかったタグ）
-                  console.warn('⚠️ LinkCard: タグが見つかりません', { tagId, linkId: link.id });
                   displayName = '削除されたタグ'; // ユーザーフレンドリーな表示
                 }
                 

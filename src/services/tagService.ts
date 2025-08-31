@@ -81,7 +81,6 @@ export const tagService = {
   },
 
   async getUserTags(userId: string): Promise<Tag[]> {
-    console.log('tagService.getUserTags called with userId:', userId);
     try {
       const q = query(
         collection(db, COLLECTIONS.TAGS),
@@ -90,10 +89,9 @@ export const tagService = {
       );
       
       const snapshot = await getDocs(q);
-      console.log('tagService.getUserTags snapshot size:', snapshot.size);
       const tags = snapshot.docs.map(doc => {
         const data = doc.data();
-        console.log('tagService.getUserTags tag data:', { id: doc.id, name: data.name });
+
         return {
           ...data,
           id: doc.id,
@@ -103,7 +101,7 @@ export const tagService = {
           firstUsedAt: data.firstUsedAt?.toDate() || new Date(),
         } as Tag;
       });
-      console.log('tagService.getUserTags returning tags:', tags);
+
       return tags;
     } catch (error) {
       console.error('tagService.getUserTags error:', error);
@@ -161,7 +159,7 @@ export const tagService = {
     userId: string,
     callback: (tags: Tag[]) => void
   ): () => void {
-    console.log('subscribeToUserTags called with userId:', userId);
+
     const q = query(
       collection(db, COLLECTIONS.TAGS),
       where('userId', '==', userId),

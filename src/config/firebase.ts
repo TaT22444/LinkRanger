@@ -40,13 +40,7 @@ const getFirebaseConfig = () => {
     throw new Error(`🔒 Firebase設定エラー: 以下の環境変数が設定されていません - ${missingEnvVars}`);
   }
 
-  // デバッグ用（APIキーは表示しない）
-  console.log('🔥 Firebase設定確認:', {
-    projectId: config.projectId,
-    authDomain: config.authDomain,
-    hasApiKey: !!config.apiKey,
-    usingEnvVars: !!process.env.EXPO_PUBLIC_FIREBASE_API_KEY
-  });
+
 
   return config;
 };
@@ -60,29 +54,21 @@ let functions: Functions;
 try {
   const firebaseConfig = getFirebaseConfig();
   
-  console.log('🔥 Firebase初期化開始...');
   app = initializeApp(firebaseConfig);
-  console.log('✅ Firebase App初期化完了');
   
   // Firebase Auth初期化（React Native対応）
   if (Platform.OS === 'web') {
     auth = getAuth(app);
-    console.log('✅ Firebase Auth初期化完了（Web）');
   } else {
     // React Native環境ではinitializeAuthとgetReactNativePersistenceを使用
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage)
     });
-    console.log('✅ Firebase Auth初期化完了（React Native）');
   }
   
   db = getFirestore(app);
-  console.log('✅ Firestore初期化完了');
   
   functions = getFunctions(app, 'asia-northeast1');
-  console.log('✅ Firebase Functions初期化完了');
-  
-  console.log('🎉 Firebase全サービス初期化成功 - プロジェクトID:', firebaseConfig.projectId);
 } catch (error: any) {
   console.error('❌ Firebase初期化エラー:', error);
   console.error('エラーメッセージ:', error.message);

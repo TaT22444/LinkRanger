@@ -52,7 +52,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       const unsubscribe = onAuthStateChange(async (user) => {
-        console.log('AuthProvider: onAuthStateChange triggered', user ? `User: ${user.uid}` : 'No user');
         
         // ユーザーが存在する場合
         if (user) {
@@ -70,16 +69,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
           // 🔥 ユーザーログイン時にFCM初期化を実行
           try {
-            console.log('🔐 ユーザーログイン検出: FCM初期化を開始');
             await fcmService.initializeFCM();
-            console.log('✅ FCMトークン登録完了 - Cloud Schedulerが通知送信で使用');
           } catch (fcmError) {
             console.error('❌ FCM初期化エラー:', fcmError);
             // FCMエラーは認証の妨げにならないようにログのみ
           }
         } else {
           // ユーザーが存在しない場合
-          console.log('AuthProvider: No user detected, setting loading to false');
           setState({
             user: null,
             loading: false,
@@ -89,7 +85,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       return () => {
-        console.log('AuthProvider: Unsubscribing from auth state change');
         unsubscribe();
       };
     } catch (error) {
@@ -185,12 +180,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const forceAuthSync = async () => {
     try {
-      console.log('🔄 認証状態の強制同期開始');
       
       // Firebase Authの現在の状態を確認
       const currentAuthUser = auth.currentUser;
       if (!currentAuthUser) {
-        console.log('⚠️ Firebase Authにユーザーが存在しません');
         // 現在の状態と異なる場合のみ更新
         if (state.user !== null) {
           setState({
@@ -221,12 +214,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             loading: false,
             error: null,
           });
-          console.log('✅ 認証状態の強制同期完了 - 状態更新あり');
-        } else {
-          console.log('✅ 認証状態の強制同期完了 - 状態変更なし');
         }
       } else {
-        console.log('⚠️ Firestoreにユーザードキュメントが存在しません');
         // 現在の状態と異なる場合のみ更新
         if (state.user !== null || state.error !== 'ユーザープロフィールが見つかりません') {
           setState({

@@ -75,7 +75,7 @@ export const metadataService = {
       const cachedEntry = metadataCache.get(cacheKey);
       
       if (cachedEntry && (Date.now() - cachedEntry.timestamp) < CACHE_DURATION) {
-        console.log('💾 metadataService: キャッシュヒット', { url: url.slice(0, 50) + '...' });
+
         return cachedEntry.data;
       }
       
@@ -353,13 +353,10 @@ export const metadataService = {
    */
   async handleGoogleMapsUrl(url: string): Promise<LinkMetadata> {
     try {
-      console.log('Processing Google Maps URL:', url);
-      
       // 短縮URLの場合は展開を試行
       let finalUrl = url;
       if (url.includes('goo.gl') || url.includes('maps.app.goo.gl')) {
         try {
-          console.log('Attempting to expand shortened URL:', url);
           const response = await fetch(url, { 
             method: 'HEAD',
             redirect: 'manual'
@@ -367,10 +364,9 @@ export const metadataService = {
           const location = response.headers.get('location');
           if (location && this.isGoogleMapsUrl(location)) {
             finalUrl = location;
-            console.log('Expanded URL:', finalUrl);
           }
         } catch (error) {
-          console.log('Failed to expand URL, using original:', error);
+          // エラー時は元のURLを使用
         }
       }
       
@@ -415,7 +411,6 @@ export const metadataService = {
     const mapInfo: GoogleMapInfo = {};
     
     try {
-      console.log('Parsing Google Maps URL:', url);
       const urlObj = new URL(url);
       const params = urlObj.searchParams;
       const pathname = urlObj.pathname;
@@ -424,7 +419,6 @@ export const metadataService = {
       const query = params.get('q');
       if (query) {
         mapInfo.placeName = decodeURIComponent(query);
-        console.log('Place name from query:', mapInfo.placeName);
       }
       
       // パスから場所情報を抽出（/maps/place/場所名/@座標 形式）
@@ -432,7 +426,6 @@ export const metadataService = {
       if (placeMatch) {
         const placeName = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ');
         mapInfo.placeName = placeName;
-        console.log('Place name from path:', placeName);
       }
       
       // より詳細なパターンマッチング
@@ -441,7 +434,6 @@ export const metadataService = {
       if (searchMatch && !mapInfo.placeName) {
         const placeName = decodeURIComponent(searchMatch[1]).replace(/\+/g, ' ');
         mapInfo.placeName = placeName;
-        console.log('Place name from search path:', placeName);
       }
       
       // /maps/dir/出発地/目的地 形式
@@ -449,7 +441,6 @@ export const metadataService = {
       if (dirMatch && !mapInfo.placeName) {
         const placeName = decodeURIComponent(dirMatch[1]).replace(/\+/g, ' ');
         mapInfo.placeName = placeName;
-        console.log('Place name from directions:', placeName);
       }
       
       // 座標情報を抽出
@@ -459,7 +450,6 @@ export const metadataService = {
           lat: parseFloat(coordMatch[1]),
           lng: parseFloat(coordMatch[2]),
         };
-        console.log('Coordinates found:', mapInfo.coordinates);
       }
       
       // URLフラグメント（#）からの情報抽出
@@ -470,29 +460,21 @@ export const metadataService = {
             lat: parseFloat(hashMatch[1]),
             lng: parseFloat(hashMatch[2]),
           };
-          console.log('Coordinates from hash:', mapInfo.coordinates);
         }
       }
       
       // data パラメータから詳細情報を抽出
       const dataParam = params.get('data');
       if (dataParam) {
-        console.log('Data parameter found:', dataParam);
         // 住所抽出ロジック
         const addressMatch = dataParam.match(/!1s([^!]+)/);
         if (addressMatch) {
           mapInfo.address = decodeURIComponent(addressMatch[1]);
-          console.log('Address from data:', mapInfo.address);
         }
       }
       
       // place_id がある場合
       const placeId = params.get('place_id');
-      if (placeId) {
-        console.log('Place ID found:', placeId);
-      }
-      
-      console.log('Final parsed map info:', mapInfo);
       
     } catch (error) {
       console.error('Error parsing Google Maps URL:', error);
@@ -505,27 +487,21 @@ export const metadataService = {
    * マップ情報からタイトルを生成
    */
   generateMapTitle(mapInfo: GoogleMapInfo): string {
-    console.log('Generating map title from:', mapInfo);
-    
     if (mapInfo.placeName) {
       const title = mapInfo.placeName.trim();
-      console.log('Using place name as title:', title);
       return title;
     }
     
     if (mapInfo.address) {
       const title = mapInfo.address.trim();
-      console.log('Using address as title:', title);
       return title;
     }
     
     if (mapInfo.coordinates) {
       const title = `地図 (${mapInfo.coordinates.lat.toFixed(4)}, ${mapInfo.coordinates.lng.toFixed(4)})`;
-      console.log('Using coordinates as title:', title);
       return title;
     }
     
-    console.log('Using fallback title: Google Maps');
     return 'Google Maps';
   },
 

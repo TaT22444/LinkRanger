@@ -76,11 +76,7 @@ export class AIUsageManager {
     type: 'summary' | 'tags' | 'analysis'
   ): Promise<{ allowed: boolean; reason?: string }> {
     try {
-      console.log('🔍 AI使用制限チェック開始（サーバー側）:', { userId, plan, type });
-      
       const result = await checkAIUsageLimitFn({ userId, plan, type });
-      
-      console.log('✅ AI使用制限チェック完了（サーバー側）:', result.data);
       return result.data;
     } catch (error) {
       console.error('❌ AI使用制限チェックエラー（サーバー側）:', error);
@@ -100,11 +96,7 @@ export class AIUsageManager {
     cost: number
   ): Promise<void> {
     try {
-      console.log('📝 AI使用量記録開始（サーバー側）:', { userId, type, tokensUsed, cost });
-      
       const result = await recordAIUsageFn({ userId, type, tokensUsed, cost });
-      
-      console.log('✅ AI使用量記録完了（サーバー側）:', result.data);
     } catch (error) {
       console.error('❌ AI使用量記録エラー（サーバー側）:', error);
       throw error;
@@ -119,12 +111,8 @@ export class AIUsageManager {
     analysisUsage: number;
   }> {
     try {
-      console.log('📊 AI使用量統計取得開始（サーバー側）:', { userId });
-      
       const result = await getAIUsageStatsFn({});
       const stats = result.data;
-      
-      console.log('✅ AI使用量統計取得完了（サーバー側）:', stats);
       
       // レスポンス形式を既存のインターフェースに合わせる
       return {

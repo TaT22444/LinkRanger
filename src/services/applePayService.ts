@@ -60,23 +60,12 @@ export class IapService {
     const timestamp = new Date().toISOString();
     
     if (this.initialized) {
-      console.log('[SUB-MONITOR] [' + timestamp + '] IAP Service: Already initialized', {
-        environment: __DEV__ ? 'development' : 'production',
-        platform: Platform.OS
-      });
+
       return;
     }
     
-    console.log('[SUB-MONITOR] [' + timestamp + '] IAP Service: Initializing...', {
-      platform: Platform.OS,
-      productSkus,
-      skuCount: productSkus.length,
-      environment: __DEV__ ? 'development' : 'production'
-    });
-
     // Development環境でのモック処理
     if (__DEV__) {
-      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - using mock IAP functionality');
       this.setupDevelopmentMockListeners(); // 開発環境用のモックリスナーを設定
       this.initialized = true;
       return;
@@ -85,7 +74,7 @@ export class IapService {
     try {
       // IAP接続を初期化
       const connectionResult = await initConnection();
-      console.log('🛒 IAP Connection result:', connectionResult);
+
       
       this.initialized = true;
 
@@ -93,16 +82,16 @@ export class IapService {
       if (Platform.OS === 'ios') {
         try {
           const availablePurchases = await getAvailablePurchases();
-          console.log('🛒 Found available purchases:', availablePurchases.length);
+
           for (const purchase of availablePurchases) {
             try {
               // バックエンドにレシートを送信して検証
-              console.log(`[SUB-MONITOR] Initializing: Validating available purchase...`, { productId: purchase.productId });
+
               await this.validateReceipt(purchase);
 
               // 検証が成功した場合のみトランザクションを完了
               await finishTransaction({ purchase, isConsumable: false });
-              console.log(`[SUB-MONITOR] Initializing: Finished available purchase transaction.`, { productId: purchase.productId });
+
             } catch (error) {
               console.error(`[SUB-MONITOR] Initializing: Failed to validate/finish available purchase. Will retry on next launch.`, { error });
               // エラーが発生した場合はトランザクションを完了させず、次回のアプリ起動時に再試行されるようにする
@@ -115,7 +104,7 @@ export class IapService {
 
       // 購入処理のリスナーをセットアップ
       this.setupListeners();
-      console.log('✅ IAP Service: Initialized successfully');
+
     } catch (error: any) {
       console.error('❌ IAP Service: Initialization failed', error);
       
@@ -155,7 +144,7 @@ export class IapService {
     }
     await endConnection();
     this.initialized = false;
-    console.log('🛒 IAP Service: Terminated');
+
   }
 
   /**
@@ -163,15 +152,9 @@ export class IapService {
    */
   private setupDevelopmentMockListeners(): void {
     const timestamp = new Date().toISOString();
-    console.log('[SUB-MONITOR] [' + timestamp + '] Setting up development mock listeners');
+
     
-    // 開発環境でのサブスクリプションシミュレーション用ログ
-    console.log('[SUB-MONITOR] [' + timestamp + '] Mock subscription monitoring active', {
-      environment: 'development',
-      availableProducts: productSkus,
-      mockPurchaseEnabled: true,
-      realIAPDisabled: true
-    });
+
   }
 
   /**
@@ -181,35 +164,17 @@ export class IapService {
     purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase: SubscriptionPurchase) => {
       const timestamp = new Date().toISOString();
       
-      // サブスクリプション監視用の専用ログ（絡り込み用）
-      console.log(`[SUB-MONITOR] [${timestamp}] Purchase updated:`, {
-        productId: purchase.productId,
-        transactionId: purchase.transactionId,
-        originalTransactionId: purchase.originalTransactionIdentifierIOS,
-        transactionDate: purchase.transactionDate,
-        expirationDate: purchase.originalTransactionDateIOS,
-        autoRenewing: purchase.autoRenewingAndroid,
-        environment: __DEV__ ? 'development' : 'production'
-      });
-      
       const receipt = purchase.transactionReceipt;
       if (receipt) {
         try {
           // バックエンドにレシートを送信して検証
-          console.log(`[SUB-MONITOR] [${timestamp}] Validating receipt...`);
           await this.validateReceipt(purchase);
 
           // トランザクションを完了
           await finishTransaction({ purchase, isConsumable: false });
-          console.log(`[SUB-MONITOR] [${timestamp}] Transaction finished - Product: ${purchase.productId}`);
         } catch (error) {
           console.error(`[SUB-MONITOR] [${timestamp}] Receipt validation failed:`, error);
-          // ユーザーに状況を通知し、次のアクションを促す
-          Alert.alert(
-            "購入処理の確認に失敗しました",
-            "ネットワーク接続が不安定な可能性があります。購入は記録されていますので、ネットワークの良い環境でアプリを再起動するとプランが反映されます。",
-            [{ text: "OK" }]
-          );
+
         }
       }
     });
@@ -229,7 +194,7 @@ export class IapService {
    * @param purchase 購入情報
    */
   private async validateReceipt(purchase: SubscriptionPurchase): Promise<void> {
-    console.log(`Validating receipt for platform: ${Platform.OS}`);
+
     if (Platform.OS === 'ios') {
       const { transactionReceipt, productId } = purchase;
       if (transactionReceipt) {
@@ -237,7 +202,7 @@ export class IapService {
           receipt: transactionReceipt, 
           productId 
         });
-        console.log('✅ Apple receipt validation successful');
+
       }
     } else if (Platform.OS === 'android') {
       // TODO: Implement Google Play validation
@@ -256,15 +221,8 @@ export class IapService {
       throw new Error('IAP service is not initialized. Call initialize() first.');
     }
     
-    console.log('[SUB-MONITOR] [' + timestamp + '] Fetching products...', {
-      environment: __DEV__ ? 'development' : 'production',
-      platform: Platform.OS,
-      requestedSKUs: productSkus
-    });
-    
     // Development環境では模擬的なプロダクトを返す
     if (__DEV__) {
-      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - returning mock products');
       const mockProducts = [
         {
           productId: 'com.tat22444.wink.plus.monthly',
@@ -286,15 +244,7 @@ export class IapService {
       
       this.products = mockProducts;
       
-      console.log('[SUB-MONITOR] [' + timestamp + '] Mock products loaded', {
-        count: mockProducts.length,
-        environment: 'development',
-        products: mockProducts.map(p => ({
-          productId: p.productId,
-          localizedPrice: (p as any).localizedPrice,
-          price: (p as any).price
-        }))
-      });
+
       
       return mockProducts;
     }
@@ -304,11 +254,7 @@ export class IapService {
       throw new Error('No product SKUs configured for current platform');
     }
     
-    console.log('🛒 Fetching products from store...', { 
-      platform: Platform.OS,
-      skus: productSkus,
-      skuCount: productSkus.length 
-    });
+
     
     try {
       let fetchedProducts: (Product | Subscription)[] = [];
@@ -316,25 +262,11 @@ export class IapService {
       if (Platform.OS === 'ios') {
         // iOSの場合はSubscriptionとして取得
         fetchedProducts = await getSubscriptions({ skus: productSkus });
-        console.log('🛒 iOS subscriptions fetched:', {
-          count: fetchedProducts.length,
-          products: fetchedProducts.map(p => ({
-            productId: p.productId,
-            price: (p as any).price,
-            localizedPrice: (p as any).localizedPrice
-          }))
-        });
+
       } else {
         // Androidの場合はProductとして取得
         fetchedProducts = await getProducts({ skus: productSkus });
-        console.log('🛒 Android products fetched:', {
-          count: fetchedProducts.length,
-          products: fetchedProducts.map(p => ({
-            productId: p.productId,
-            price: (p as any).price,
-            localizedPrice: (p as any).localizedPrice
-          }))
-        });
+
       }
 
       if (fetchedProducts.length === 0) {
@@ -378,12 +310,7 @@ export class IapService {
       throw new Error(`No SKU found for plan: ${plan}`);
     }
     
-    console.log('[SUB-MONITOR] [' + timestamp + '] Purchase request initiated', {
-      plan,
-      sku,
-      environment: __DEV__ ? 'development' : 'production',
-      platform: Platform.OS
-    });
+
     
     // TestFlight環境の判定: standaloneアプリで、開発モードではないが、TestFlightビルドである場合
     const isTestFlight = !__DEV__ && Constants.executionEnvironment === 'standalone' &&
@@ -391,23 +318,12 @@ export class IapService {
     
     // Development環境のみ模擬的な購入成功（TestFlight環境は除く）
     if (__DEV__ && !isTestFlight) {
-      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - simulating purchase flow', {
-        plan,
-        sku,
-        mockDuration: '2 seconds',
-        willSucceed: true
-      });
+
       
       return new Promise((resolve) => {
         setTimeout(() => {
           const completionTimestamp = new Date().toISOString();
-          console.log('[SUB-MONITOR] [' + completionTimestamp + '] Mock purchase completed successfully', {
-            plan,
-            sku,
-            transactionId: 'mock_' + Date.now(),
-            environment: 'development',
-            status: 'completed'
-          });
+
           resolve();
         }, 2000); // 2秒待機でリアルな購入をシミュレート
       });
@@ -443,10 +359,7 @@ export class IapService {
       throw new Error('IAP not initialized');
     }
     
-    console.log('[SUB-MONITOR] [' + timestamp + '] Restore purchases initiated', {
-      environment: __DEV__ ? 'development' : 'production',
-      platform: Platform.OS
-    });
+
     
     // TestFlight環境の判定: standaloneアプリで、開発モードではないが、TestFlightビルドである場合
     const isTestFlight = !__DEV__ && Constants.executionEnvironment === 'standalone' &&
@@ -454,16 +367,13 @@ export class IapService {
     
     // Development環境のみ模擬的なリストア処理（TestFlight環境は除く）
     if (__DEV__ && !isTestFlight) {
-      console.log('[SUB-MONITOR] [' + timestamp + '] Development mode - simulating restore purchases', {
-        foundPurchases: 0,
-        message: 'No previous purchases found in development mode'
-      });
+
       return Promise.resolve();
     }
     
     try {
       const availablePurchases = await getAvailablePurchases();
-      console.log('✅ Available purchases:', availablePurchases);
+
       for (const purchase of availablePurchases) {
         await this.validateReceipt(purchase);
       }
@@ -471,7 +381,7 @@ export class IapService {
       
       // TestFlight環境では特別なメッセージを表示
       if (isTestFlight) {
-        console.log('[SUB-MONITOR] [' + timestamp + '] TestFlight mode - restore purchases completed (no actual charge)');
+
       }
     } catch (error) {
       console.error('❌ Failed to restore purchases', error);
@@ -489,7 +399,7 @@ export class IapService {
     };
     
     const sku = planMap[plan as keyof typeof planMap] || null;
-    console.log('🛒 SKU mapping:', { plan, sku });
+
     return sku;
   }
 }

@@ -35,7 +35,7 @@ export const userService = {
       },
     });
 
-    console.log('User profile created successfully:', userData.uid);
+
     return userData.uid;
   },
 

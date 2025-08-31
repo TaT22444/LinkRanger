@@ -47,22 +47,7 @@ export const AIStatusMonitor: React.FC<AIStatusMonitorProps> = ({
   const untaggedCount = untaggedLinks.length;
   const totalItems = processingCount + failedCount + untaggedCount;
 
-  // デバッグログ: AIStatusMonitorの受け取った情報をログ出力
-  useEffect(() => {
-    console.log('🖥️ AIStatusMonitor: 受け取った情報', {
-      処理中リンク数: processingCount,
-      失敗リンク数: failedCount,
-      未処理リンク数: untaggedCount,
-      全体アイテム数: totalItems,
-      未処理リンク詳細: untaggedLinks.map(link => ({
-        id: link.id,
-        title: link.title?.slice(0, 30) + '...',
-        status: link.status,
-        tagIds: link.tagIds?.length || 0
-      })),
-      aiProcessingStatusキー: Object.keys(aiProcessingStatus)
-    });
-  }, [processingCount, failedCount, untaggedCount, untaggedLinks, aiProcessingStatus]);
+
 
   // AI処理中の脈動アニメーション
   useEffect(() => {
@@ -222,7 +207,6 @@ export const AIStatusMonitor: React.FC<AIStatusMonitorProps> = ({
                           </TouchableOpacity>
                           <TouchableOpacity 
                             onPress={() => {
-                              console.log('🔘 スキップボタンが押されました:', link.id);
                               onDismissUntagged(link.id);
                             }}
                             style={styles.skipButton}

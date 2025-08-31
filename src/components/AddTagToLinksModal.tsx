@@ -31,23 +31,9 @@ export const AddTagToLinksModal: React.FC<AddTagToLinksModalProps> = ({
 }) => {
   const [selectedLinkIds, setSelectedLinkIds] = useState<Set<string>>(new Set());
 
-  // デバッグ用ログ
-  console.log('🔍 AddTagToLinksModal: received props', {
-    visible,
-    linksCount: links?.length || 0,
-    tagName,
-    sampleLinks: links?.slice(0, 3).map(l => ({ id: l.id, title: l.title }))
-  });
 
-  // モーダルの表示状態をログ
-  useEffect(() => {
-    if (visible) {
-      console.log('🔍 AddTagToLinksModal: Modal opened', {
-        linksCount: links?.length || 0,
-        tagName
-      });
-    }
-  }, [visible, links, tagName]);
+
+
 
   const handleToggleLinkSelection = (linkId: string) => {
     setSelectedLinkIds(prev => {

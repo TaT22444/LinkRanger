@@ -87,26 +87,19 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
   // データの初期化
   useEffect(() => {
     if (visible) {
-      console.log('=== AddTagModal Data Initialization ===');
-      console.log('availableTags:', availableTags);
-      console.log('availableTags length:', availableTags?.length || 0);
-      console.log('selectedTags:', selectedTags);
-      
       setCreatedTags([]);
       setPendingTags([]);
       setNewTagName('');
       setDeletedTags(new Set());
       setUndoState({ visible: false, tagName: '' });
       setIsExpanded(false);
-      
-      console.log('=== End Data Initialization ===');
     }
   }, [visible]);
 
   // モーダル表示/非表示の状態管理とアニメーション
   useEffect(() => {
     if (visible) {
-      console.log('AddTagModal: showing modal');
+
       setIsVisible(true);
       
       // アニメーション値を初期状態にリセット
@@ -130,7 +123,7 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
         }),
       ]).start();
     } else {
-      console.log('AddTagModal: hiding modal');
+
       
       // 非表示アニメーション
       Animated.parallel([
@@ -254,7 +247,7 @@ export const AddTagModal: React.FC<AddTagModalProps> = ({
       // 作成予定のタグを順次作成
       for (const tagName of pendingTags) {
         const tagId = await onCreateTag(tagName, 'manual');
-        console.log('AddTagModal: created tag with ID:', tagId);
+
         newTagIds.push(tagId);
       }
       

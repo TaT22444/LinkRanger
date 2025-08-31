@@ -11,7 +11,7 @@ let Notifications: any = null;
 try {
   Notifications = require('expo-notifications');
 } catch (error) {
-  console.log('⚠️ expo-notifications module not available');
+  // expo-notifications module not available
 }
 
 // expo-notifications の型定義（フォールバック）
@@ -27,7 +27,7 @@ const isNotificationAvailable = () => {
            Notifications !== null &&
            typeof Notifications.scheduleNotificationAsync === 'function';
   } catch {
-    console.log('⚠️ expo-notifications無効化（モジュール未対応）');
+    // expo-notifications無効化（モジュール未対応）
     return false;
   }
 };
@@ -43,9 +43,6 @@ const setupNotificationHandler = () => {
         shouldSetBadge: false,   // バッジは設定しない
       }),
     });
-    console.log('📱 通知ハンドラーを設定');
-  } else {
-    console.log('⚠️ 通知機能は現在利用できません');
   }
 };
 
@@ -69,7 +66,7 @@ class NotificationService {
    */
   setNotificationTapCallback(callback: (linkId: string) => void): void {
     this.onNotificationTapCallback = callback;
-    console.log('📱 通知タップコールバック設定完了');
+
   }
 
   /**
@@ -78,7 +75,7 @@ class NotificationService {
   async requestPermissions(): Promise<NotificationPermissionStatus> {
     try {
       if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません（expo-notificationsが未インストール）');
+
         return {
           granted: false,
           status: 'unavailable'
@@ -86,7 +83,6 @@ class NotificationService {
       }
 
       const { status } = await Notifications.requestPermissionsAsync();
-      console.log('📱 通知権限リクエスト結果:', status);
       
       return {
         granted: status === 'granted',
@@ -107,7 +103,7 @@ class NotificationService {
   async schedule3DayReminder(link: Link): Promise<string | null> {
     try {
       if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません - 3日間リマインダーをスキップ');
+
         return null;
       }
 
@@ -117,19 +113,14 @@ class NotificationService {
       
       // 3日後の日時が過去の場合は通知しない（データ整合性エラー）
       if (threeDaysLater <= now) {
-        console.log('🚫 3日後の日時が過去のため通知をスキップ');
+
         return null;
       }
 
-      console.log('📅 3日間リマインダーをスケジュール:', {
-        linkId: link.id,
-        title: link.title.slice(0, 30) + '...',
-        scheduledFor: threeDaysLater.toISOString(),
-        willScheduleIn: Math.floor((threeDaysLater.getTime() - now.getTime()) / (1000 * 60 * 60)) + ' hours'
-      });
+
 
       const trigger = { date: threeDaysLater };
-      console.log('🐛 DEBUG: Trigger object to be scheduled:', trigger);
+
 
       // 通知をスケジュール
       const notificationId = await Notifications.scheduleNotificationAsync({
@@ -150,11 +141,7 @@ class NotificationService {
         },
       });
 
-      console.log('✅ 3日間リマインダースケジュール完了:', {
-        linkId: link.id,
-        notificationId,
-        scheduledFor: threeDaysLater.toISOString()
-      });
+
 
       return notificationId;
 
@@ -171,7 +158,7 @@ class NotificationService {
   async cancelNotificationForLink(linkId: string): Promise<void> {
     try {
       if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません - キャンセルをスキップ');
+
         return;
       }
 
@@ -183,10 +170,7 @@ class NotificationService {
 
       for (const notification of targetNotifications) {
         await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-        console.log('🗑️ 通知キャンセル完了:', {
-          linkId,
-          notificationId: notification.identifier,
-        });
+
       }
     } catch (error) {
       console.error('❌ 通知キャンセルエラー:', error);
@@ -198,21 +182,12 @@ class NotificationService {
    */
   async handleLinkAccess(link: Link): Promise<void> {
     try {
-      console.log('🔗 リンクアクセス処理開始:', {
-        linkId: link.id,
-        linkTitle: link.title.slice(0, 30) + '...',
-        notificationStatus: isNotificationAvailable() ? 'アクティブ' : '通知機能無効化'
-      });
+
 
       // 1. 通知をキャンセル
       await this.cancelNotificationForLink(link.id);
 
       // 2. 最終アクセス時間を更新（Firestore更新は呼び出し元で実行）
-      console.log('✅ リンクアクセス処理完了:', {
-        linkId: link.id,
-        notificationCancelled: true,
-        lastAccessedAt: new Date().toISOString()
-      });
 
       // 3. リンクアクセス時は即座の新しい通知スケジュールは行わない
       // バックグラウンドタスクが3日後にチェックして通知する
@@ -228,12 +203,12 @@ class NotificationService {
   async clearAllNotifications(): Promise<void> {
     try {
       if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません - クリアをスキップ');
+
         return;
       }
 
       await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('🗑️ 全てのスケジュール済み通知をクリアしました');
+
     } catch (error) {
       console.error('❌ 通知クリアエラー:', error);
     }
@@ -245,15 +220,12 @@ class NotificationService {
   async debugScheduledNotifications(): Promise<void> {
     try {
       if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません');
         return;
       }
 
       const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
       
-      console.log('📅 スケジュール済み通知一覧:', {
-        totalCount: scheduledNotifications.length
-      });
+
       
       const now = new Date();
       
@@ -262,20 +234,10 @@ class NotificationService {
         const data = notification.content?.data;
         const scheduledDate = trigger?.date ? new Date(trigger.date) : null;
         
-        console.log(`🔔 [通知 ${index + 1}]:`, {
-          id: notification.identifier,
-          title: notification.content?.title,
-          linkId: data?.linkId,
-          type: data?.type,
-          scheduledFor: scheduledDate?.toISOString(),
-          hoursFromNow: scheduledDate ? Math.floor((scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60)) : null,
-          daysFromNow: scheduledDate ? Math.floor((scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null
-        });
+
       });
       
-      if (scheduledNotifications.length === 0) {
-        console.log('🚫 スケジュール済み通知はありません');
-      }
+
       
     } catch (error) {
       console.error('❌ 通知デバッグエラー:', error);
@@ -288,7 +250,6 @@ class NotificationService {
   async sendTestNotification(): Promise<void> {
     try {
       if (!isNotificationAvailable()) {
-        console.log('⚠️ 通知機能は利用できません');
         return;
       }
 
@@ -306,7 +267,7 @@ class NotificationService {
         trigger: null, // 即座送信
       });
 
-      console.log('📨 テスト通知送信完了:', { notificationId });
+
     } catch (error) {
       console.error('❌ テスト通知エラー:', error);
     }
@@ -323,7 +284,7 @@ class NotificationService {
       // 通知リスナーを設定
       this.setupNotificationListeners();
       
-      console.log('✅ 通知サービス初期化完了');
+
     } catch (error) {
       console.error('❌ 通知サービス初期化エラー:', error);
     }
@@ -342,7 +303,7 @@ class NotificationService {
         this.responseListener.remove();
         this.responseListener = undefined;
       }
-      console.log('🗑️ 通知サービスクリーンアップ完了');
+
     } catch (error) {
       console.error('❌ 通知サービスクリーンアップエラー:', error);
     }
@@ -353,7 +314,6 @@ class NotificationService {
    */
   private setupNotificationListeners(): void {
     if (!isNotificationAvailable()) {
-      console.log('⚠️ 通知機能は利用できません - リスナー設定をスキップ');
       return;
     }
 
@@ -365,24 +325,23 @@ class NotificationService {
 
     // 1. アプリが起動中に通知をタップした場合のリスナー
     this.responseListener = Notifications.addNotificationResponseReceivedListener((response: any) => {
-      console.log('👆 通知タップ (Foreground/Background):', response);
+
       const notificationData = response?.notification?.request?.content?.data;
       if (notificationData?.linkId && this.onNotificationTapCallback) {
-        console.log('🔗 通知タップ - リンクID検出:', notificationData.linkId);
+
         this.onNotificationTapCallback(notificationData.linkId);
       } else {
-        console.log('⚠️ 通知タップ - リンクIDが見つからないか、コールバックが設定されていません');
+
       }
     });
 
     // 2. アプリが終了している状態から通知タップで起動した場合の処理
     Notifications.getLastNotificationResponseAsync().then((response: any) => {
       if (response) {
-        console.log('🚀 アプリが通知から起動:', response);
+
         const notificationData = response?.notification?.request?.content?.data;
         if (notificationData?.linkId && this.onNotificationTapCallback) {
-          console.log('🔗 初期通知 - リンクID検出:', notificationData.linkId);
-          // UIの準備が整うのを待つために少し遅延させる
+
           setTimeout(() => {
             if (this.onNotificationTapCallback) {
               this.onNotificationTapCallback(notificationData.linkId);
@@ -394,10 +353,10 @@ class NotificationService {
 
     // 通知受信時のリスナー (デバッグ用)
     this.notificationListener = Notifications.addNotificationReceivedListener((notification: any) => {
-      console.log('📱 通知受信 (Foreground):', notification);
+
     });
 
-    console.log('🎧 通知リスナー設定完了');
+
   }
 }
 

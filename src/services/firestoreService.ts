@@ -53,7 +53,7 @@ export const userService = {
       },
     });
 
-    console.log('User profile created successfully:', userData.uid);
+
     return userData.uid;
   },
 
@@ -83,14 +83,11 @@ export const userService = {
   },
 
   async deleteAllUserData(userId: string): Promise<void> {
-    console.log('Firestoreデータ削除開始:', userId);
-
     try {
       // Delete user document
       try {
         const userRef = doc(db, COLLECTIONS.USERS, userId);
         await deleteDoc(userRef);
-        console.log('ユーザードキュメント削除完了');
       } catch (error: any) {
         console.error('ユーザードキュメント削除エラー:', error);
         console.error('エラーコード:', error.code);
@@ -109,9 +106,6 @@ export const userService = {
           const batch = writeBatch(db);
           linksSnapshot.forEach(doc => batch.delete(doc.ref));
           await batch.commit();
-          console.log('リンクデータ削除完了:', linksSnapshot.size, '件');
-        } else {
-          console.log('削除対象のリンクデータがありません');
         }
       } catch (error: any) {
         console.error('リンクデータ削除エラー:', error);
@@ -131,9 +125,6 @@ export const userService = {
           const batch = writeBatch(db);
           tagsSnapshot.forEach(doc => batch.delete(doc.ref));
           await batch.commit();
-          console.log('タグデータ削除完了:', tagsSnapshot.size, '件');
-        } else {
-          console.log('削除対象のタグデータがありません');
         }
       } catch (error: any) {
         console.error('タグデータ削除エラー:', error);
@@ -153,9 +144,6 @@ export const userService = {
           const batch = writeBatch(db);
           foldersSnapshot.forEach(doc => batch.delete(doc.ref));
           await batch.commit();
-          console.log('フォルダデータ削除完了:', foldersSnapshot.size, '件');
-        } else {
-          console.log('削除対象のフォルダデータがありません');
         }
       } catch (error: any) {
         console.error('フォルダデータ削除エラー:', error);
@@ -175,9 +163,6 @@ export const userService = {
           const batch = writeBatch(db);
           searchHistorySnapshot.forEach(doc => batch.delete(doc.ref));
           await batch.commit();
-          console.log('検索履歴データ削除完了:', searchHistorySnapshot.size, '件');
-        } else {
-          console.log('削除対象の検索履歴データがありません');
         }
       } catch (error: any) {
         console.error('検索履歴データ削除エラー:', error);
@@ -211,9 +196,6 @@ export const userService = {
           
           if (deletedCount > 0) {
             await batch.commit();
-            console.log('アプリ設定データ削除完了:', deletedCount, '件');
-          } else {
-            console.log('削除対象のアプリ設定データがありません（バッチ処理）');
           }
         } else {
           // userIdをドキュメントIDとして試す（古いデータ形式に対応）
@@ -223,9 +205,6 @@ export const userService = {
             
             if (settingsDoc.exists()) {
               await deleteDoc(settingsRef);
-              console.log('アプリ設定データ削除完了（ドキュメントIDを使用）');
-            } else {
-              console.log('削除対象のアプリ設定データがありません');
             }
           } catch (docError: any) {
             console.error('アプリ設定データ削除エラー（ドキュメントID使用時）:', docError);
@@ -247,7 +226,7 @@ export const userService = {
         }
       }
 
-      console.log('Firestoreデータ削除完了');
+
     } catch (error) {
       console.error('Firestoreデータ削除エラー:', error);
       throw error;
@@ -528,7 +507,6 @@ export const tagService = {
   },
 
   async getUserTags(userId: string): Promise<Tag[]> {
-    console.log('tagService.getUserTags called with userId:', userId);
     try {
       const q = query(
         collection(db, COLLECTIONS.TAGS),
@@ -537,10 +515,8 @@ export const tagService = {
       );
       
       const snapshot = await getDocs(q);
-      console.log('tagService.getUserTags snapshot size:', snapshot.size);
       const tags = snapshot.docs.map(doc => {
         const data = doc.data();
-        console.log('tagService.getUserTags tag data:', { id: doc.id, name: data.name });
         return {
           ...data,
           id: doc.id,
@@ -550,7 +526,6 @@ export const tagService = {
           firstUsedAt: data.firstUsedAt?.toDate() || new Date(),
         } as Tag;
       });
-      console.log('tagService.getUserTags returning tags:', tags);
       return tags;
     } catch (error) {
       console.error('tagService.getUserTags error:', error);
@@ -608,7 +583,7 @@ export const tagService = {
     userId: string,
     callback: (tags: Tag[]) => void
   ): () => void {
-    console.log('subscribeToUserTags called with userId:', userId);
+
     const q = query(
       collection(db, COLLECTIONS.TAGS),
       where('userId', '==', userId),

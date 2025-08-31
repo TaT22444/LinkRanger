@@ -43,6 +43,7 @@ yarn-error.*
 .env
 .env.local
 .env.development
+.env.testflight
 .env.production
 
 # Expo Development Build

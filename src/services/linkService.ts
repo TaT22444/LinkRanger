@@ -63,12 +63,6 @@ export const linkService = {
 
         // 🔥 FCM一元化: ローカル通知スケジュールを削除
         // 3日間未読通知はCloud Scheduler + FCMで処理
-        console.log('🔍 linkService: FCM一元化システム - ローカル通知スケジュールをスキップ', {
-          linkId: docRef.id,
-          notificationSystem: 'FCM_ONLY',
-          cloudScheduler: '6時間ごとにチェック'
-        });
-        
         // ローカル通知は設定せず、FCMシステムに完全依存
         // Cloud Schedulerが6時間ごとに3日間未読リンクをチェックして通知
       }
@@ -264,18 +258,6 @@ export const linkService = {
 
     return onSnapshot(q, (snapshot) => {
       const changes = snapshot.docChanges();
-      console.log('📥 linkService: リアルタイム更新受信', {
-        userId,
-        totalDocsInCollection: snapshot.docs.length,  // 🔧 コレクション内の全ドキュメント数
-        actualChanges: changes.length,  // 🔧 実際の変更数
-        changeTypes: changes.reduce((acc, c) => {
-          acc[c.type] = (acc[c.type] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),  // 🔧 変更タイプの内訳
-        changedDocIds: changes.map(c => c.doc.id),  // 🔧 変更されたドキュメントID
-        hasNewDocuments: changes.some(change => change.type === 'added'),
-        timestamp: new Date().toISOString()
-      });
       
       const links = snapshot.docs
         .map((doc, index) => {
@@ -294,13 +276,7 @@ export const linkService = {
         })
         .filter((link): link is Link => link !== null && !!link.id && !!link.url);
       
-      console.log('📊 linkService: リンク変換処理完了', {
-        userId,
-        totalDocsReceived: snapshot.docs.length,  // 🔧 受信した全ドキュメント数
-        successfullyConverted: links.length,  // 🔧 成功した変換数
-        conversionFailures: snapshot.docs.length - links.length,  // 🔧 失敗した変換数
-        note: '全ドキュメントを再変換するのはFirestoreリアルタイムリスナーの仕様'
-      });
+
       
       callback(links);
     }, (error) => {

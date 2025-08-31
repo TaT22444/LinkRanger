@@ -174,7 +174,6 @@ const AppContent: React.FC = () => {
         if (initialUrl) {
           const data = parseSharedLink(initialUrl);
           if (data) {
-            console.log('🔗 初期URLから共有リンク受信:', data);
             setSharedLinkData(data);
             // 初期URLの場合は、HomeScreenへの強制遷移は不要（アプリ起動時）
           }
@@ -188,13 +187,11 @@ const AppContent: React.FC = () => {
         try {
           const data = parseSharedLink(url);
           if (data) {
-            console.log('🔗 ランタイムURLから共有リンク受信:', data);
             setSharedLinkData(data);
             
             // ランタイムURLの場合は、確実にHomeScreenに遷移
             if (navigationRef.current) {
               navigationRef.current.navigate('Main', { screen: 'Home' });
-              console.log('🔄 ShareExtension遷移: HomeScreenに強制遷移');
             }
           }
         } catch (e) {
@@ -227,10 +224,8 @@ const AppContent: React.FC = () => {
     <NavigationContainer
       linking={{ prefixes: ['wink://', 'https://www.dot-wink.com'] }}
       onStateChange={(state: any) => {
-        console.log('Navigation state changed:', state);
       }}
       onReady={() => {
-        console.log('Navigation ready');
       }}
     >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -252,20 +247,16 @@ const App: React.FC = () => {
       try {
         // Google Sign-In設定
         GoogleSignin.configure(GOOGLE_SIGN_IN_CONFIG);
-        console.log('✅ Google Sign-In設定完了');
         
         // 通知サービス初期化
         await notificationService.initializeNotifications();
-        console.log('✅ 通知サービス初期化完了');
         
-        // 🔥 FCM初期化: AuthContext でユーザーログイン後に実行
+        // 🔐 FCM初期化: AuthContext でユーザーログイン後に実行
         // 認証が必要なため、App.tsx では初期化せず AuthProvider で処理
-        console.log('🔐 FCM初期化: ユーザーログイン後に AuthContext で実行されます');
         
         // バックグラウンドタスクサービス初期化（遅延実行で即座実行を防止）
         setTimeout(async () => {
           await backgroundTaskService.registerBackgroundTasks();
-          console.log('✅ バックグラウンドタスクサービス初期化完了（遅延実行）');
         }, 5000); // 5秒遅延でアプリ起動時の即座実行を防止
         
         setAppInitialized(true);
@@ -293,7 +284,6 @@ const App: React.FC = () => {
       if (nextAppState === 'active') {
         // アプリがアクティブになったらバッジをリセット
         await Notifications.setBadgeCountAsync(0);
-        console.log('✅ バッジをリセットしました');
       }
     };
 
@@ -301,7 +291,6 @@ const App: React.FC = () => {
     
     // 初回起動時にもバッジをリセット
     Notifications.setBadgeCountAsync(0);
-    console.log('✅ アプリ起動時にバッジをリセットしました');
 
     return () => {
       subscription.remove();

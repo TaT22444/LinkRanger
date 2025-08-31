@@ -27,9 +27,7 @@ export const TagFilter: React.FC<TagFilterProps> = ({
   const [showAllTags, setShowAllTags] = useState(false);
   
   // デバッグログ
-  console.log('TagFilter - tags:', tags);
-  console.log('TagFilter - tags.length:', tags.length);
-  console.log('TagFilter - selectedTags:', selectedTags);
+  
   
   // タグが0個で、選択されたタグもない場合は+ボタンのみ表示
   const showOnlyAddButton = tags.length === 0 && selectedTags.length === 0;

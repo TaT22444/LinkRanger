@@ -19,10 +19,10 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
 }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
   
-  console.log('FloatingActionButton rendered:', { disabled });
+
 
   const handlePressIn = () => {
-    console.log('FloatingActionButton: Press In');
+
     Animated.spring(scaleValue, {
       toValue: 0.95,
       useNativeDriver: true,
@@ -30,7 +30,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   };
 
   const handlePressOut = () => {
-    console.log('FloatingActionButton: Press Out');
+
     Animated.spring(scaleValue, {
       toValue: 1,
       useNativeDriver: true,
@@ -38,7 +38,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   };
 
   const handlePress = () => {
-    console.log('FloatingActionButton: Pressed!', { disabled });
+
     if (!disabled) {
       onPress();
     }

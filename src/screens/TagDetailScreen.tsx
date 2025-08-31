@@ -129,7 +129,7 @@ export const TagDetailScreen: React.FC = () => {
 
   const handleLinkPress = (link: Link) => {
     // Show link detail screen as modal
-    console.log('Link pressed:', link.title);
+
     setSelectedLink(link);
     setShowLinkDetail(true);
   };
@@ -184,7 +184,7 @@ export const TagDetailScreen: React.FC = () => {
 
   const handleAnalysisLinkPress = useCallback(async (url: string) => {
     try {
-      console.log('🔗 参考資料リンクをタップ:', url);
+  
       const canOpen = await Linking.canOpenURL(url);
       if (canOpen) {
         await Linking.openURL(url);
@@ -418,12 +418,6 @@ export const TagDetailScreen: React.FC = () => {
               <TouchableOpacity
                 style={styles.optionItem}
                 onPress={() => {
-                  console.log('🔍 ボタンタップ: データ状態', {
-                    linksWithoutThisTag: linksWithoutThisTag.length,
-                    totalLinks: safeLinks.length,
-                    tagId: tag.id,
-                    tagName: tag.name
-                  });
                   setShowOptionsMenu(false);
                   setShowAddTagToLinksModal(true);
                 }}

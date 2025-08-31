@@ -30,13 +30,6 @@ export const convertToLink = (doc: any): Link => {
   }
   
   // serverTimestamp()が未解決の場合でも、基本的な情報があれば処理を続行
-  if (data?.url && data?.userId) {
-    console.log('✅ convertToLink: 基本情報あり、変換続行', {
-      id: doc.id,
-      url: data.url.slice(0, 50) + '...',
-      title: data.title?.slice(0, 30) + '...' || 'タイトル未取得'
-    });
-  }
   
   return {
     ...data,
