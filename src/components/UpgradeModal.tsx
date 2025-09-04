@@ -225,7 +225,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         price: product && (product as any).localizedPrice ? 
           (product as any).localizedPrice : 
           (pricing.price === 0 ? '¥0' : `¥${pricing.price.toLocaleString()}`),
-        period: pricing.price === 0 ? '無料' : '月額',
+        period: pricing.price === 0 ? '無料' : '月額自動更新',
         description: planType === 'free' ? '基本機能をお試し' :
                     planType === 'plus' ? 'Freeプランに加えて、より多くのリンクとタグを保存可能' :
                     'Plusプランに加えて、大量データと高度機能',
@@ -349,8 +349,8 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     // TestFlight環境での適切な案内
     if (__DEV__ && !isTestFlight) {
       Alert.alert(
-        'テストフライト環境',
-        'TestFlight版では、実際のサブスクリプション管理は制限されています。\n\nApp Store正式リリース後に以下が可能になります：\n• プランの変更・キャンセル\n• 請求履歴の確認\n• 自動更新設定の変更',
+        'サブスクリプション管理',
+        'サブスクリプションの管理は以下の方法で行えます：\n\n【キャンセル方法】\n1. iPhoneの「設定」アプリを開く\n2. 上部のApple IDをタップ\n3. 「サブスクリプション」を選択\n4. 「.Wink」を選択してキャンセル\n\n【注意事項】\n• キャンセル後も現在の期間終了までご利用いただけます\n• 自動更新は各期間終了の24時間前に停止されます',
         [
           { text: 'OK', style: 'default' },
           { 
@@ -449,6 +449,20 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         {/* Plusプランの場合 */}
         {plan.name === 'plus' && (
           <>
+            {/* 自動更新サブスクリプションの詳細説明 */}
+            <View style={styles.subscriptionDetails}>
+              <Text style={styles.subscriptionDetailsTitle}>自動更新サブスクリプションについて</Text>
+              <Text style={styles.subscriptionDetailsText}>
+                • サブスクリプションは月額自動更新されます
+              </Text>
+              <Text style={styles.subscriptionDetailsText}>
+                • キャンセルは設定アプリから行えます
+              </Text>
+              <Text style={styles.subscriptionDetailsText}>
+                • 現在の期間終了までサービスをご利用いただけます
+              </Text>
+            </View>
+
             {isCurrentPlan ? (
               <TouchableOpacity
                 style={[styles.upgradeButton, styles.manageButton]}
@@ -856,5 +870,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#AAA',
     lineHeight: 16,
+  },
+  // サブスクリプション詳細のスタイル
+  subscriptionDetails: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  subscriptionDetailsTitle: {
+    fontSize: 13,
+    color: '#FFF',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  subscriptionDetailsText: {
+    fontSize: 12,
+    color: '#CCC',
+    lineHeight: 16,
+    marginTop: 2,
   },
 });

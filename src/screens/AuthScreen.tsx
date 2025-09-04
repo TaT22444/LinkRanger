@@ -57,11 +57,11 @@ export const AuthScreen: React.FC = () => {
             <View style={styles.termsContainer}>
               <Text style={styles.termsText}>
                 続行することにより、
-                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://dot-wink.netlify.app/terms/')}>
+                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://spectrum-brie-2d3.notion.site/25fae8475de280a89db0d47b2bb91689?source=copy_link')}>
                   利用規約
                 </Text>
                 および{'\n'}
-                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://dot-wink.netlify.app/privacy/')}>
+                <Text style={styles.termsLink} onPress={() => Linking.openURL('https://spectrum-brie-2d3.notion.site/25fae8475de280bd9adffd64aec517fd?source=copy_link')}>
                   プライバシーポリシー
                 </Text>
                 に同意したことになります。
