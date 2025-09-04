@@ -15,6 +15,9 @@ import { UpgradeModal } from '../components/UpgradeModal';
 import { deleteUserAccount } from '../services/authService';
 import * as Application from 'expo-application';
 import * as MailComposer from 'expo-mail-composer';
+import * as Linking from 'expo-linking';
+import * as Notifications from 'expo-notifications';
+import { Switch } from 'react-native';
 
 export const AccountScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -36,6 +39,9 @@ export const AccountScreen: React.FC = () => {
   // 今日の日付状態を管理するためのuseState
   const [today, setToday] = useState(new Date().toDateString());
   
+  // 通知許可状態の管理
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  
   useEffect(() => {
     const version = Application.nativeApplicationVersion;
     const buildVersion = Application.nativeBuildVersion;
@@ -48,9 +54,23 @@ export const AccountScreen: React.FC = () => {
         setToday(newToday);
       }
     }, 60000); // 1分ごとにチェック
-    
+
     return () => clearInterval(interval);
   }, [today]);
+
+  // 通知許可状態を取得
+  useEffect(() => {
+    const checkNotificationStatus = async () => {
+      try {
+        const { status } = await Notifications.getPermissionsAsync();
+        setNotificationEnabled(status === 'granted');
+      } catch (error) {
+        console.error('通知状態の取得エラー:', error);
+      }
+    };
+
+    checkNotificationStatus();
+  }, []);
   
   const handleAnnouncements = () => {
     navigation.navigate('Announcements');
@@ -144,9 +164,42 @@ export const AccountScreen: React.FC = () => {
     }
   };
 
-  const handlePolicy = () => {
-    // TODO: 利用規約・プライバシーポリシー画面への遷移
-    Alert.alert('利用規約・プライバシーポリシー', 'この機能は現在開発中です。');
+  const handlePolicy = async () => {
+    try {
+      const url = 'https://spectrum-brie-2d3.notion.site/Wink-25fae8475de2807cbd42c2d9680ed4a0?source=copy_link';
+      const canOpen = await Linking.canOpenURL(url);
+      
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('エラー', 'ブラウザを開くことができませんでした。');
+      }
+    } catch (error) {
+      console.error('利用規約ページを開くエラー:', error);
+      Alert.alert('エラー', '利用規約ページを開くことができませんでした。');
+    }
+  };
+
+  const handleNotificationToggle = async (value: boolean) => {
+    try {
+      if (value) {
+        // 通知を有効にする
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status === 'granted') {
+          setNotificationEnabled(true);
+          Alert.alert('通知が有効になりました', '3日間未読のリンクについて通知を受け取ることができます。');
+        } else {
+          Alert.alert('通知が拒否されました', '設定アプリから通知を許可してください。');
+        }
+      } else {
+        // 通知を無効にする
+        setNotificationEnabled(false);
+        Alert.alert('通知が無効になりました', '通知を受け取るには再度有効にしてください。');
+      }
+    } catch (error) {
+      console.error('通知設定の変更エラー:', error);
+      Alert.alert('エラー', '通知設定の変更に失敗しました。');
+    }
   };
 
 
@@ -368,6 +421,18 @@ export const AccountScreen: React.FC = () => {
           <Text style={styles.itemText}>プラン</Text>
         </TouchableOpacity>
 
+        <View style={styles.menuItem}>
+          <Feather name="bell" size={18} color="#8A2BE2" style={styles.itemIcon} />
+          <Text style={styles.itemText}>通知を許可</Text>
+          <Switch
+            value={notificationEnabled}
+            onValueChange={handleNotificationToggle}
+            trackColor={{ false: '#333', true: '#8A2BE2' }}
+            thumbColor={notificationEnabled ? '#FFF' : '#888'}
+            style={styles.notificationSwitch}
+          />
+        </View>
+
         <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
           <Feather name="log-out" size={18} color="#8A2BE2" style={styles.itemIcon} />
           <Text style={styles.itemText}>ログアウト</Text>
@@ -511,6 +576,9 @@ const styles = StyleSheet.create({
   itemText: {
     color: '#FFF',
     fontSize: 16,
+  },
+  notificationSwitch: {
+    marginLeft: 'auto',
   },
 
   planLimitsContainer: {

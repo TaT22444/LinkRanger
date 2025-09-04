@@ -14,6 +14,7 @@ import {
   TextInput,
   TouchableWithoutFeedback,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
@@ -120,6 +121,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
   // 削除中の状態管理
   const [deletingLinkIds, setDeletingLinkIds] = useState<Set<string>>(new Set());
   const [deletingTagIds, setDeletingTagIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   
   // 共有リンクデータがある場合、AddLinkModalを自動で開く
     useEffect(() => {
@@ -1086,12 +1088,14 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
           <View style={styles.selectionStatusBar}>
             <View style={styles.selectionStatusLeft}>
               <Text style={styles.selectionStatusText}>
-                {viewMode === 'tag' 
-                  ? `${selectedTagIdsForDeletion.size}件選択中`
-                  : `${selectedLinkIds.size}件選択中`
+                {isBulkDeleting 
+                  ? '削除中...'
+                  : viewMode === 'tag' 
+                    ? `${selectedTagIdsForDeletion.size}件選択中`
+                    : `${selectedLinkIds.size}件選択中`
                 }
               </Text>
-              {((viewMode === 'tag' && (groupedData as any).tagGroups && (groupedData as any).tagGroups.length > 0) ||
+              {!isBulkDeleting && ((viewMode === 'tag' && (groupedData as any).tagGroups && (groupedData as any).tagGroups.length > 0) ||
                 (viewMode !== 'tag' && filteredLinks.length > 0)) && (
                 <TouchableOpacity 
                   style={styles.selectAllButton}
@@ -1144,6 +1148,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                             const tagIdsArray = Array.from(selectedTagIdsForDeletion);
                             
                             try {
+                              setIsBulkDeleting(true);
                               // 削除中の状態を設定
                               setDeletingTagIds(prev => {
                                 const newSet = new Set(prev);
@@ -1160,6 +1165,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                             } catch (error) {
                               Alert.alert('エラー', 'タグの削除に失敗しました');
                             } finally {
+                              setIsBulkDeleting(false);
                               // 削除中の状態をクリア
                               setDeletingTagIds(prev => {
                                 const newSet = new Set(prev);
@@ -1184,6 +1190,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                             const linkIdsArray = Array.from(selectedLinkIds);
                             
                             try {
+                              setIsBulkDeleting(true);
                               // 削除中の状態を設定
                               setDeletingLinkIds(prev => {
                                 const newSet = new Set(prev);
@@ -1200,6 +1207,7 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                             } catch (error) {
                               Alert.alert('エラー', 'リンクの削除に失敗しました');
                             } finally {
+                              setIsBulkDeleting(false);
                               // 削除中の状態をクリア
                               setDeletingLinkIds(prev => {
                                 const newSet = new Set(prev);
@@ -1214,14 +1222,19 @@ export const HomeScreen: React.FC<{ sharedLinkData?: SharedLinkData | null }> = 
                   }
                 }}
                 disabled={(viewMode === 'tag' && selectedTagIdsForDeletion.size === 0) ||
-                         (viewMode !== 'tag' && selectedLinkIds.size === 0)}
+                         (viewMode !== 'tag' && selectedLinkIds.size === 0) ||
+                         isBulkDeleting}
               >
-                <Feather 
-                  name="trash-2" 
-                  size={16} 
-                  color={((viewMode === 'tag' && selectedTagIdsForDeletion.size === 0) ||
-                          (viewMode !== 'tag' && selectedLinkIds.size === 0)) ? "#666" : "#FF6B6B"} 
-                />
+                {isBulkDeleting ? (
+                  <ActivityIndicator size="small" color="#FF6B6B" />
+                ) : (
+                  <Feather 
+                    name="trash-2" 
+                    size={16} 
+                    color={((viewMode === 'tag' && selectedTagIdsForDeletion.size === 0) ||
+                            (viewMode !== 'tag' && selectedLinkIds.size === 0)) ? "#666" : "#FF6B6B"} 
+                  />
+                )}
               </TouchableOpacity>
             </View>
           </View>

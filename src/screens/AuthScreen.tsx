@@ -10,12 +10,17 @@ import {
   ScrollView,
   Linking,
   Image,
+  Dimensions,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { FontAwesome } from '@expo/vector-icons';
 
 export const AuthScreen: React.FC = () => {
   const { loginWithGoogle, loginWithApple, loading } = useAuth();
+  
+  // iPadの縦画面サイズ以上かどうかを判定
+  const { height } = Dimensions.get('window');
+  const isIPadOrLarger = height >= 768; // iPadの縦画面サイズは1024px
 
   const handleGoogleLogin = async () => {
     try {
@@ -36,7 +41,7 @@ export const AuthScreen: React.FC = () => {
   return (
     <KeyboardAvoidingView style={styles.container} keyboardVerticalOffset={-30} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.content}>
-          <View style={styles.titleSection}>
+          <View style={[styles.titleSection, isIPadOrLarger && styles.titleSectionIPad]}>
             <Text style={styles.title}>.Wink</Text>
             <Text style={styles.subtitle}>「後で読む」を、忘れない。</Text>
           </View>
@@ -85,7 +90,10 @@ const styles = StyleSheet.create({
   titleSection: {
     alignItems: 'center',
     flex: 1,
-    marginTop: `70%`,
+    marginTop: '70%',
+  },
+  titleSectionIPad: {
+    marginTop: '30%',
   },
   title: {
     fontSize: 56,
